@@ -8,25 +8,33 @@ Define plans and their limits like:
 ```ruby
 plan :pro do
   limits :posts, to: 5.max
-
   allows :api_access
 end
 ```
 
 Then, in your controller, you can easily check and gate features:
 ```ruby
-require_feature! :api_access
+before_action :enforce_api_access!, only: [:show] # or something like this. I'm thinking generating enforce_* methods where * is the values of any of the `allows` fields. This controller line should be self-explainatory and read like plain English. Should play natively and seamlessly with Rails 8+ and the rest of the expected arguments etc.
 ```
 
 And, in your models, you can check models stay within plan limits:
 ```ruby
 class Post < ApplicationRecord
-  limited_by_plan
+  limited_by_pricing_plans # SIMPLIFIED! Renamed this, should auto-mixin with all necessary things. It should be dead simple and read like plain english. Should this accept more params? Reason and argue through it. Assume the thing limited is the model name, match by model name to the thing defined in the plan block, pass an optional argument if you wanna make it explicit or make explicit the billable etc only if you cannot infer it or if there's ambiguitiy
 end
 ```
 
 
 `pricing_plans` helps you stop reimplementing feature gating and duplicating code across your entire codebase.
+
+
+---
+---
+
+HUMAN REVISIONS ONLY UNTIL HERE!!!! EVERYTHING BELOW IS **NOT** UPDATED AND CORRESPONDS TO THE PREVIOUS, DATED VERSION OF THE README THAT STILL NEEDS TO BE REWRITTEN
+
+---
+---
 
 In **one Ruby file**, you define:
 
