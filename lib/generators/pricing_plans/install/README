@@ -15,7 +15,7 @@ Next steps:
    class Product < ApplicationRecord
      belongs_to :organization
      include PricingPlans::Limitable
-     limited_by :products, billable: :organization
+     limited_by_pricing_plans :products, billable: :organization
    end
 
 4. Add controller guards to enforce limits:

@@ -20,7 +20,7 @@ before_action :enforce_api_access!, only: [:show] # or something like this. I'm 
 And, in your models, you can check models stay within plan limits:
 ```ruby
 class Post < ApplicationRecord
-  limited_by_pricing_plans # SIMPLIFIED! Renamed this, should auto-mixin with all necessary things. It should be dead simple and read like plain english. Should this accept more params? Reason and argue through it. Assume the thing limited is the model name, match by model name to the thing defined in the plan block, pass an optional argument if you wanna make it explicit or make explicit the billable etc only if you cannot infer it or if there's ambiguitiy
+  limited_by_pricing_plans # SIMPLIFIED! Renamed this, should auto-mixin with all necessary things. It should be dead simple and read like plain english. Should this accept more params? Reason and argue through it. Assume the thing limited is the model name, match by model name to the thing defined in the plan block, pass an optional argument if you wanna make it explicit or make explicit the billable etc only if you cannot infer it or if there's ambiguitiy -- also, allow to pass custom params like a custom error message etc
 end
 ```
 
@@ -120,14 +120,14 @@ end
 class Project < ApplicationRecord
   belongs_to :organization
   include PricingPlans::Limitable
-  limited_by :projects, billable: :organization  # persistent cap
+  limited_by_pricing_plans :projects, billable: :organization  # persistent cap
 end
 
 # For discrete per-period allowances:
 class CustomModel < ApplicationRecord
   belongs_to :organization
   include PricingPlans::Limitable
-  limited_by :custom_models, billable: :organization, per: :month
+  limited_by_pricing_plans :custom_models, billable: :organization, per: :month
 end
 ```
 
