@@ -24,33 +24,67 @@ module PricingPlans
     end
     
     # DSL methods for plan configuration
-    def name(value = nil)
-      return @name || @key.to_s.titleize if value.nil?
+    def set_name(value)
       @name = value.to_s
     end
     
-    def description(value = nil)
-      return @description if value.nil?
+    def name(value = nil)
+      if value.nil?
+        @name || @key.to_s.titleize
+      else
+        set_name(value)
+      end
+    end
+    
+    def set_description(value)
       @description = value.to_s
     end
     
-    def bullets(*values)
-      return @bullets if values.empty?
+    def description(value = nil)
+      if value.nil?
+        @description
+      else
+        set_description(value)
+      end
+    end
+    
+    def set_bullets(*values)
       @bullets = values.flatten.map(&:to_s)
     end
     
-    def price(value = nil)
-      return @price if value.nil?
+    def bullets(*values)
+      if values.empty?
+        @bullets
+      else
+        set_bullets(*values)
+      end
+    end
+    
+    def set_price(value)
       @price = value
     end
     
-    def price_string(value = nil)
-      return @price_string if value.nil?
+    def price(value = nil)
+      if value.nil?
+        @price
+      else
+        set_price(value)
+      end
+    end
+    
+    def set_price_string(value)
       @price_string = value.to_s
     end
     
-    def stripe_price(value = nil)
-      return @stripe_price if value.nil?
+    def price_string(value = nil)
+      if value.nil?
+        @price_string
+      else
+        set_price_string(value)
+      end
+    end
+    
+    def set_stripe_price(value)
       case value
       when String
         @stripe_price = { id: value }
@@ -61,9 +95,24 @@ module PricingPlans
       end
     end
     
-    def meta(values = nil)
-      return @meta if values.nil?
+    def stripe_price(value = nil)
+      if value.nil?
+        @stripe_price
+      else
+        set_stripe_price(value)
+      end
+    end
+    
+    def set_meta(values)
       @meta.merge!(values)
+    end
+    
+    def meta(values = nil)
+      if values.nil?
+        @meta
+      else
+        set_meta(values)
+      end
     end
     
     # Feature methods
@@ -107,8 +156,11 @@ module PricingPlans
     end
     
     def limits(key=nil, **options)
-      return @limits if key.nil?
-      set_limit(key, **options)
+      if key.nil?
+        @limits
+      else
+        set_limit(key, **options)
+      end
     end
     
     def limit(key, **options)

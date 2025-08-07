@@ -47,8 +47,8 @@ GEM
     language_server-protocol (3.17.0.5)
     lint_roller (1.1.0)
     logger (1.7.0)
-    mini_portile2 (2.8.9)
     minitest (5.25.5)
+    ostruct (0.6.3)
     parallel (1.27.0)
     parser (3.3.9.0)
       ast (~> 2.4.1)
@@ -93,8 +93,6 @@ GEM
       rubocop-ast (>= 1.38.0, < 2.0)
     ruby-progressbar (1.13.0)
     securerandom (0.4.1)
-    sqlite3 (2.7.3)
-      mini_portile2 (~> 2.8.0)
     sqlite3 (2.7.3-arm64-darwin)
     stringio (3.1.7)
     timeout (0.4.3)
@@ -107,12 +105,12 @@ GEM
 
 PLATFORMS
   arm64-darwin-24
-  ruby
 
 DEPENDENCIES
   bundler (~> 2.0)
   irb
   minitest (~> 5.0)
+  ostruct
   pricing_plans!
   rake (~> 13.0)
   rubocop (~> 1.0)

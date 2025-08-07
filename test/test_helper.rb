@@ -192,6 +192,10 @@ class ActiveSupport::TestCase
     super
     setup_test_plans
     
+    # Re-register model counters after configuration reset
+    Project.send(:limited_by, :projects, billable: :organization) if Project.respond_to?(:limited_by)
+    CustomModel.send(:limited_by, :custom_models, billable: :organization, per: :month) if CustomModel.respond_to?(:limited_by)
+    
     # Clean up between tests
     PricingPlans::EnforcementState.destroy_all
     PricingPlans::Usage.destroy_all

@@ -9,8 +9,7 @@ module PricingPlans
     validates :limit_key, presence: true
     validates :period_start, :period_end, presence: true
     validates :used, presence: true, numericality: { greater_than_or_equal_to: 0 }
-    validates :billable_type, :billable_id, :limit_key, :period_start, 
-              uniqueness: { scope: [:billable_type, :billable_id, :limit_key] }
+    validates :period_start, uniqueness: { scope: [:billable_type, :billable_id, :limit_key] }
     
     validate :period_end_after_start
     
@@ -22,8 +21,7 @@ module PricingPlans
     
     def increment!(amount = 1)
       increment(:used, amount)
-      self.last_used_at = Time.current
-      save!
+      update!(last_used_at: Time.current)
     end
     
     def within_period?(timestamp = Time.current)

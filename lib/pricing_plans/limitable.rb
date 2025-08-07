@@ -38,8 +38,6 @@ module PricingPlans
         validate_limit_on_create(limit_key, billable_method, per)
       end
       
-      private
-      
       def count_for_billable(billable_instance, billable_method)
         # Count all non-destroyed records for this billable
         joins_condition = if billable_method == :self
@@ -51,49 +49,56 @@ module PricingPlans
         where(joins_condition).count
       end
       
+      private
+      
       def validate_limit_on_create(limit_key, billable_method, per)
-        validate :check_limit_on_create, on: :create
+        method_name = :"check_limit_on_create_#{limit_key}"
         
-        define_method :check_limit_on_create do
-          billable_instance = if billable_method == :self
-            self
-          else
-            send(billable_method)
-          end
+        # Only define the method if it doesn't already exist
+        unless method_defined?(method_name)
+          validate method_name, on: :create
           
-          return unless billable_instance
-          
-          # Skip validation if the billable doesn't have limits configured
-          plan = PlanResolver.effective_plan_for(billable_instance)
-          limit_config = plan&.limit_for(limit_key)
-          return unless limit_config
-          return if limit_config[:to] == :unlimited
-          
-          # For persistent caps, check if we'd exceed the limit
-          if per.nil?
-            current_count = self.class.count_for_billable(billable_instance, billable_method)
-            if current_count >= limit_config[:to]
-              # Check grace/block policy
-              case limit_config[:after_limit]
-              when :just_warn
-                # Allow creation with warning
-                return
-              when :block_usage, :grace_then_block
-                if GraceManager.should_block?(billable_instance, limit_key)
-                  errors.add(:base, "Cannot create #{self.class.name.downcase}: #{limit_key} limit exceeded")
+          define_method method_name do
+            billable_instance = if billable_method == :self
+              self
+            else
+              send(billable_method)
+            end
+            
+            return unless billable_instance
+            
+            # Skip validation if the billable doesn't have limits configured
+            plan = PlanResolver.effective_plan_for(billable_instance)
+            limit_config = plan&.limit_for(limit_key)
+            return unless limit_config
+            return if limit_config[:to] == :unlimited
+            
+            # For persistent caps, check if we'd exceed the limit
+            if per.nil?
+              current_count = self.class.count_for_billable(billable_instance, billable_method)
+              if current_count >= limit_config[:to]
+                # Check grace/block policy
+                case limit_config[:after_limit]
+                when :just_warn
+                  # Allow creation with warning
+                  return
+                when :block_usage, :grace_then_block
+                  if GraceManager.should_block?(billable_instance, limit_key)
+                    errors.add(:base, "Cannot create #{self.class.name.downcase}: #{limit_key} limit exceeded")
+                  end
                 end
               end
-            end
-          else
-            # For per-period limits, check usage in current period
-            current_usage = LimitChecker.current_usage_for(billable_instance, limit_key, limit_config)
-            if current_usage >= limit_config[:to]
-              case limit_config[:after_limit]
-              when :just_warn
-                return
-              when :block_usage, :grace_then_block
-                if GraceManager.should_block?(billable_instance, limit_key)
-                  errors.add(:base, "Cannot create #{self.class.name.downcase}: #{limit_key} limit exceeded for this period")
+            else
+              # For per-period limits, check usage in current period
+              current_usage = LimitChecker.current_usage_for(billable_instance, limit_key, limit_config)
+              if current_usage >= limit_config[:to]
+                case limit_config[:after_limit]
+                when :just_warn
+                  return
+                when :block_usage, :grace_then_block
+                  if GraceManager.should_block?(billable_instance, limit_key)
+                    errors.add(:base, "Cannot create #{self.class.name.downcase}: #{limit_key} limit exceeded for this period")
+                  end
                 end
               end
             end

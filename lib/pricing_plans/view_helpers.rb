@@ -10,10 +10,8 @@ module PricingPlans
       css_classes << html_options.delete(:class) if html_options[:class]
       
       content_tag :div, class: css_classes.join(" "), **html_options do
-        content_tag :span, result.icon, class: "pricing-plans-banner__icon" do
-          result.icon
-        end +
-        content_tag :span, result.message, class: "pricing-plans-banner__message"
+        content_tag(:span, result.icon, class: "pricing-plans-banner__icon") +
+        content_tag(:span, result.message, class: "pricing-plans-banner__message")
       end
     rescue FeatureDenied
       # No banner for feature denials

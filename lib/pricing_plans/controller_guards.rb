@@ -2,6 +2,8 @@
 
 module PricingPlans
   module ControllerGuards
+    extend self
+    
     def require_plan_limit!(limit_key, billable:, by: 1)
       plan = PlanResolver.effective_plan_for(billable)
       limit_config = plan&.limit_for(limit_key)
@@ -105,6 +107,8 @@ module PricingPlans
     def handle_grace_then_block(billable, limit_key, current_usage, limit_amount, limit_config)
       # Check if already in grace or blocked
       if GraceManager.should_block?(billable, limit_key)
+        # Mark as blocked if not already blocked
+        GraceManager.mark_blocked!(billable, limit_key)
         blocked_message = build_over_limit_message(limit_key, current_usage, limit_amount, :blocked)
         Result.blocked(blocked_message, limit_key: limit_key, billable: billable)
       elsif GraceManager.grace_active?(billable, limit_key)
@@ -163,13 +167,13 @@ module PricingPlans
       
       case distance
       when 0...60
-        "#{distance.to_i} seconds"
+        "#{distance.round} seconds"
       when 60...3600
-        "#{(distance / 60).to_i} minutes"
+        "#{(distance / 60).round} minutes"
       when 3600...86400
-        "#{(distance / 3600).to_i} hours"
+        "#{(distance / 3600).round} hours"
       else
-        "#{(distance / 86400).to_i} days"
+        "#{(distance / 86400).round} days"
       end
     end
   end

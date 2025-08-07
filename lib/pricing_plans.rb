@@ -46,6 +46,7 @@ module PricingPlans
     def reset_configuration!
       @configuration = nil
       Registry.clear!
+      LimitableRegistry.clear!
     end
     
     def registry

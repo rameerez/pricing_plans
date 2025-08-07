@@ -1,8 +1,15 @@
 # frozen_string_literal: true
 
 require "test_helper"
+require "active_support/testing/time_helpers"
 
 class PeriodCalculatorTest < ActiveSupport::TestCase
+  include ActiveSupport::Testing::TimeHelpers
+  
+  def teardown
+    super
+    travel_back
+  end
   def test_billing_cycle_with_active_subscription
     org = create_organization(
       pay_subscription: { 
@@ -11,10 +18,18 @@ class PeriodCalculatorTest < ActiveSupport::TestCase
       }
     )
     
-    # Mock subscription with period dates
-    subscription = org.subscription
-    subscription.define_singleton_method(:current_period_start) { Time.parse("2025-01-01 00:00:00 UTC") }
-    subscription.define_singleton_method(:current_period_end) { Time.parse("2025-02-01 00:00:00 UTC") }
+    # Create a proper mock subscription object
+    mock_subscription = Object.new
+    mock_subscription.define_singleton_method(:processor_plan) { "price_pro_123" }
+    mock_subscription.define_singleton_method(:active?) { true }
+    mock_subscription.define_singleton_method(:on_trial?) { false }
+    mock_subscription.define_singleton_method(:on_grace_period?) { false }
+    mock_subscription.define_singleton_method(:current_period_start) { Time.parse("2025-01-01 00:00:00 UTC") }
+    mock_subscription.define_singleton_method(:current_period_end) { Time.parse("2025-02-01 00:00:00 UTC") }
+    mock_subscription.define_singleton_method(:created_at) { 2.months.ago }
+    
+    # Override the subscription method to return our mock
+    org.define_singleton_method(:subscription) { mock_subscription }
     
     period_start, period_end = PricingPlans::PeriodCalculator.window_for(org, :projects)
     
@@ -148,7 +163,7 @@ class PeriodCalculatorTest < ActiveSupport::TestCase
       config.default_plan = :free
       config.period_cycle = :billing_cycle  # Global default
       
-      plan :free do
+      config.plan :free do
         price 0
         limits :custom_models, to: 3, per: :calendar_month  # Override for this limit
       end
@@ -173,11 +188,17 @@ class PeriodCalculatorTest < ActiveSupport::TestCase
       }
     )
     
-    # Mock subscription without period start/end but with created_at
-    subscription = org.subscription
-    subscription.define_singleton_method(:current_period_start) { nil }
-    subscription.define_singleton_method(:current_period_end) { nil }
-    subscription.define_singleton_method(:created_at) { Time.parse("2025-01-01 00:00:00 UTC") }
+    # Create a proper mock subscription object without period start/end
+    mock_subscription = Object.new
+    mock_subscription.define_singleton_method(:processor_plan) { "price_pro_123" }
+    mock_subscription.define_singleton_method(:active?) { true }
+    mock_subscription.define_singleton_method(:on_trial?) { false }
+    mock_subscription.define_singleton_method(:on_grace_period?) { false }
+    mock_subscription.define_singleton_method(:respond_to?) { |method| [:created_at, :processor_plan, :active?, :on_trial?, :on_grace_period?].include?(method) }
+    mock_subscription.define_singleton_method(:created_at) { Time.parse("2025-01-01 00:00:00 UTC") }
+    
+    # Override the subscription method to return our mock
+    org.define_singleton_method(:subscription) { mock_subscription }
     
     travel_to_time(Time.parse("2025-01-15 12:00:00 UTC")) do
       period_start, period_end = PricingPlans::PeriodCalculator.window_for(org, :projects)
@@ -196,10 +217,17 @@ class PeriodCalculatorTest < ActiveSupport::TestCase
       }
     )
     
-    subscription = org.subscription
-    subscription.define_singleton_method(:current_period_start) { nil }
-    subscription.define_singleton_method(:current_period_end) { nil }
-    subscription.define_singleton_method(:created_at) { Time.parse("2024-11-15 00:00:00 UTC") }
+    # Create a proper mock subscription object
+    mock_subscription = Object.new
+    mock_subscription.define_singleton_method(:processor_plan) { "price_pro_123" }
+    mock_subscription.define_singleton_method(:active?) { true }
+    mock_subscription.define_singleton_method(:on_trial?) { false }
+    mock_subscription.define_singleton_method(:on_grace_period?) { false }
+    mock_subscription.define_singleton_method(:respond_to?) { |method| [:created_at, :processor_plan, :active?, :on_trial?, :on_grace_period?].include?(method) }
+    mock_subscription.define_singleton_method(:created_at) { Time.parse("2024-11-15 00:00:00 UTC") }
+    
+    # Override the subscription method to return our mock
+    org.define_singleton_method(:subscription) { mock_subscription }
     
     travel_to_time(Time.parse("2025-01-20 12:00:00 UTC")) do
       period_start, period_end = PricingPlans::PeriodCalculator.window_for(org, :projects)

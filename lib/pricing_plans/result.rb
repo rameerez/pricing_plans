@@ -22,6 +22,8 @@ module PricingPlans
       @state == :within
     end
     
+    alias_method :within?, :ok?
+    
     def warning?
       @state == :warning
     end

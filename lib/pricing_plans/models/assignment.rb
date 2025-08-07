@@ -6,9 +6,10 @@ module PricingPlans
     
     belongs_to :billable, polymorphic: true
     
+    validates :billable, presence: true
     validates :plan_key, presence: true
     validates :source, presence: true
-    validates :billable_type, :billable_id, uniqueness: true
+    validates :billable_type, uniqueness: { scope: :billable_id }
     
     validate :plan_exists_in_registry
     

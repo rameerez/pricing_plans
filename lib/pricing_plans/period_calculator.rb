@@ -139,12 +139,18 @@ module PricingPlans
         
         start_time, end_time = window
         
-        unless start_time.respond_to?(:to_time) && end_time.respond_to?(:to_time)
+        unless start_time&.respond_to?(:to_time) && end_time&.respond_to?(:to_time)
           raise ConfigurationError, "Custom period window times must respond to :to_time"
         end
         
-        if end_time.to_time <= start_time.to_time
-          raise ConfigurationError, "Custom period end_time must be after start_time"
+        begin
+          start_time_converted = start_time.respond_to?(:to_time) ? start_time.to_time : Time.parse(start_time.to_s)
+          end_time_converted = end_time.respond_to?(:to_time) ? end_time.to_time : Time.parse(end_time.to_s)
+          if end_time_converted <= start_time_converted
+            raise ConfigurationError, "Custom period end_time must be after start_time"
+          end
+        rescue NoMethodError
+          raise ConfigurationError, "Custom period window times must respond to :to_time"
         end
       end
     end
