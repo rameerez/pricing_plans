@@ -1,0 +1,7 @@
+<div class="pricing-plans-banner pricing-plans-banner--<%= result.state %>">
+  <span class="pricing-plans-banner__icon"><%= result.icon %></span>
+  <span class="pricing-plans-banner__message"><%= result.message %></span>
+  <% if result.blocked? || result.grace? %>
+    <%= link_to "Upgrade Plan", pricing_path, class: "pricing-plans-banner__cta" %>
+  <% end %>
+</div>

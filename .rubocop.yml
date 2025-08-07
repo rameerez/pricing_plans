@@ -1,0 +1,137 @@
+# frozen_string_literal: true
+
+require:
+  - rubocop-minitest
+  - rubocop-performance
+
+AllCops:
+  TargetRubyVersion: 3.2
+  NewCops: enable
+  Exclude:
+    - 'bin/**/*'
+    - 'vendor/**/*'
+    - 'test/dummy/**/*'
+    - 'db/migrate/**/*'  # Generated migrations
+    - 'lib/generators/**/templates/**/*'  # Generator templates
+
+# Layout & Formatting
+Layout/LineLength:
+  Max: 120
+  AllowedPatterns: 
+    - '\s*#.*'  # Allow long comments
+    - '^\s*raise\s'  # Allow long raise statements
+
+Layout/MultilineMethodCallIndentation:
+  EnforcedStyle: indented
+
+Layout/ArgumentAlignment:
+  EnforcedStyle: with_first_argument
+
+Layout/FirstArgumentIndentation:
+  EnforcedStyle: consistent
+
+# Style
+Style/Documentation:
+  Enabled: false  # Don't require class documentation for now
+
+Style/StringLiterals:
+  EnforcedStyle: double_quotes
+
+Style/FrozenStringLiteralComment:
+  Enabled: true
+  EnforcedStyle: always
+
+Style/ClassAndModuleChildren:
+  EnforcedStyle: compact
+
+Style/GuardClause:
+  MinBodyLength: 3
+
+# Metrics
+Metrics/ClassLength:
+  Max: 150
+
+Metrics/ModuleLength:
+  Max: 150
+
+Metrics/MethodLength:
+  Max: 25
+  AllowedMethods:
+    - 'configure'  # Configuration blocks can be longer
+
+Metrics/BlockLength:
+  Max: 25
+  AllowedMethods:
+    - 'configure'
+    - 'describe'
+    - 'context' 
+    - 'it'
+    - 'test'
+  Exclude:
+    - 'test/**/*'  # Allow long test blocks
+
+Metrics/AbcSize:
+  Max: 20
+  AllowedMethods:
+    - 'configure'
+
+Metrics/CyclomaticComplexity:
+  Max: 8
+
+Metrics/PerceivedComplexity:
+  Max: 10
+
+# Naming
+Naming/PredicateName:
+  ForbiddenPrefixes:
+    - 'is_'
+  AllowedMethods:
+    - 'is_a?'
+
+# Performance
+Performance/StringReplacement:
+  Enabled: true
+
+Performance/RedundantMerge:
+  Enabled: true
+
+# Minitest
+Minitest/MultipleAssertions:
+  Enabled: false  # Allow multiple assertions in integration tests
+
+Minitest/AssertTruthy:
+  Enabled: false  # Allow assert instead of assert_equal true
+
+# Rails-specific (even though we don't have full Rails)
+Style/Rails/HttpStatus:
+  Enabled: false
+
+# Custom overrides for this gem
+Style/AccessorGrouping:
+  Enabled: false  # Allow separate attr_reader/attr_writer
+
+Style/MutableConstant:
+  Enabled: false  # We have some intentionally mutable constants
+
+# Allow class variables for registry pattern
+Style/ClassVars:
+  Enabled: false
+
+# Allow metaprogramming patterns common in Rails engines
+Style/EvalWithLocation:
+  Enabled: false
+
+Lint/MissingSuper:
+  Enabled: false  # Allow classes that don't call super
+
+# Disable some cops that don't work well with our DSL
+Style/MethodCallWithoutArgsParentheses:
+  Enabled: false  # Our DSL looks better without parens
+
+# Thread safety
+Style/GlobalVars:
+  AllowedVariables: ['$0']  # Only allow program name
+
+# Database-related
+Style/NumericLiterals:
+  Enabled: false  # Allow raw numbers in database IDs/amounts

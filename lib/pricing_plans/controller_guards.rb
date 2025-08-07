@@ -1,0 +1,176 @@
+# frozen_string_literal: true
+
+module PricingPlans
+  module ControllerGuards
+    def require_plan_limit!(limit_key, billable:, by: 1)
+      plan = PlanResolver.effective_plan_for(billable)
+      limit_config = plan&.limit_for(limit_key)
+      
+      # If no limit is configured, allow the action
+      unless limit_config
+        return Result.within("No limit configured for #{limit_key}")
+      end
+      
+      # Check if unlimited
+      if limit_config[:to] == :unlimited
+        return Result.within("Unlimited #{limit_key}")
+      end
+      
+      # Check current usage and remaining capacity
+      current_usage = LimitChecker.current_usage_for(billable, limit_key, limit_config)
+      limit_amount = limit_config[:to]
+      remaining = limit_amount - current_usage
+      
+      # Check if this action would exceed the limit
+      would_exceed = remaining < by
+      
+      if would_exceed
+        # Handle exceeded limit based on after_limit policy
+        case limit_config[:after_limit]
+        when :just_warn
+          handle_warning_only(billable, limit_key, current_usage, limit_amount)
+        when :block_usage
+          handle_immediate_block(billable, limit_key, current_usage, limit_amount)
+        when :grace_then_block
+          handle_grace_then_block(billable, limit_key, current_usage, limit_amount, limit_config)
+        else
+          Result.blocked("Unknown after_limit policy: #{limit_config[:after_limit]}")
+        end
+      else
+        # Within limit - check for warnings
+        handle_within_limit(billable, limit_key, current_usage, limit_amount, by)
+      end
+    end
+    
+    def require_feature!(feature_key, billable:)
+      plan = PlanResolver.effective_plan_for(billable)
+      
+      unless plan&.allows_feature?(feature_key)
+        highlighted_plan = Registry.highlighted_plan
+        upgrade_message = if highlighted_plan
+          "Upgrade to #{highlighted_plan.name} to access #{feature_key.to_s.humanize}"
+        else
+          "#{feature_key.to_s.humanize} is not available on your current plan"
+        end
+        
+        raise FeatureDenied, upgrade_message
+      end
+      
+      true
+    end
+    
+    private
+    
+    def handle_within_limit(billable, limit_key, current_usage, limit_amount, by)
+      # Check for warning thresholds
+      percent_after_action = ((current_usage + by).to_f / limit_amount) * 100
+      warning_thresholds = LimitChecker.warning_thresholds(billable, limit_key)
+      
+      crossed_threshold = warning_thresholds.find do |threshold|
+        threshold_percent = threshold * 100
+        current_percent = (current_usage.to_f / limit_amount) * 100
+        
+        # Threshold will be crossed by this action
+        current_percent < threshold_percent && percent_after_action >= threshold_percent
+      end
+      
+      if crossed_threshold
+        # Emit warning event
+        GraceManager.maybe_emit_warning!(billable, limit_key, crossed_threshold)
+        
+        remaining = limit_amount - current_usage - by
+        warning_message = build_warning_message(limit_key, remaining, limit_amount)
+        
+        Result.warning(warning_message, limit_key: limit_key, billable: billable)
+      else
+        remaining = limit_amount - current_usage - by
+        Result.within("#{remaining} #{limit_key.to_s.humanize.downcase} remaining")
+      end
+    end
+    
+    def handle_warning_only(billable, limit_key, current_usage, limit_amount)
+      warning_message = build_over_limit_message(limit_key, current_usage, limit_amount, :warning)
+      Result.warning(warning_message, limit_key: limit_key, billable: billable)
+    end
+    
+    def handle_immediate_block(billable, limit_key, current_usage, limit_amount)
+      blocked_message = build_over_limit_message(limit_key, current_usage, limit_amount, :blocked)
+      
+      # Mark as blocked immediately
+      GraceManager.mark_blocked!(billable, limit_key)
+      
+      Result.blocked(blocked_message, limit_key: limit_key, billable: billable)
+    end
+    
+    def handle_grace_then_block(billable, limit_key, current_usage, limit_amount, limit_config)
+      # Check if already in grace or blocked
+      if GraceManager.should_block?(billable, limit_key)
+        blocked_message = build_over_limit_message(limit_key, current_usage, limit_amount, :blocked)
+        Result.blocked(blocked_message, limit_key: limit_key, billable: billable)
+      elsif GraceManager.grace_active?(billable, limit_key)
+        # Already in grace period
+        grace_ends_at = GraceManager.grace_ends_at(billable, limit_key)
+        grace_message = build_grace_message(limit_key, current_usage, limit_amount, grace_ends_at)
+        Result.grace(grace_message, limit_key: limit_key, billable: billable)
+      else
+        # Start grace period
+        GraceManager.mark_exceeded!(billable, limit_key, grace_period: limit_config[:grace])
+        grace_ends_at = GraceManager.grace_ends_at(billable, limit_key)
+        grace_message = build_grace_message(limit_key, current_usage, limit_amount, grace_ends_at)
+        Result.grace(grace_message, limit_key: limit_key, billable: billable)
+      end
+    end
+    
+    def build_warning_message(limit_key, remaining, limit_amount)
+      resource_name = limit_key.to_s.humanize.downcase
+      "You have #{remaining} #{resource_name} remaining out of #{limit_amount}"
+    end
+    
+    def build_over_limit_message(limit_key, current_usage, limit_amount, severity)
+      resource_name = limit_key.to_s.humanize.downcase
+      highlighted_plan = Registry.highlighted_plan
+      
+      base_message = "You've reached your limit of #{limit_amount} #{resource_name} (currently using #{current_usage})"
+      
+      if highlighted_plan
+        upgrade_cta = "Upgrade to #{highlighted_plan.name} for higher limits"
+        "#{base_message}. #{upgrade_cta}"
+      else
+        base_message
+      end
+    end
+    
+    def build_grace_message(limit_key, current_usage, limit_amount, grace_ends_at)
+      resource_name = limit_key.to_s.humanize.downcase
+      highlighted_plan = Registry.highlighted_plan
+      
+      time_remaining = time_ago_in_words(grace_ends_at)
+      base_message = "You've exceeded your limit of #{limit_amount} #{resource_name}. " \
+                    "You have #{time_remaining} remaining in your grace period"
+      
+      if highlighted_plan
+        upgrade_cta = "Upgrade to #{highlighted_plan.name} to avoid service interruption"
+        "#{base_message}. #{upgrade_cta}"
+      else
+        base_message
+      end
+    end
+    
+    def time_ago_in_words(future_time)
+      return "no time" if future_time <= Time.current
+      
+      distance = future_time - Time.current
+      
+      case distance
+      when 0...60
+        "#{distance.to_i} seconds"
+      when 60...3600
+        "#{(distance / 60).to_i} minutes"
+      when 3600...86400
+        "#{(distance / 3600).to_i} hours"
+      else
+        "#{(distance / 86400).to_i} days"
+      end
+    end
+  end
+end

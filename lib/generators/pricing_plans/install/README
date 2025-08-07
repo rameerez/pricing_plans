@@ -1,0 +1,39 @@
+===============================================================================
+
+PricingPlans has been installed successfully!
+
+Next steps:
+
+1. Run the migrations:
+   rails db:migrate
+
+2. Edit the initializer to define your plans:
+   config/initializers/pricing_plans.rb
+
+3. Add the Limitable mixin to models that should be limited:
+   
+   class Product < ApplicationRecord
+     belongs_to :organization
+     include PricingPlans::Limitable
+     limited_by :products, billable: :organization
+   end
+
+4. Add controller guards to enforce limits:
+   
+   require_feature! :api_access, billable: current_organization
+   
+   result = require_plan_limit! :products, billable: current_organization
+   redirect_to pricing_path if result.blocked?
+
+5. Optional: Add view helpers for pricing tables and usage meters:
+   
+   rails generate pricing_plans:pricing
+   
+6. Optional: Set up mailers for limit notifications:
+   
+   rails generate pricing_plans:mailers
+
+For complete documentation, visit:
+https://github.com/rameerez/pricing_plans
+
+===============================================================================

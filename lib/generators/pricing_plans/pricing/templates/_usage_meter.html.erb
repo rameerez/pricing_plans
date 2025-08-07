@@ -1,0 +1,20 @@
+<div class="pricing-plans-meter">
+  <div class="pricing-plans-meter__label">
+    <%= limit_key.to_s.humanize %>: 
+    <%= current_usage %> / 
+    <% if limit_amount == :unlimited %>
+      Unlimited
+    <% else %>
+      <%= limit_amount %>
+    <% end %>
+  </div>
+  
+  <% unless limit_amount == :unlimited %>
+    <div class="pricing-plans-meter__bar">
+      <div class="pricing-plans-meter__fill" 
+           style="width: <%= [percent_used, 100].min %>%"
+           data-percent="<%= percent_used %>">
+      </div>
+    </div>
+  <% end %>
+</div>
