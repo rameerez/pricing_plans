@@ -1,14 +1,34 @@
-# 💰 PricingPlans
+# 💵 `pricing_plans` - Define and enforce pricing plan limits in your Rails app
 
 [![Gem Version](https://badge.fury.io/rb/pricing_plans.svg)](https://badge.fury.io/rb/pricing_plans)
 
-**Plan catalog + enforcement brain for Rails SaaS applications**
+`pricing_plans` is the single source of truth for pricing plans and plan limits in your Rails apps. It provides methods you can use across your app to consistently check whether users can perform an action based on the plan they're subscribed to.
 
-Define plans, feature flags, and limits with grace periods in one Ruby file. Integrates seamlessly with Pay and usage_credits for a complete billing solution.
+Define plans and their limits like:
+```ruby
+plan :pro do
+  limits :posts, to: 5.max
 
-## ✨ What This Gem Does
+  allows :api_access
+end
+```
 
-`pricing_plans` is your **plan catalog + enforcement brain** for Rails apps. In **one Ruby file**, you define:
+Then, in your controller, you can easily check and gate features:
+```ruby
+require_feature! :api_access
+```
+
+And, in your models, you can check models stay within plan limits:
+```ruby
+class Post < ApplicationRecord
+  limited_by_plan
+end
+```
+
+
+`pricing_plans` helps you stop reimplementing feature gating and duplicating code across your entire codebase.
+
+In **one Ruby file**, you define:
 
 - **Plans** (name, description, bullets, Stripe price link, optional display price)
 - **Feature flags** (booleans)  
