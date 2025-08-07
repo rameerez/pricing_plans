@@ -4,6 +4,61 @@ module PricingPlans
   module ControllerGuards
     extend self
 
+    # When included into a controller, provide dynamic helpers and callbacks
+    def self.included(base)
+      if base.respond_to?(:class_attribute)
+        base.class_attribute :pricing_plans_billable_method, instance_accessor: false, default: nil
+      end
+
+      base.define_singleton_method(:pricing_plans_billable) do |method_name = nil, &block|
+        if method_name
+          self.pricing_plans_billable_method = method_name.to_sym
+        elsif block_given?
+          define_method(:_pricing_plans_billable_from_block, &block)
+          self.pricing_plans_billable_method = :_pricing_plans_billable_from_block
+        else
+          self.pricing_plans_billable_method
+        end
+      end if base.respond_to?(:define_singleton_method)
+
+      base.define_method(:pricing_plans_billable) do
+        # 1) Explicit per-controller configuration wins
+        if self.class.respond_to?(:pricing_plans_billable_method) && self.class.pricing_plans_billable_method
+          return send(self.class.pricing_plans_billable_method)
+        end
+
+        # 2) Infer from configured billable class (current_organization, etc.)
+        billable_klass = PricingPlans::Registry.billable_class rescue nil
+        if billable_klass
+          inferred = "current_#{billable_klass.name.underscore}"
+          return send(inferred) if respond_to?(inferred)
+        end
+
+        # 3) Common conventions
+        %i[current_organization current_account current_user current_team current_company current_workspace current_tenant].each do |meth|
+          return send(meth) if respond_to?(meth)
+        end
+
+        raise PricingPlans::ConfigurationError, "Unable to infer billable for controller. Set `self.pricing_plans_billable_method = :current_organization` or provide a block via `pricing_plans_billable { ... }`."
+      end if base.respond_to?(:define_method)
+
+      # Dynamic enforce_*! feature guards for before_action ergonomics
+      base.define_method(:method_missing) do |method_name, *args, &block|
+        if method_name.to_s =~ /^enforce_(.+)!$/
+          feature_key = Regexp.last_match(1).to_sym
+          options = args.first.is_a?(Hash) ? args.first : {}
+          billable = options[:billable] || (respond_to?(:pricing_plans_billable) ? pricing_plans_billable : nil)
+          require_feature!(feature_key, billable: billable)
+          return true
+        end
+        super(method_name, *args, &block)
+      end if base.respond_to?(:define_method)
+
+      base.define_method(:respond_to_missing?) do |method_name, include_private = false|
+        (method_name.to_s.start_with?("enforce_") && method_name.to_s.end_with?("!")) || super(method_name, include_private)
+      end if base.respond_to?(:define_method)
+    end
+
     def require_plan_limit!(limit_key, billable:, by: 1)
       plan = PlanResolver.effective_plan_for(billable)
       limit_config = plan&.limit_for(limit_key)
