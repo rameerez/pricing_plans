@@ -109,6 +109,23 @@ Behavior:
 - Per-period allowances increment a usage record for the window; when over, behavior follows the same `after_limit` policy.
 - Prefer declaring limits on the billable model. The child model wiring is injected automatically.
 
+Advanced associations (fully supported):
+
+- Custom `class_name:` and `foreign_key:` on `has_many`.
+- Namespaced child models (e.g., `class_name: "Deeply::NestedResource"`).
+- Explicit `limit_key:` if you want a different key than the association name.
+
+Child-side macro (optional):
+
+```ruby
+class Project < ApplicationRecord
+  belongs_to :organization
+  include PricingPlans::Limitable
+  limited_by_pricing_plans :projects, on: :organization, error_after_limit: "Too many projects!"
+end
+```
+We recommend the billable-centric style for the cleanest DX.
+
 ## Billable-centric API (reads like English)
 
 The configured billable class (e.g., `Organization`) automatically gains these helpers:
@@ -119,6 +136,23 @@ org.plan_limit_remaining(:projects)              # => integer or :unlimited
 org.plan_limit_percent_used(:projects)           # => Float percent
 org.remaining(:projects)                         # alias of plan_limit_remaining
 org.percent_used(:projects)                      # alias of plan_limit_percent_used
+# English-y sugar (generated from has_many :<limit_key>)
+org.projects_within_plan_limits?(by: 1)
+org.projects_remaining
+org.projects_percent_used
+org.projects_grace_active?
+org.projects_grace_ends_at
+org.projects_blocked?
+```
+
+Naming patterns (auto-generated from `has_many :<limit_key>`):
+
+- `<limit_key>_within_plan_limits?(by: 1)`
+- `<limit_key>_remaining`
+- `<limit_key>_percent_used`
+- `<limit_key>_grace_active?`
+- `<limit_key>_grace_ends_at`
+- `<limit_key>_blocked?`
 org.current_pricing_plan                         # => PricingPlans::Plan
 org.assign_pricing_plan!(:pro)                   # manual assignment override
 org.remove_pricing_plan!                         # remove manual override (fallback to default)
@@ -239,7 +273,7 @@ Notes:
 
 ### Pay (Stripe)
 
-We only read Pay; we never wrap or modify Pay’s API or models.
+We only read Pay; we never wrap or modify Pay’s API or models. See `.docs/gems/pay.md` for Pay’s official API and helpers.
 
 - What we read on your billable:
   - `subscribed?`, `on_trial?`, `on_grace_period?`
@@ -272,6 +306,15 @@ Fire once per threshold per window, and once at grace start/block. You own the s
 - `rails g pricing_plans:pricing` — pricing controller + partials + CSS.
 - `rails g pricing_plans:mailers` — mailer stubs (optional).
 
+## Complex names and associations
+
+We test and support:
+
+- Custom `class_name:` and `foreign_key:` on `has_many`.
+- Namespaced child classes (e.g., `Deeply::NestedResource`).
+- Late definition of child classes (limits and sugar wire up when the constant resolves).
+- Explicit `limit_key:` to decouple the key from the association name.
+
 ## Schema
 
 - `pricing_plans_enforcement_states` — per-billable per-limit grace state.
@@ -286,7 +329,7 @@ Fire once per threshold per window, and once at grace start/block. You own the s
 
 ## Testing
 
-The gem ships with comprehensive Minitest coverage for plans, registry, plan resolution, limit checking, grace manager, model mixins, controller guards (including `for:`), dynamic callbacks, and view helpers. We test grace semantics, thresholds, concurrency/idempotency, custom error messages, and edge cases.
+The gem ships with comprehensive Minitest coverage for plans, registry, plan resolution, limit checking, grace manager, model mixins, association-based DSL, controller guards (including `for:`), dynamic callbacks, and view helpers. We test grace semantics, thresholds, concurrency/idempotency, custom error messages, complex associations, late binding, naming, and edge cases.
 
 ## License
 

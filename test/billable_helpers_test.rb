@@ -13,6 +13,8 @@ class BillableHelpersTest < ActiveSupport::TestCase
         limits :projects, to: 1
       end
     end
+    # Re-register counters after reset
+    Project.send(:limited_by_pricing_plans, :projects, billable: :organization) if Project.respond_to?(:limited_by_pricing_plans)
   end
 
   def test_auto_includes_helpers_into_configured_billable
@@ -36,6 +38,28 @@ class BillableHelpersTest < ActiveSupport::TestCase
 
     # Smoke check a real call path
     assert_equal :free, org.current_pricing_plan.key
+  end
+
+  def test_englishy_sugar_methods_defined_from_associations
+    # Organization has has_many :projects in test schema via Project model
+    # Simulate declaration from billable side to define sugar methods
+    unless Organization.method_defined?(:projects_within_plan_limits?)
+      PricingPlans::Billable.define_limit_sugar_methods(Organization, :projects)
+    end
+
+    org = create_organization
+    assert_respond_to org, :projects_within_plan_limits?
+    assert_respond_to org, :projects_remaining
+    assert_respond_to org, :projects_percent_used
+    assert_respond_to org, :projects_grace_active?
+    assert_respond_to org, :projects_grace_ends_at
+    assert_respond_to org, :projects_blocked?
+
+    # Smoke-check calls
+    org.projects.create!(name: "P1")
+    assert_equal false, org.projects_within_plan_limits?(by: 1)
+    assert (org.projects_remaining.is_a?(Integer) || org.projects_remaining == :unlimited)
+    assert org.projects_percent_used.is_a?(Numeric)
   end
 
   def test_idempotent_inclusion_on_reconfigure

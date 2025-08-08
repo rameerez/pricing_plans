@@ -9,6 +9,54 @@ module PricingPlans
       base.singleton_class.prepend HasManyInterceptor
     end
 
+    # Define English-y sugar methods on the billable for a specific limit key.
+    # Idempotent: skips if methods already exist.
+    def self.define_limit_sugar_methods(billable_class, limit_key)
+      key = limit_key.to_sym
+      within_m = :"#{key}_within_plan_limits?"
+      remaining_m = :"#{key}_remaining"
+      percent_m = :"#{key}_percent_used"
+      grace_active_m = :"#{key}_grace_active?"
+      grace_ends_m = :"#{key}_grace_ends_at"
+      blocked_m = :"#{key}_blocked?"
+
+      unless billable_class.method_defined?(within_m)
+        billable_class.define_method(within_m) do |by: 1|
+          LimitChecker.within_limit?(self, key, by: by)
+        end
+      end
+
+      unless billable_class.method_defined?(remaining_m)
+        billable_class.define_method(remaining_m) do
+          LimitChecker.remaining(self, key)
+        end
+      end
+
+      unless billable_class.method_defined?(percent_m)
+        billable_class.define_method(percent_m) do
+          LimitChecker.percent_used(self, key)
+        end
+      end
+
+      unless billable_class.method_defined?(grace_active_m)
+        billable_class.define_method(grace_active_m) do
+          GraceManager.grace_active?(self, key)
+        end
+      end
+
+      unless billable_class.method_defined?(grace_ends_m)
+        billable_class.define_method(grace_ends_m) do
+          GraceManager.grace_ends_at(self, key)
+        end
+      end
+
+      unless billable_class.method_defined?(blocked_m)
+        billable_class.define_method(blocked_m) do
+          GraceManager.should_block?(self, key)
+        end
+      end
+    end
+
     module HasManyInterceptor
       def has_many(name, scope = nil, **options, &extension)
         limited_opts = options.delete(:limited_by_pricing_plans)
@@ -19,6 +67,9 @@ module PricingPlans
           limit_key = (config.delete(:limit_key) || name).to_sym
           per = config.delete(:per)
           error_after_limit = config.delete(:error_after_limit)
+
+          # Define English-y sugar methods on the billable immediately
+          PricingPlans::Billable.define_limit_sugar_methods(self, limit_key)
 
           begin
             assoc_reflection = reflect_on_association(name)

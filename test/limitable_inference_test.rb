@@ -54,6 +54,11 @@ class LimitableInferenceTest < ActiveSupport::TestCase
     assert Project.pricing_plans_limits.key?(:projects)
     assert_equal :organization, Project.pricing_plans_limits[:projects][:billable_method]
     assert_equal "Too many projects!", Project.pricing_plans_limits[:projects][:error_after_limit]
+
+    # The billable should expose sugar methods
+    inst = org_class.new
+    assert_respond_to inst, :projects_within_plan_limits?
+    assert_respond_to inst, :projects_remaining
   ensure
     Object.send(:remove_const, klass_name.to_sym) if Object.const_defined?(klass_name.to_sym)
   end
