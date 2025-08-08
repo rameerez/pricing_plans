@@ -9,3 +9,7 @@
 
 .aux/
 .docs/
+
+.vscode/
+.cursor/
+.claude/
