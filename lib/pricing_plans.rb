@@ -38,8 +38,13 @@ module PricingPlans
       @configuration ||= Configuration.new
     end
 
-    def configure
-      yield(configuration) if block_given?
+    def configure(&block)
+      # Support both styles simultaneously inside the block:
+      # - Bare DSL:   plan :free { ... }
+      # - Explicit:   config.plan :free { ... }
+      # We evaluate the block with self = configuration, while also
+      # passing the configuration object as the first block parameter.
+      configuration.instance_exec(configuration, &block) if block
       configuration.validate!
       Registry.build_from_configuration(configuration)
     end
