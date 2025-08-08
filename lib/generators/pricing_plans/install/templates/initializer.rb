@@ -1,5 +1,8 @@
 # frozen_string_literal: true
 
+# Enable pricing_plans DSL sugar like `1.max` within this initializer
+using PricingPlans::IntegerRefinements
+
 PricingPlans.configure do |config|
   # Required configuration
   # Set the billable class used in your app (e.g., "User", "Organization")

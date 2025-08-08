@@ -29,6 +29,9 @@ rails db:migrate
 Define your catalog in `config/initializers/pricing_plans.rb`:
 
 ```ruby
+# Enable DSL sugar like `1.max` in this initializer
+using PricingPlans::IntegerRefinements
+
 PricingPlans.configure do |config|
   config.billable_class   = "Organization"
   config.default_plan     = :free

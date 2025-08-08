@@ -44,6 +44,8 @@ module PricingPlans
       # - Explicit:   config.plan :free { ... }
       # We evaluate the block with self = configuration, while also
       # passing the configuration object as the first block parameter.
+      # Evaluate with self = configuration and also pass the configuration
+      # object as a block parameter for explicit calls (config.plan ...).
       configuration.instance_exec(configuration, &block) if block
       configuration.validate!
       Registry.build_from_configuration(configuration)
