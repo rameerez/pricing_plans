@@ -1,0 +1,91 @@
+# frozen_string_literal: true
+
+class CreatePricingPlansTables < ActiveRecord::Migration<%= migration_version %>
+  def change
+    primary_key_type, foreign_key_type = primary_and_foreign_key_types
+
+    create_table :pricing_plans_enforcement_states, id: primary_key_type do |t|
+      t.references :billable, polymorphic: true, null: false, type: foreign_key_type
+      t.string :limit_key, null: false
+      t.datetime :exceeded_at
+      t.datetime :blocked_at
+      t.decimal :last_warning_threshold, precision: 3, scale: 2
+      t.datetime :last_warning_at
+      t.send(json_column_type, :data, default: {})
+
+      t.timestamps
+    end
+
+    add_index :pricing_plans_enforcement_states,
+              [:billable_type, :billable_id, :limit_key],
+              unique: true,
+              name: "idx_pricing_plans_enforcement_unique"
+
+    add_index :pricing_plans_enforcement_states,
+              [:billable_type, :billable_id],
+              name: "idx_pricing_plans_enforcement_billable"
+
+    add_index :pricing_plans_enforcement_states,
+              :exceeded_at,
+              where: "exceeded_at IS NOT NULL",
+              name: "idx_pricing_plans_enforcement_exceeded"
+
+    create_table :pricing_plans_usages, id: primary_key_type do |t|
+      t.references :billable, polymorphic: true, null: false, type: foreign_key_type
+      t.string :limit_key, null: false
+      t.datetime :period_start, null: false
+      t.datetime :period_end, null: false
+      t.bigint :used, default: 0, null: false
+      t.datetime :last_used_at
+
+      t.timestamps
+    end
+
+    add_index :pricing_plans_usages,
+              [:billable_type, :billable_id, :limit_key, :period_start],
+              unique: true,
+              name: "idx_pricing_plans_usages_unique"
+
+    add_index :pricing_plans_usages,
+              [:billable_type, :billable_id],
+              name: "idx_pricing_plans_usages_billable"
+
+    add_index :pricing_plans_usages,
+              [:period_start, :period_end],
+              name: "idx_pricing_plans_usages_period"
+
+    create_table :pricing_plans_assignments, id: primary_key_type do |t|
+      t.references :billable, polymorphic: true, null: false, type: foreign_key_type
+      t.string :plan_key, null: false
+      t.string :source, null: false, default: "manual"
+
+      t.timestamps
+    end
+
+    add_index :pricing_plans_assignments,
+              [:billable_type, :billable_id],
+              unique: true,
+              name: "idx_pricing_plans_assignments_unique"
+
+    add_index :pricing_plans_assignments,
+              :plan_key,
+              name: "idx_pricing_plans_assignments_plan"
+  end
+
+  private
+
+  def primary_and_foreign_key_types
+    config = Rails.configuration.generators
+    setting = config.options[config.orm][:primary_key_type]
+    primary_key_type = setting || :primary_key
+    foreign_key_type = setting || :bigint
+    [primary_key_type, foreign_key_type]
+  end
+
+  def json_column_type
+    return :jsonb if connection.adapter_name.downcase.include?("postgresql")
+    :json
+  end
+end
+
+
