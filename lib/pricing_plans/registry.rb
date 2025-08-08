@@ -11,6 +11,7 @@ module PricingPlans
         validate_registry!
         lint_usage_credits_integration! if usage_credits_available?
         attach_billable_helpers!
+        attach_pending_association_limits!
 
         self
       end
@@ -106,6 +107,10 @@ module PricingPlans
         klass.include(PricingPlans::Billable)
       rescue StandardError
         # If billable class isn't available yet, skip silently.
+      end
+
+      def attach_pending_association_limits!
+        PricingPlans::AssociationLimitRegistry.flush_pending!
       end
 
       def validate_limit_consistency!

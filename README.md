@@ -74,7 +74,7 @@ PricingPlans.configure do |config|
 end
 ```
 
-## Models — limit with English
+## Models — limit with English (billable-centric)
 
 Two kinds of limits:
 
@@ -88,18 +88,15 @@ Syntactic sugar:
 - Customize the validation error message with `error_after_limit:`.
 
 ```ruby
-class Project < ApplicationRecord
-  belongs_to :organization
-  include PricingPlans::Limitable
-  # Persistent cap (key inferred as :projects). English-y billable, custom message on block:
-  limited_by_pricing_plans, on: :organization, error_after_limit: "Too many projects!"
-end
+class Organization < ApplicationRecord
+  include PricingPlans::Billable
 
-class CustomModel < ApplicationRecord
-  belongs_to :organization
-  include PricingPlans::Limitable
-  # Discrete per-period allowance
-  limited_by_pricing_plans :custom_models, on: :organization, per: :month
+  # Persistent cap (key inferred from association name). English-y and Rails-y.
+  has_many :projects, limited_by_pricing_plans: { error_after_limit: "Too many projects!" }, dependent: :destroy
+
+  # Discrete per-period allowance (explicit limit key, per-period, custom message)
+  has_many :custom_models,
+    limited_by_pricing_plans: { limit_key: :custom_models, per: :month, error_after_limit: "Monthly cap" }
 end
 ```
 
@@ -110,6 +107,7 @@ Behavior:
   - `:block_usage` → validation fails immediately (uses `error_after_limit` if set).
   - `:grace_then_block` → validation fails once grace is considered “blocked” (we track and switch from grace to blocked).
 - Per-period allowances increment a usage record for the window; when over, behavior follows the same `after_limit` policy.
+- Prefer declaring limits on the billable model. The child model wiring is injected automatically.
 
 ## Billable-centric API (reads like English)
 

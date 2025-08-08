@@ -25,6 +25,7 @@ module PricingPlans
   autoload :ViewHelpers, "pricing_plans/view_helpers"
   autoload :Limitable, "pricing_plans/limitable"
   autoload :Billable, "pricing_plans/billable"
+  autoload :AssociationLimitRegistry, "pricing_plans/association_limit_registry"
   autoload :Result, "pricing_plans/result"
 
   # Models
