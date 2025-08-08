@@ -87,5 +87,50 @@ module PricingPlans
     def remove_pricing_plan!
       Assignment.remove_assignment_for(self)
     end
+
+    # Features
+    def plan_allows?(feature_key)
+      plan = current_pricing_plan
+      plan&.allows_feature?(feature_key) || false
+    end
+
+    # Pay (Stripe) convenience wrappers (return false/nil if Pay not available)
+    # Pay (Stripe) state — billing-facing, NOT used by our enforcement logic
+    def pay_subscription_active?
+      PaySupport.subscription_active_for?(self)
+    end
+
+    def pay_on_trial?
+      sub = PaySupport.current_subscription_for(self)
+      !!(sub && sub.respond_to?(:on_trial?) && sub.on_trial?)
+    end
+
+    def pay_on_grace_period?
+      sub = PaySupport.current_subscription_for(self)
+      !!(sub && sub.respond_to?(:on_grace_period?) && sub.on_grace_period?)
+    end
+
+    # Per-limit grace helpers managed by PricingPlans
+    def grace_active_for?(limit_key)
+      GraceManager.grace_active?(self, limit_key)
+    end
+
+    def grace_ends_at_for(limit_key)
+      GraceManager.grace_ends_at(self, limit_key)
+    end
+
+    def grace_remaining_seconds_for(limit_key)
+      ends_at = grace_ends_at_for(limit_key)
+      return 0 unless ends_at
+      [0, (ends_at - Time.current).to_i].max
+    end
+
+    def grace_remaining_days_for(limit_key)
+      (grace_remaining_seconds_for(limit_key) / 86_400.0).ceil
+    end
+
+    def plan_blocked_for?(limit_key)
+      GraceManager.should_block?(self, limit_key)
+    end
   end
 end

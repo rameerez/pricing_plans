@@ -44,7 +44,7 @@ PricingPlans.configure do |config|
     price       0
     bullets     "25 end users", "1 product", "Community support"
 
-    limits  :products, to: 1.max, after_limit: :grace_then_block, grace: 10.days, warn_at: [0.6, 0.8, 0.95]
+    limits  :products, to: 1.max, after_limit: :block_usage
     disallows :api_access, :flux_hd_access
   end
 
@@ -53,7 +53,7 @@ PricingPlans.configure do |config|
     bullets "Flux HD", "3 custom models/month", "1,000 image credits/month"
 
     includes_credits 1_000, for: :generate_image
-    limits :custom_models, to: 3, per: :month, after_limit: :grace_then_block, grace: 7.days
+    limits :custom_models, to: 3, per: :month, after_limit: :grace_then_block, grace: 7.days, warn_at: [0.6, 0.8, 0.95]
     allows :api_access, :flux_hd_access
   end
 
@@ -122,6 +122,22 @@ org.percent_used(:projects)                      # alias of plan_limit_percent_u
 org.current_pricing_plan                         # => PricingPlans::Plan
 org.assign_pricing_plan!(:pro)                   # manual assignment override
 org.remove_pricing_plan!                         # remove manual override (fallback to default)
+
+# Feature flags
+org.plan_allows?(:api_access)                    # => true/false
+
+# Pay (Stripe) convenience (returns false/nil when Pay is absent). Note: this is billing-facing state,
+# distinct from our in-app enforcement grace which is tracked per-limit below.
+org.pay_subscription_active?                     # => true/false
+org.pay_on_trial?                                # => true/false
+org.pay_on_grace_period?                         # => true/false
+
+# Grace helpers (per limit key, managed by PricingPlans — in-app enforcement)
+org.grace_active_for?(:projects)                 # => true/false
+org.grace_ends_at_for(:projects)                 # => Time or nil
+org.grace_remaining_seconds_for(:projects)       # => Integer seconds
+org.grace_remaining_days_for(:projects)          # => Integer days (ceil)
+org.plan_blocked_for?(:projects)                 # => true/false (considering after_limit policy)
 ```
 
 ## Controllers — English guards that “just work”

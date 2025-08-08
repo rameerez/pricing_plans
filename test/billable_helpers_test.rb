@@ -24,6 +24,15 @@ class BillableHelpersTest < ActiveSupport::TestCase
     assert_respond_to org, :current_pricing_plan
     assert_respond_to org, :assign_pricing_plan!
     assert_respond_to org, :remove_pricing_plan!
+    assert_respond_to org, :plan_allows?
+    assert_respond_to org, :pay_subscription_active?
+    assert_respond_to org, :pay_on_trial?
+    assert_respond_to org, :pay_on_grace_period?
+    assert_respond_to org, :grace_active_for?
+    assert_respond_to org, :grace_ends_at_for
+    assert_respond_to org, :grace_remaining_seconds_for
+    assert_respond_to org, :grace_remaining_days_for
+    assert_respond_to org, :plan_blocked_for?
 
     # Smoke check a real call path
     assert_equal :free, org.current_pricing_plan.key
