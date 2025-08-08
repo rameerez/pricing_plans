@@ -1,61 +1,24 @@
-# 💵 `pricing_plans` - Define and enforce pricing plan limits in your Rails app
+# 💵 pricing_plans — Plans, features, limits, and grace that read like English
 
 [![Gem Version](https://badge.fury.io/rb/pricing_plans.svg)](https://badge.fury.io/rb/pricing_plans)
 
-`pricing_plans` is the single source of truth for pricing plans and plan limits in your Rails apps. It provides methods you can use across your app to consistently check whether users can perform an action based on the plan they're subscribed to.
+`pricing_plans` is your plan catalog + enforcement brain for Rails.
 
-Define plans and their limits like:
-```ruby
-plan :pro do
-  limits :posts, to: 5.max
-  allows :api_access
-end
-```
+- One Ruby file defines your plans, features, limits, and events.
+- Plain-English guards for controllers and models.
+- Real-time counts (no counter caches), race-safe grace, and friendly messages.
 
-Then, in your controller, you can easily check and gate features:
-```ruby
-before_action :enforce_api_access!, only: [:show] # or something like this. I'm thinking generating enforce_* methods where * is the values of any of the `allows` fields. This controller line should be self-explainatory and read like plain English. Should play natively and seamlessly with Rails 8+ and the rest of the expected arguments etc.
-```
+Perfect for Rails apps using Stripe via Pay, and optionally interoperating with `usage_credits` for metered workloads.
 
-And, in your models, you can check models stay within plan limits:
-```ruby
-class Post < ApplicationRecord
-  limited_by_pricing_plans # SIMPLIFIED! Renamed this, should auto-mixin with all necessary things. It should be dead simple and read like plain english. Should this accept more params? Reason and argue through it. Assume the thing limited is the model name, match by model name to the thing defined in the plan block, pass an optional argument if you wanna make it explicit or make explicit the billable etc only if you cannot infer it or if there's ambiguitiy -- also, allow to pass custom params like a custom error message etc
-end
-```
-
-
-`pricing_plans` helps you stop reimplementing feature gating and duplicating code across your entire codebase.
-
-
----
----
-
-HUMAN REVISIONS ONLY UNTIL HERE!!!! EVERYTHING BELOW IS **NOT** UPDATED AND CORRESPONDS TO THE PREVIOUS, DATED VERSION OF THE README THAT STILL NEEDS TO BE REWRITTEN
-
----
----
-
-In **one Ruby file**, you define:
-
-- **Plans** (name, description, bullets, Stripe price link, optional display price)
-- **Feature flags** (booleans)  
-- **Limits** with **grace_then_block** behavior by default:
-  - **Persistent caps** (max concurrent things: projects, seats, models)
-  - **Discrete per-period allowances** (rare, e.g., "3 custom models / month")
-- **Events** (warning, grace start, block) so you can email/notify
-
-**Perfect for:** Rails teams using **Stripe via Pay** who are tired of re-implementing plan gates in controllers, policies, and views.
-
-## 🚀 Quick Start
+## Quickstart
 
 Add to your Gemfile:
 
 ```ruby
-gem 'pricing_plans'
+gem "pricing_plans"
 ```
 
-Then run:
+Then generate and migrate:
 
 ```bash
 bundle install
@@ -63,287 +26,215 @@ rails generate pricing_plans:install
 rails db:migrate
 ```
 
-## 📖 Usage
-
-### 1. Define Your Plans
-
-Edit `config/initializers/pricing_plans.rb`:
+Define your catalog in `config/initializers/pricing_plans.rb`:
 
 ```ruby
 PricingPlans.configure do |config|
-  config.billable_class = "Organization"  # or "User", "Account", etc.
-  config.default_plan = :free
+  config.billable_class   = "Organization"
+  config.default_plan     = :free
   config.highlighted_plan = :pro
-  config.period_cycle = :billing_cycle
+  config.period_cycle     = :billing_cycle
 
   plan :free do
-    name "Free"
-    description "Perfect for getting started"
-    price 0
-    bullets "Basic features", "Community support"
-    
-    limits :projects, to: 1.max, after_limit: :grace_then_block, grace: 10.days
-    disallows :api_access
+    name        "Free"
+    description "Enough to launch and get your first real users!"
+    price       0
+    bullets     "25 end users", "1 product", "Community support"
+
+    limits  :products, to: 1, after_limit: :grace_then_block, grace: 10.days, warn_at: [0.6, 0.8, 0.95]
+    disallows :api_access, :flux_hd_access
   end
 
   plan :pro do
-    stripe_price "price_pro_monthly_29"
-    name "Pro"
-    bullets "Advanced features", "API access", "Priority support"
-    
-    allows :api_access
-    limits :projects, to: 25.max
-    unlimited :team_members
-    
-    # Optional: show included credits (requires usage_credits gem)
-    includes_credits 1_000, for: :api_calls
+    stripe_price "price_pro_29"
+    bullets "Flux HD", "3 custom models/month", "1,000 image credits/month"
+
+    includes_credits 1_000, for: :generate_image
+    limits :custom_models, to: 3, per: :month, after_limit: :grace_then_block, grace: 7.days
+    allows :api_access, :flux_hd_access
   end
 
-  # Event handlers for notifications
-  config.on_warning :projects do |billable, threshold|
-    PlanMailer.quota_warning(billable, :projects, threshold).deliver_later
+  plan :enterprise do
+    price_string "Contact"
+    description  "Get in touch and we'll fit your needs."
+    bullets      "Custom limits", "Dedicated SLAs", "Dedicated support"
+
+    unlimited :products
+    allows    :api_access, :flux_hd_access
+    meta      support_tier: "dedicated"
   end
 
-  config.on_grace_start :projects do |billable, grace_ends_at|
-    PlanMailer.grace_started(billable, :projects, grace_ends_at).deliver_later
-  end
-
-  config.on_block :projects do |billable|
-    PlanMailer.blocked(billable, :projects).deliver_later
-  end
+  # Optional events: you decide the side effects
+  config.on_warning     :products  { |org, threshold| PlanMailer.quota_warning(org, :products, threshold).deliver_later }
+  config.on_grace_start :products  { |org, ends_at|   PlanMailer.grace_started(org, :products, ends_at).deliver_later  }
+  config.on_block       :products  { |org|            PlanMailer.blocked(org, :products).deliver_later                 }
 end
 ```
 
-### 2. Add Limitable to Your Models
+Models — limit with English:
 
 ```ruby
-class Project < ApplicationRecord
+class Product < ApplicationRecord
   belongs_to :organization
   include PricingPlans::Limitable
-  limited_by_pricing_plans :projects, billable: :organization  # persistent cap
+  limited_by_pricing_plans :products, billable: :organization     # persistent cap
 end
 
-# For discrete per-period allowances:
 class CustomModel < ApplicationRecord
   belongs_to :organization
   include PricingPlans::Limitable
-  limited_by_pricing_plans :custom_models, billable: :organization, per: :month
+  limited_by_pricing_plans :custom_models, billable: :organization, per: :month  # discrete per-period
 end
 ```
 
-### 3. Use Controller Guards
+Controllers — English guards that “just work”:
 
 ```ruby
-class ProjectsController < ApplicationController
-  before_action :check_project_limit, only: [:create]
+class ApiController < ApplicationController
+  # Enforces a boolean feature. Also available: enforce_<feature_key>!(billable: ...)
+  before_action :enforce_api_access!
 
+  # Configure how to resolve the billable (optional)
+  self.pricing_plans_billable_method = :current_organization
+  # or
+  # pricing_plans_billable { current_account }
+end
+
+class CustomModelsController < ApplicationController
   def create
-    # Your creation logic here
-  end
-
-  private
-
-  def check_project_limit
-    result = require_plan_limit! :projects, billable: current_organization
+    result = require_plan_limit! :custom_models, billable: current_organization
     return redirect_to(pricing_path, alert: result.message) if result.blocked?
     flash[:warning] = result.message if result.warning?
-  end
-end
-
-class ApiController < ApplicationController
-  before_action :require_api_access
-
-  private
-
-  def require_api_access
-    require_feature! :api_access, billable: current_organization
+    # proceed to create
   end
 end
 ```
 
-### 4. Add View Helpers
+Views — drop-in helpers:
 
 ```erb
-<!-- Show usage warnings -->
-<%= plan_limit_banner :projects, billable: current_organization %>
-
-<!-- Usage meters -->
-<%= plan_usage_meter :projects, billable: current_organization %>
-
-<!-- Pricing table -->
+<%= plan_limit_banner :products, billable: current_organization %>
+<%= plan_usage_meter  :custom_models, billable: current_organization %>
 <%= plan_pricing_table highlight: true %>
-
-<!-- Current plan info -->
-<p>Current plan: <%= current_plan_name(current_organization) %></p>
-<% if plan_allows?(current_organization, :api_access) %>
-  <p>API access enabled!</p>
-<% end %>
 ```
 
-### 5. Generate Pricing Views (Optional)
+## What you define
 
-```bash
-rails generate pricing_plans:pricing
-```
+- Plans: `name`, `description`, `bullets`, `meta`, and one of `price`, `price_string`, or `stripe_price`.
+- Features: `allows :api_access` (plural and singular aliases supported).
+- Limits:
+  - Persistent caps (max concurrent): `limits :projects, to: 5`.
+  - Discrete per-period allowances: `limits :custom_models, to: 3, per: :month`.
+  - Behavior via `after_limit:`: `:grace_then_block` (default), `:block_usage`, `:just_warn`.
+  - Grace via `grace:` (applies to the first two behaviors). Default: 7 days.
+  - Warnings via `warn_at: [0.6, 0.8, 0.95]` (once per threshold per window).
+- Credits (UI hint only): `includes_credits 1_000, for: :generate_image`.
 
-This creates a pricing controller, views, and CSS for your pricing page.
+## Controller ergonomics
 
-## 🎯 Key Features
+- Dynamic feature guards: `enforce_<feature_key>!` resolves the billable and raises `PricingPlans::FeatureDenied` with a friendly upgrade message if disallowed.
+- Limit guard: `require_plan_limit!(limit_key, billable:, by: 1)` returns a `Result` object with:
+  - `ok?`, `warning?`, `grace?`, `blocked?`
+  - `state` in `:within | :grace | :blocked`
+  - `message` human with clear CTA
+- Billable resolution:
+  - Configure: `self.pricing_plans_billable_method = :current_organization` or `pricing_plans_billable { current_account }`.
+  - If not configured, it tries: `current_<billable_class>` then common conventions (`current_organization`, `current_account`, `current_user`, ...).
 
-### Plan Types
+## Model ergonomics
 
-- **Free Plans**: `price 0`
-- **Paid Plans**: `stripe_price "price_123"` (integrates with Pay gem)
-- **Enterprise**: `price_string "Contact us"`
-
-### Feature Flags
+Include `PricingPlans::Limitable` and declare limits with the macro that reads like English:
 
 ```ruby
-plan :pro do
-  allows :api_access, :premium_features, :priority_support
+limited_by_pricing_plans :projects, billable: :organization
+limited_by_pricing_plans :custom_models, billable: :organization, per: :month
+```
+
+- If you omit the key, it infers it from the table/collection name.
+- If you omit the billable, it infers from `billable_class` or common associations, falling back to `:self`.
+- Persistent caps count live rows. Per-period allowances increment a usage row per window.
+
+## Interop
+
+### Pay (Stripe)
+
+We only read Pay; we never wrap or modify Pay’s API or models.
+
+- What we read on your billable:
+  - `subscribed?`, `on_trial?`, `on_grace_period?`
+  - `subscription` (single) and `subscriptions` (collection)
+  - `subscription.processor_plan` (e.g., Stripe price id)
+  - `subscription.current_period_start` / `current_period_end` (billing anchors)
+
+- What we don’t do:
+  - We don’t include concerns into your models (no `pay_customer` setup on our side).
+  - We don’t create, mutate, or sync Pay records.
+  - We don’t add routes, jobs, or webhooks for Pay.
+
+Plan resolution and billing windows leverage Pay state directly:
+
+```ruby
+# Plan resolution (conceptually)
+if billable.subscribed? || billable.on_trial? || billable.on_grace_period?
+  plan_key = billable.subscription&.processor_plan || billable.subscriptions&.find(&:active?)&.processor_plan
+  # map processor_plan (e.g., Stripe price id) to your configured plan key
+else
+  # fall back to manual assignment or default
 end
 
-plan :free do
-  disallows :api_access  # explicit denial
-end
-```
-
-### Limit Types
-
-**Persistent Caps** (max concurrent resources):
-```ruby
-limits :projects, to: 5.max, after_limit: :grace_then_block, grace: 7.days
-```
-
-**Per-Period Allowances** (discrete monthly/weekly limits):
-```ruby
-limits :custom_models, to: 3.max, per: :month, after_limit: :block_usage
-```
-
-### Grace Period Behaviors
-
-- **`:grace_then_block`** (default) - Grace period, then block
-- **`:block_usage`** - Block immediately  
-- **`:just_warn`** - Never block, only warn
-
-### Warning Thresholds
-
-```ruby
-limits :projects, to: 10.max, warn_at: [0.6, 0.8, 0.95]  # warn at 6, 8, 9.5 usage
-```
-
-## 🔗 Integrations
-
-### Pay Gem Integration
-
-Automatically resolves plans from active Stripe subscriptions:
-
-```ruby
-# In your billable model (User/Organization/Account):
-class Organization < ApplicationRecord
-  pay_customer stripe_attributes: :stripe_attributes
-end
-```
-
-The gem reads subscription state and maps Stripe price IDs to your defined plans.
-
-### Usage Credits Integration
-
-Works seamlessly with the `usage_credits` gem:
-
-```ruby
-plan :pro do
-  includes_credits 1_000, for: :api_calls  # Shows in pricing table
+# Billing-cycle windows (conceptually)
+if (sub = billable.subscription) && sub.respond_to?(:current_period_start) && sub.respond_to?(:current_period_end)
+  window = [sub.current_period_start, sub.current_period_end]
+else
+  # fall back to calendar windows according to config
 end
 ```
 
-- Shows credit inclusions in pricing tables
-- Prevents collisions (won't let you define both credits and per-period limits for same operation)
-- You use `usage_credits` API directly for spending
+Downgrades via Stripe/Pay portal are not blocked at the billing layer: if the new plan is ineligible, we still switch, and then block violating actions in-app with clear upgrade CTAs. This matches Pay’s philosophy and avoids fragile cross-system coupling.
 
-## 🎨 Customization
+For official Pay docs, see `.docs/gems/pay.md` in this repo.
 
-### Custom Period Cycles
+### usage_credits (optional)
 
-```ruby
-config.period_cycle = :calendar_month  # or :calendar_week, :calendar_day
-config.period_cycle = ->(billable) { [start_time, end_time] }  # custom logic
-```
+Use its API directly for metered workloads (`spend_credits_on`, etc.). We only read the registry to render pricing lines and lint collisions. If you define both `includes_credits` and a per-period `limits` for the same key, we raise at boot.
 
-### Manual Plan Assignment
+## Events
 
-```ruby
-# Override subscription-based plan resolution
-PricingPlans::PlanResolver.assign_plan_manually!(organization, :enterprise)
-```
+- `on_warning :limit_key { |billable, threshold| ... }`
+- `on_grace_start :limit_key { |billable, ends_at| ... }`
+- `on_block :limit_key { |billable| ... }`
 
-### Result Objects
+Fire once per threshold per window, and once at grace start/block. You own the side effects (email, Slack, etc.).
 
-Controller guards return rich result objects:
+## Views
 
-```ruby
-result = require_plan_limit! :projects, billable: current_org
+- `plan_limit_banner(limit_key, billable:)` — shows warnings/grace/block banners.
+- `plan_usage_meter(limit_key, billable:)` — simple usage bar.
+- `plan_pricing_table(highlight: true)` — Tailwind-friendly pricing table scaffolding.
+- Utilities: `current_plan_name(billable)`, `plan_allows?(billable, :feature)`, `plan_limit_remaining(billable, :key)`, `plan_limit_percent_used(billable, :key)`.
 
-result.ok?       # Within limit
-result.warning?  # Approaching limit  
-result.grace?    # In grace period
-result.blocked?  # Over limit, blocked
-result.message   # Human-friendly message
-```
+## Generators
 
-## 📊 Database Schema
+- `rails g pricing_plans:install` — migrations + initializer scaffold.
+- `rails g pricing_plans:pricing` — pricing controller + partials + CSS.
+- `rails g pricing_plans:mailers` — mailer stubs (optional).
 
-The gem creates three tables:
+## Schema
 
-- `pricing_plans_enforcement_states` - Grace period tracking
-- `pricing_plans_usages` - Per-period usage counters  
-- `pricing_plans_assignments` - Manual plan overrides
+- `pricing_plans_enforcement_states` — per-billable per-limit grace state.
+- `pricing_plans_usages` — per-window counters for discrete allowances.
+- `pricing_plans_assignments` — manual plan overrides.
 
-## 🧪 Testing
+## Performance & correctness
 
-Use built-in test helpers:
+- Live DB counting for persistent caps; no counter caches.
+- Row-level locks for grace state; retries on deadlocks.
+- Efficient upserts for per-period usage (PG) or transaction fallback.
 
-```ruby
-# RSpec matchers (coming soon)
-expect(organization).to be_within_plan_limit(:projects)
-expect(organization).to be_in_grace_for(:projects)
-expect(organization).to be_blocked_for(:projects)
-```
+## Testing
 
-## 📚 Generators
-
-- `rails g pricing_plans:install` - Install migrations and initializer
-- `rails g pricing_plans:pricing` - Generate pricing views and controller
-- `rails g pricing_plans:mailers` - Generate notification mailers
-
-## 🔧 Configuration Options
-
-```ruby
-PricingPlans.configure do |config|
-  config.billable_class = "Organization"    # Required
-  config.default_plan = :free              # Required  
-  config.highlighted_plan = :pro           # Optional
-  config.period_cycle = :billing_cycle     # Default period for limits
-end
-```
-
-## ⚡ Performance
-
-- **Real-time counting**: No counter caches needed
-- **Row-level locking**: Prevents race conditions
-- **Efficient queries**: Optimized for concurrent usage
-- **Grace state caching**: Avoids redundant database hits
-
-## Development
-
-After checking out the repo, run `bin/setup` to install dependencies. You can also run `bin/console` for an interactive prompt that will allow you to experiment.
-
-To install this gem onto your local machine, run `bundle exec rake install`. To release a new version, update the version number in `version.rb`, and then run `bundle exec rake release`, which will create a git tag for the version, push git commits and the created tag, and push the `.gem` file to [rubygems.org](https://rubygems.org).
-
-## Contributing
-
-Bug reports and pull requests are welcome on GitHub at https://github.com/[USERNAME]/pricing_plans.
+The gem ships with comprehensive Minitest coverage for plans, registry, plan resolution, limit checking, grace manager, model mixins, controller guards, dynamic callbacks, and view helpers. We test grace semantics, thresholds, concurrency/idempotency, and edge cases.
 
 ## License
 
-The gem is available as open source under the terms of the [MIT License](https://opensource.org/licenses/MIT).
+MIT

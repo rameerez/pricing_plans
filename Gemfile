@@ -8,3 +8,4 @@ gemspec
 gem "irb"
 gem "rake", "~> 13.0"
 gem "ostruct"
+gem "simplecov", require: false

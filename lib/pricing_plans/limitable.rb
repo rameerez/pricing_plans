@@ -41,9 +41,8 @@ module PricingPlans
           }
         )
 
-        # Register counter with LimitChecker
-        if per.nil?
-          # Persistent cap - register live counting logic
+        # Register counter only for persistent caps
+        unless per
           PricingPlans::LimitableRegistry.register_counter(limit_key) do |billable_instance|
             count_for_billable(billable_instance, billable_method)
           end

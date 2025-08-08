@@ -2,6 +2,16 @@
 
 $LOAD_PATH.unshift File.expand_path("../lib", __dir__)
 
+begin
+  require "simplecov"
+  SimpleCov.start do
+    enable_coverage :branch
+    add_filter "/test/"
+  end
+rescue LoadError
+  # SimpleCov not available in some environments
+end
+
 require "pricing_plans"
 require "minitest/autorun"
 require "minitest/pride" if ENV["PRIDE"]

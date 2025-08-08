@@ -8,14 +8,23 @@ module PricingPlans
     def self.included(base)
       if base.respond_to?(:class_attribute)
         base.class_attribute :pricing_plans_billable_method, instance_accessor: false, default: nil
+        base.class_attribute :pricing_plans_billable_proc, instance_accessor: false, default: nil
+      end
+      # Fallback storage on eigenclass for environments without class_attribute
+      if !base.respond_to?(:pricing_plans_billable_proc) && base.respond_to?(:singleton_class)
+        base.singleton_class.send(:attr_accessor, :_pricing_plans_billable_proc)
       end
 
       base.define_singleton_method(:pricing_plans_billable) do |method_name = nil, &block|
         if method_name
           self.pricing_plans_billable_method = method_name.to_sym
+          self.pricing_plans_billable_proc = nil
+          self._pricing_plans_billable_proc = nil if respond_to?(:_pricing_plans_billable_proc)
         elsif block_given?
-          define_method(:_pricing_plans_billable_from_block, &block)
-          self.pricing_plans_billable_method = :_pricing_plans_billable_from_block
+          # Store the block and use instance_exec at call time
+          self.pricing_plans_billable_proc = block
+          self._pricing_plans_billable_proc = block if respond_to?(:_pricing_plans_billable_proc)
+          self.pricing_plans_billable_method = nil
         else
           self.pricing_plans_billable_method
         end
@@ -23,7 +32,11 @@ module PricingPlans
 
       base.define_method(:pricing_plans_billable) do
         # 1) Explicit per-controller configuration wins
-        if self.class.respond_to?(:pricing_plans_billable_method) && self.class.pricing_plans_billable_method
+        if self.class.respond_to?(:pricing_plans_billable_proc) && self.class.pricing_plans_billable_proc
+          return instance_exec(&self.class.pricing_plans_billable_proc)
+        elsif self.class.respond_to?(:_pricing_plans_billable_proc) && self.class._pricing_plans_billable_proc
+          return instance_exec(&self.class._pricing_plans_billable_proc)
+        elsif self.class.respond_to?(:pricing_plans_billable_method) && self.class.pricing_plans_billable_method
           return send(self.class.pricing_plans_billable_method)
         end
 
@@ -191,12 +204,9 @@ module PricingPlans
 
       base_message = "You've reached your limit of #{limit_amount} #{resource_name} (currently using #{current_usage})"
 
-      if highlighted_plan
-        upgrade_cta = "Upgrade to #{highlighted_plan.name} for higher limits"
-        "#{base_message}. #{upgrade_cta}"
-      else
-        base_message
-      end
+      return base_message unless highlighted_plan
+      upgrade_cta = "Upgrade to #{highlighted_plan.name} for higher limits"
+      "#{base_message}. #{upgrade_cta}"
     end
 
     def build_grace_message(limit_key, current_usage, limit_amount, grace_ends_at)
@@ -207,12 +217,9 @@ module PricingPlans
       base_message = "You've exceeded your limit of #{limit_amount} #{resource_name}. " \
                     "You have #{time_remaining} remaining in your grace period"
 
-      if highlighted_plan
-        upgrade_cta = "Upgrade to #{highlighted_plan.name} to avoid service interruption"
-        "#{base_message}. #{upgrade_cta}"
-      else
-        base_message
-      end
+      return base_message unless highlighted_plan
+      upgrade_cta = "Upgrade to #{highlighted_plan.name} to avoid service interruption"
+      "#{base_message}. #{upgrade_cta}"
     end
 
     def time_ago_in_words(future_time)
