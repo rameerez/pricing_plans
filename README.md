@@ -290,7 +290,7 @@ Plan resolution and billing windows will prefer Pay when present, otherwise fall
 
 ### usage_credits (optional)
 
-Use its API directly for metered workloads (`spend_credits_on`, etc.). We only read the registry to render pricing lines and lint collisions. If you define both `includes_credits` and a per-period `limits` for the same key, we raise at boot.
+Use its API directly for metered workloads (`spend_credits_on`, etc.). We only read the registry to render pricing lines and lint collisions. If you define both `includes_credits` and a per-period `limits` for the same key, we raise at boot. When `usage_credits` is present, `includes_credits` must reference a known operation; unknown operations raise during boot.
 
 ## Events
 
@@ -326,6 +326,7 @@ We test and support:
 - Live DB counting for persistent caps; no counter caches.
 - Row-level locks for grace state; retries on deadlocks.
 - Efficient upserts for per-period usage (PG) or transaction fallback.
+- Per-period enforcement state resets at window boundaries (warnings and grace are per-window).
 
 ## Testing
 
@@ -476,6 +477,7 @@ Views — drop-in helpers:
   - `ok?`, `warning?`, `grace?`, `blocked?`
   - `state` in `:within | :grace | :blocked`
   - `message` human with clear CTA
+  - `metadata` with `limit_amount`, `current_usage`, `percent_used`, and optional `grace_ends_at`
 - Billable resolution:
   - Configure: `self.pricing_plans_billable_method = :current_organization` or `pricing_plans_billable { current_account }`.
   - If not configured, it tries: `current_<billable_class>` then common conventions (`current_organization`, `current_account`, `current_user`, ...).

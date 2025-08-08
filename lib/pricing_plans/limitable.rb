@@ -54,7 +54,7 @@ module PricingPlans
       end
 
       # Backing implementation used by both the classic and new macro
-      def limited_by(limit_key, billable:, per: nil, error_after_limit: nil)
+      def limited_by(limit_key, billable:, per: nil, error_after_limit: nil, source: nil)
         limit_key = limit_key.to_sym
         billable_method = billable.to_sym
 
@@ -63,14 +63,21 @@ module PricingPlans
           limit_key => {
             billable_method: billable_method,
             per: per,
-            error_after_limit: error_after_limit
+            error_after_limit: error_after_limit,
+            source: source
           }
         )
 
         # Register counter only for persistent caps
         unless per
+          source_proc = source
           PricingPlans::LimitableRegistry.register_counter(limit_key) do |billable_instance|
-            count_for_billable(billable_instance, billable_method)
+            if source_proc.respond_to?(:call)
+              relation = source_proc.arity == 1 ? source_proc.call(billable_instance) : billable_instance.instance_exec(&source_proc)
+              relation.respond_to?(:count) ? relation.count : count_for_billable(billable_instance, billable_method)
+            else
+              count_for_billable(billable_instance, billable_method)
+            end
           end
         end
 

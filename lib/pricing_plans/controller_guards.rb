@@ -158,17 +158,19 @@ module PricingPlans
 
         remaining = limit_amount - current_usage - by
         warning_message = build_warning_message(limit_key, remaining, limit_amount)
-
-        Result.warning(warning_message, limit_key: limit_key, billable: billable)
+        metadata = build_metadata(billable, limit_key, current_usage + by, limit_amount)
+        Result.warning(warning_message, limit_key: limit_key, billable: billable, metadata: metadata)
       else
         remaining = limit_amount - current_usage - by
-        Result.within("#{remaining} #{limit_key.to_s.humanize.downcase} remaining")
+        metadata = build_metadata(billable, limit_key, current_usage + by, limit_amount)
+        Result.within("#{remaining} #{limit_key.to_s.humanize.downcase} remaining", metadata: metadata)
       end
     end
 
     def handle_warning_only(billable, limit_key, current_usage, limit_amount)
       warning_message = build_over_limit_message(limit_key, current_usage, limit_amount, :warning)
-      Result.warning(warning_message, limit_key: limit_key, billable: billable)
+      metadata = build_metadata(billable, limit_key, current_usage, limit_amount)
+      Result.warning(warning_message, limit_key: limit_key, billable: billable, metadata: metadata)
     end
 
     def handle_immediate_block(billable, limit_key, current_usage, limit_amount)
@@ -177,7 +179,8 @@ module PricingPlans
       # Mark as blocked immediately
       GraceManager.mark_blocked!(billable, limit_key)
 
-      Result.blocked(blocked_message, limit_key: limit_key, billable: billable)
+      metadata = build_metadata(billable, limit_key, current_usage, limit_amount)
+      Result.blocked(blocked_message, limit_key: limit_key, billable: billable, metadata: metadata)
     end
 
     def handle_grace_then_block(billable, limit_key, current_usage, limit_amount, limit_config)
@@ -186,18 +189,21 @@ module PricingPlans
         # Mark as blocked if not already blocked
         GraceManager.mark_blocked!(billable, limit_key)
         blocked_message = build_over_limit_message(limit_key, current_usage, limit_amount, :blocked)
-        Result.blocked(blocked_message, limit_key: limit_key, billable: billable)
+        metadata = build_metadata(billable, limit_key, current_usage, limit_amount)
+        Result.blocked(blocked_message, limit_key: limit_key, billable: billable, metadata: metadata)
       elsif GraceManager.grace_active?(billable, limit_key)
         # Already in grace period
         grace_ends_at = GraceManager.grace_ends_at(billable, limit_key)
         grace_message = build_grace_message(limit_key, current_usage, limit_amount, grace_ends_at)
-        Result.grace(grace_message, limit_key: limit_key, billable: billable)
+        metadata = build_metadata(billable, limit_key, current_usage, limit_amount, grace_ends_at: grace_ends_at)
+        Result.grace(grace_message, limit_key: limit_key, billable: billable, metadata: metadata)
       else
         # Start grace period
         GraceManager.mark_exceeded!(billable, limit_key, grace_period: limit_config[:grace])
         grace_ends_at = GraceManager.grace_ends_at(billable, limit_key)
         grace_message = build_grace_message(limit_key, current_usage, limit_amount, grace_ends_at)
-        Result.grace(grace_message, limit_key: limit_key, billable: billable)
+        metadata = build_metadata(billable, limit_key, current_usage, limit_amount, grace_ends_at: grace_ends_at)
+        Result.grace(grace_message, limit_key: limit_key, billable: billable, metadata: metadata)
       end
     end
 
@@ -245,6 +251,15 @@ module PricingPlans
       else
         "#{(distance / 86400).round} days"
       end
+    end
+
+    def build_metadata(billable, limit_key, usage, limit_amount, grace_ends_at: nil)
+      {
+        limit_amount: limit_amount,
+        current_usage: usage,
+        percent_used: (limit_amount == :unlimited || limit_amount.to_i.zero?) ? 0.0 : [(usage.to_f / limit_amount) * 100, 100.0].min,
+        grace_ends_at: grace_ends_at
+      }
     end
   end
 end

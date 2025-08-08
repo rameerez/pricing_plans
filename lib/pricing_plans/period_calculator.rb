@@ -52,6 +52,9 @@ module PricingPlans
       end
 
       def billing_cycle_window(billable)
+        # Respect tests that stub pay availability
+        return fallback_window unless pay_available?
+
         subscription = PaySupport.current_subscription_for(billable)
         return fallback_window unless subscription
 
