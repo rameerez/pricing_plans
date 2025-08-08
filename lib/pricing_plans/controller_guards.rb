@@ -60,7 +60,15 @@ module PricingPlans
         if method_name.to_s =~ /^enforce_(.+)!$/
           feature_key = Regexp.last_match(1).to_sym
           options = args.first.is_a?(Hash) ? args.first : {}
-          billable = options[:billable] || (respond_to?(:pricing_plans_billable) ? pricing_plans_billable : nil)
+          # Support: enforce_feature!(for: :current_organization) and enforce_feature!(billable: obj)
+          billable = if options[:billable]
+            options[:billable]
+          elsif options[:for]
+            resolver = options[:for]
+            resolver.is_a?(Symbol) ? send(resolver) : instance_exec(&resolver)
+          else
+            respond_to?(:pricing_plans_billable) ? pricing_plans_billable : nil
+          end
           require_feature!(feature_key, billable: billable)
           return true
         end

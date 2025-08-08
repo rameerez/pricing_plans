@@ -26,6 +26,22 @@ module PricingPlans
       end
     end
 
+    # Ensure the configured billable class (e.g., Organization) gains the
+    # billable-centric helpers even if the model is not loaded during
+    # configuration time. Runs on each code reload in dev.
+    initializer "pricing_plans.billable_helpers" do
+      ActiveSupport::Reloader.to_prepare do
+        begin
+          klass = PricingPlans::Registry.billable_class
+          if klass && !klass.included_modules.include?(PricingPlans::Billable)
+            klass.include(PricingPlans::Billable)
+          end
+        rescue StandardError
+          # If the billable class isn't resolved yet, skip; next reload will try again.
+        end
+      end
+    end
+
     # Add generator paths
     config.generators do |g|
       g.templates.unshift File.expand_path("../../generators", __dir__)

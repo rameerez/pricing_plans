@@ -11,6 +11,30 @@ module PricingPlans
       # Callbacks for automatic tracking
       after_create :increment_per_period_counters
       after_destroy :decrement_persistent_counters
+      # Add billable-centric convenience methods to instances of the billable class
+      # when possible. These are no-ops if the model isn't the billable itself.
+      define_method :within_plan_limits? do |limit_key, by: 1|
+        billable = self
+        LimitChecker.within_limit?(billable, limit_key)
+      end
+
+      define_method :plan_limit_remaining do |limit_key|
+        billable = self
+        LimitChecker.remaining(billable, limit_key)
+      end
+
+      define_method :plan_limit_percent_used do |limit_key|
+        billable = self
+        LimitChecker.percent_used(billable, limit_key)
+      end
+
+      define_method :current_pricing_plan do
+        PlanResolver.effective_plan_for(self)
+      end
+
+      define_singleton_method :assign_pricing_plan! do |billable, plan_key, source: "manual"|
+        Assignment.assign_plan_to(billable, plan_key, source: source)
+      end
     end
 
     class_methods do
@@ -19,17 +43,18 @@ module PricingPlans
       # - Infers limit_key from model's collection/table name when not provided
       # - Infers billable association from configured billable_class (or common conventions)
       # - Accepts `per:` to declare per-period allowances
-      def limited_by_pricing_plans(limit_key = nil, billable: nil, per: nil)
+      def limited_by_pricing_plans(limit_key = nil, billable: nil, per: nil, on: nil, error_after_limit: nil)
         include PricingPlans::Limitable unless ancestors.include?(PricingPlans::Limitable)
 
         inferred_limit_key = (limit_key || inferred_limit_key_for_model).to_sym
-        inferred_billable   = infer_billable_association(billable)
+        effective_billable  = billable || on
+        inferred_billable   = infer_billable_association(effective_billable)
 
-        limited_by(inferred_limit_key, billable: inferred_billable, per: per)
+        limited_by(inferred_limit_key, billable: inferred_billable, per: per, error_after_limit: error_after_limit)
       end
 
       # Backing implementation used by both the classic and new macro
-      def limited_by(limit_key, billable:, per: nil)
+      def limited_by(limit_key, billable:, per: nil, error_after_limit: nil)
         limit_key = limit_key.to_sym
         billable_method = billable.to_sym
 
@@ -37,7 +62,8 @@ module PricingPlans
         self.pricing_plans_limits = pricing_plans_limits.merge(
           limit_key => {
             billable_method: billable_method,
-            per: per
+            per: per,
+            error_after_limit: error_after_limit
           }
         )
 
@@ -49,7 +75,7 @@ module PricingPlans
         end
 
         # Add validation to prevent creation when over limit
-        validate_limit_on_create(limit_key, billable_method, per)
+        validate_limit_on_create(limit_key, billable_method, per, error_after_limit)
       end
 
       def count_for_billable(billable_instance, billable_method)
@@ -101,7 +127,7 @@ module PricingPlans
         :self
       end
 
-      def validate_limit_on_create(limit_key, billable_method, per)
+      def validate_limit_on_create(limit_key, billable_method, per, error_after_limit)
         method_name = :"check_limit_on_create_#{limit_key}"
 
         # Only define the method if it doesn't already exist
@@ -133,8 +159,9 @@ module PricingPlans
                   # Allow creation with warning
                   return
                 when :block_usage, :grace_then_block
-                  if GraceManager.should_block?(billable_instance, limit_key)
-                    errors.add(:base, "Cannot create #{self.class.name.downcase}: #{limit_key} limit exceeded")
+                  if limit_config[:after_limit] == :block_usage || GraceManager.should_block?(billable_instance, limit_key)
+                    message = error_after_limit || "Cannot create #{self.class.name.downcase}: #{limit_key} limit exceeded"
+                    errors.add(:base, message)
                   end
                 end
               end
@@ -146,8 +173,9 @@ module PricingPlans
                 when :just_warn
                   return
                 when :block_usage, :grace_then_block
-                  if GraceManager.should_block?(billable_instance, limit_key)
-                    errors.add(:base, "Cannot create #{self.class.name.downcase}: #{limit_key} limit exceeded for this period")
+                  if limit_config[:after_limit] == :block_usage || GraceManager.should_block?(billable_instance, limit_key)
+                    message = error_after_limit || "Cannot create #{self.class.name.downcase}: #{limit_key} limit exceeded for this period"
+                    errors.add(:base, message)
                   end
                 end
               end

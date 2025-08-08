@@ -80,6 +80,28 @@ class LimitableTest < ActiveSupport::TestCase
     end
   end
 
+  def test_custom_error_message_on_over_limit
+    # Define a temporary model with custom error message, with a constant name to please AR reflection
+    model_name = "CustomProjects_#{SecureRandom.hex(4)}"
+    Object.const_set(model_name, Class.new(ActiveRecord::Base))
+    klass = Object.const_get(model_name).class_eval do
+      self.table_name = "projects"
+      belongs_to :organization
+      include PricingPlans::Limitable
+      limited_by_pricing_plans :projects, billable: :organization, error_after_limit: "Too many projects!"
+      self
+    end
+
+    org = create_organization
+    org.projects.create!(name: "Project 1")
+
+    PricingPlans::GraceManager.stub(:should_block?, true) do
+      record = klass.new(name: "Project 2", organization: org)
+      refute record.valid?
+      assert_includes record.errors.full_messages.join, "Too many projects!"
+    end
+  end
+
   def test_validation_allows_creation_when_within_limit
     org = create_organization
 

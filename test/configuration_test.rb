@@ -183,6 +183,35 @@ class ConfigurationTest < ActiveSupport::TestCase
     assert_match(/Something went wrong/, error.message)
   end
 
+  def test_billable_convenience_methods_via_instance
+    setup_test_plans
+    org = Organization.create!(name: "Org")
+    # Re-register counters after configuring in this test
+    Project.send(:limited_by_pricing_plans, :projects, billable: :organization) if Project.respond_to?(:limited_by_pricing_plans)
+    assert_equal :free, PricingPlans::PlanResolver.plan_key_for(org)
+    Project.create!(organization: org)
+    # At free plan, projects limit is 1 in test helper; next by:1 should be blocked
+    assert_equal false, org.within_plan_limits?(:projects, by: 1)
+    assert_equal 0, org.plan_limit_remaining(:projects)
+    assert_equal 100.0, org.plan_limit_percent_used(:projects)
+    assert_equal :free, org.current_pricing_plan.key
+  end
+
+  def test_assign_and_remove_pricing_plan_via_billable
+    setup_test_plans
+    org = Organization.create!(name: "Org")
+    Project.send(:limited_by_pricing_plans, :projects, billable: :organization) if Project.respond_to?(:limited_by_pricing_plans)
+    assert_equal :free, PricingPlans::PlanResolver.plan_key_for(org)
+    # default free
+    assert_equal :free, org.current_pricing_plan.key
+    # assign pro
+    org.assign_pricing_plan!(:pro)
+    assert_equal :pro, org.current_pricing_plan.key
+    # remove assignment -> back to default
+    org.remove_pricing_plan!
+    assert_equal :free, org.current_pricing_plan.key
+  end
+
   def test_bare_dsl_inside_yielded_block
     PricingPlans.configure do |config|
       config.billable_class = "Organization"

@@ -24,6 +24,7 @@ module PricingPlans
   autoload :ControllerGuards, "pricing_plans/controller_guards"
   autoload :ViewHelpers, "pricing_plans/view_helpers"
   autoload :Limitable, "pricing_plans/limitable"
+  autoload :Billable, "pricing_plans/billable"
   autoload :Result, "pricing_plans/result"
 
   # Models

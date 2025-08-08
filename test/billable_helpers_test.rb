@@ -1,0 +1,73 @@
+# frozen_string_literal: true
+
+require "test_helper"
+
+class BillableHelpersTest < ActiveSupport::TestCase
+  def setup
+    super
+    PricingPlans.reset_configuration!
+    PricingPlans.configure do |config|
+      config.billable_class = "Organization"
+      config.default_plan   = :free
+      config.plan :free do
+        limits :projects, to: 1
+      end
+    end
+  end
+
+  def test_auto_includes_helpers_into_configured_billable
+    org = Organization.new(name: "Acme")
+
+    assert_respond_to org, :within_plan_limits?
+    assert_respond_to org, :plan_limit_remaining
+    assert_respond_to org, :plan_limit_percent_used
+    assert_respond_to org, :current_pricing_plan
+    assert_respond_to org, :assign_pricing_plan!
+    assert_respond_to org, :remove_pricing_plan!
+
+    # Smoke check a real call path
+    assert_equal :free, org.current_pricing_plan.key
+  end
+
+  def test_idempotent_inclusion_on_reconfigure
+    org = Organization.new(name: "Acme")
+    assert_respond_to org, :within_plan_limits?
+
+    # Reconfigure shouldn't break inclusion or duplicate
+    PricingPlans.reset_configuration!
+    PricingPlans.configure do |config|
+      config.billable_class = "Organization"
+      config.default_plan   = :free
+      config.plan :free do
+        limits :projects, to: 1
+      end
+    end
+
+    org2 = Organization.new(name: "Beta")
+    assert_respond_to org2, :within_plan_limits?
+  end
+
+  def test_attach_helpers_when_billable_defined_after_config
+    # Configure with a class name that does not exist yet
+    PricingPlans.reset_configuration!
+    PricingPlans.configure do |config|
+      config.billable_class = "LateBillable"
+      config.default_plan   = :free
+      config.plan :free do
+        limits :projects, to: 1
+      end
+    end
+
+    # Define the class afterwards
+    Object.const_set(:LateBillable, Class.new)
+
+    # Simulate engine's to_prepare hook by invoking the attachment helper
+    PricingPlans::Registry.send(:attach_billable_helpers!)
+
+    late = LateBillable.new
+    assert_respond_to late, :within_plan_limits?
+    assert_respond_to late, :current_pricing_plan
+  ensure
+    Object.send(:remove_const, :LateBillable) if defined?(LateBillable)
+  end
+end

@@ -59,6 +59,27 @@ class ControllerDynamicCallbacksTest < ActiveSupport::TestCase
     assert_equal true, controller.enforce_api_access!
   end
 
+  def test_enforce_supports_for_option_symbol
+    controller = DummyController.new(@org)
+
+    # Free plan denies api_access
+    assert_raises(PricingPlans::FeatureDenied) { controller.enforce_api_access!(for: :current_organization) }
+
+    PricingPlans::Assignment.assign_plan_to(@org, :pro)
+    assert_equal true, controller.enforce_api_access!(for: :current_organization)
+  end
+
+  def test_enforce_supports_for_option_proc
+    controller = DummyConfiguredController.new(org1: @org, org2: @org)
+    block = -> { current_organization }
+
+    # Free plan denies api_access
+    assert_raises(PricingPlans::FeatureDenied) { controller.enforce_api_access!(for: block) }
+
+    PricingPlans::Assignment.assign_plan_to(@org, :pro)
+    assert_equal true, controller.enforce_api_access!(for: block)
+  end
+
   def test_enforce_dynamic_feature_guard_accepts_explicit_billable_override
     org1 = create_organization
     org2 = create_organization

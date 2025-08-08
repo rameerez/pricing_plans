@@ -28,6 +28,18 @@ class LimitableInferenceTest < ActiveSupport::TestCase
     assert_equal :self, limits[:own_records][:billable_method]
   end
 
+  def test_on_alias_for_billable_keyword
+    test_class = Class.new(ActiveRecord::Base) do
+      self.table_name = "projects"
+      belongs_to :organization
+      include PricingPlans::Limitable
+      limited_by_pricing_plans :projects, on: :organization
+    end
+
+    limits = test_class.pricing_plans_limits
+    assert_equal :organization, limits[:projects][:billable_method]
+  end
+
   def test_registers_counter_only_for_persistent_caps
     klass = Class.new(ActiveRecord::Base) do
       self.table_name = "projects"
