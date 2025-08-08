@@ -6,6 +6,15 @@
 /pkg/
 /spec/reports/
 /tmp/
+/vendor/
+/vendor/bundle/
+/vendor/cache/
+/vendor/assets/
+.bundle/
+/yarn-error.log
+/node_modules/
+/.ruby-lsp/
+/.solargraph.yml
 
 .aux/
 .docs/
