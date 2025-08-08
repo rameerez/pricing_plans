@@ -27,6 +27,8 @@ module PricingPlans
   autoload :Billable, "pricing_plans/billable"
   autoload :AssociationLimitRegistry, "pricing_plans/association_limit_registry"
   autoload :Result, "pricing_plans/result"
+  autoload :OverageReporter, "pricing_plans/overage_reporter"
+  autoload :RequestCache, "pricing_plans/request_cache"
 
   # Models
   autoload :EnforcementState, "pricing_plans/models/enforcement_state"

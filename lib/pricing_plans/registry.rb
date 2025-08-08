@@ -159,8 +159,10 @@ module PricingPlans
           plan.credit_inclusions.each do |operation_key, inclusion|
             # Check if operation exists in usage_credits
             unless credit_operations.include?(operation_key)
-              warn "WARNING: Plan #{plan_key} includes_credits for operation '#{operation_key}' " \
-                   "but this operation is not defined in usage_credits"
+              # When usage_credits is present, unknown operations are configuration errors
+              raise ConfigurationError,
+                "Plan #{plan_key} includes_credits for unknown usage_credits operation '#{operation_key}'. " \
+                "Define the operation in usage_credits or remove includes_credits."
             end
 
             # Check for collision with per-period limits
