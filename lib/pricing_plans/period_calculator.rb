@@ -55,7 +55,23 @@ module PricingPlans
         # Respect tests that stub pay availability
         return fallback_window unless pay_available?
 
-        subscription = PaySupport.current_subscription_for(billable)
+        subscription = nil
+        if billable.respond_to?(:subscription)
+          subscription = billable.subscription
+        end
+        if subscription.nil? && billable.respond_to?(:subscriptions)
+          # Prefer a sub with explicit period anchors
+          subscription = billable.subscriptions.find do |sub|
+            sub.respond_to?(:current_period_start) && sub.respond_to?(:current_period_end)
+          end
+          # Otherwise, fall back to any active/trial/grace subscription
+          subscription ||= billable.subscriptions.find do |sub|
+            (sub.respond_to?(:active?) && sub.active?) ||
+              (sub.respond_to?(:on_trial?) && sub.on_trial?) ||
+              (sub.respond_to?(:on_grace_period?) && sub.on_grace_period?)
+          end
+        end
+        subscription ||= PaySupport.current_subscription_for(billable)
         return fallback_window unless subscription
 
         # Use Pay's billing cycle anchor if available

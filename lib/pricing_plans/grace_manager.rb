@@ -75,9 +75,24 @@ module PricingPlans
 
           # Only emit if this is a higher threshold than last time
           if threshold > last_threshold
+            # Capture current window markers for per-period limits
+            plan = PlanResolver.effective_plan_for(billable)
+            limit_config = plan&.limit_for(limit_key)
+            window_start_epoch = nil
+            window_end_epoch = nil
+            if limit_config && limit_config[:per]
+              period_start, period_end = PeriodCalculator.window_for(billable, limit_key)
+              window_start_epoch = period_start.to_i
+              window_end_epoch = period_end.to_i
+            end
+
             state.update!(
               last_warning_threshold: threshold,
-              last_warning_at: Time.current
+              last_warning_at: Time.current,
+              data: state.data.merge(
+                "window_start_epoch" => window_start_epoch,
+                "window_end_epoch" => window_end_epoch
+              )
             )
 
             emit_warning_event(billable, limit_key, threshold)
@@ -139,24 +154,25 @@ module PricingPlans
       end
 
       # Returns nil if state is stale for the current period window for per-period limits
-      def fresh_state_or_nil(billable, limit_key)
-        state = find_state(billable, limit_key)
-        return nil unless state
-
-        plan = PlanResolver.effective_plan_for(billable)
-        limit_config = plan&.limit_for(limit_key)
-        return state unless limit_config && limit_config[:per]
-
-        period_start, _ = PeriodCalculator.window_for(billable, limit_key)
-        window_start_epoch = state.data&.dig("window_start_epoch")
-        current_epoch = period_start.to_i
-        if (state.exceeded_at && state.exceeded_at < period_start) || (window_start_epoch && window_start_epoch < current_epoch) || (window_start_epoch && window_start_epoch != current_epoch)
+             def fresh_state_or_nil(billable, limit_key)
+         state = find_state(billable, limit_key)
+         return nil unless state
+ 
+         plan = PlanResolver.effective_plan_for(billable)
+         limit_config = plan&.limit_for(limit_key)
+         return state unless limit_config && limit_config[:per]
+ 
+         period_start, _ = PeriodCalculator.window_for(billable, limit_key)
+         window_start_epoch = state.data&.dig("window_start_epoch")
+         current_epoch = period_start.to_i
+                 if (state.exceeded_at && state.exceeded_at < period_start) || (window_start_epoch && window_start_epoch < current_epoch) || (window_start_epoch && window_start_epoch != current_epoch)
+          # Hard reset the state for new window
           state.destroy!
           return nil
         end
-
-        state
-      end
+ 
+         state
+       end
 
       def emit_warning_event(billable, limit_key, threshold)
         Registry.emit_event(:warning, limit_key.to_sym, billable, threshold)

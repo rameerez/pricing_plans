@@ -32,16 +32,20 @@ module PricingPlans
       css_classes << html_options.delete(:class) if html_options[:class]
 
       content_tag :div, class: css_classes.join(" "), **html_options do
-        concat(content_tag :div, class: "pricing-plans-meter__label" do
-          "#{limit_key.to_s.humanize}: #{current_usage} / #{limit_amount}"
-        end)
+        concat(
+          content_tag(:div, class: "pricing-plans-meter__label") do
+            "#{limit_key.to_s.humanize}: #{current_usage} / #{limit_amount}"
+          end
+        )
 
-        concat(content_tag :div, class: "pricing-plans-meter__bar" do
-          content_tag :div, "",
-            class: "pricing-plans-meter__fill",
-            style: "width: #{[percent_used, 100].min}%",
-            data: { percent: percent_used }
-        end)
+        concat(
+          content_tag(:div, class: "pricing-plans-meter__bar") do
+            content_tag :div, "",
+              class: "pricing-plans-meter__fill",
+              style: "width: #{[percent_used, 100].min}%",
+              data: { percent: percent_used }
+          end
+        )
       end
     end
 
