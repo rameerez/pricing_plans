@@ -69,6 +69,34 @@ class ViewHelpersTest < ActiveSupport::TestCase
     end
   end
 
+  def test_plan_limit_status_basic
+    status = plan_limit_status(:projects, billable: @org)
+    assert_equal true, status[:configured]
+    assert_equal :projects, status[:limit_key]
+    assert_includes [:unlimited, Integer], status[:limit_amount].class
+    assert_includes [true, false], status[:grace_active]
+    assert_includes [true, false], status[:blocked]
+  end
+
+  def test_render_plan_limit_status_returns_html
+    # Stub content_tag to a simple wrapper for testing without ActionView
+    self.define_singleton_method(:content_tag) do |name, *args, **kwargs, &block|
+      inner = block ? block.call : args.first
+      "<#{name}>#{inner}</#{name}>"
+    end
+    # Stub html_safe on String
+    String.class_eval do
+      def html_safe
+        self
+      end
+    end
+
+    html = render_plan_limit_status(:projects, billable: @org)
+    assert html.is_a?(String)
+    assert_operator html.length, :>, 0
+    assert_match(/projects/i, html)
+  end
+
   def test_view_helpers_module_exists
     assert defined?(PricingPlans::ViewHelpers)
     assert PricingPlans::ViewHelpers.is_a?(Module)
