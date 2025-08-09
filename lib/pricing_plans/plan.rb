@@ -179,7 +179,8 @@ module PricingPlans
         per: options[:per],
         after_limit: options.fetch(:after_limit, :grace_then_block),
         grace: options.fetch(:grace, 7.days),
-        warn_at: options.fetch(:warn_at, [0.6, 0.8, 0.95])
+        warn_at: options.fetch(:warn_at, [0.6, 0.8, 0.95]),
+        count_scope: options[:count_scope]
       }
 
       validate_limit_options!(@limits[limit_key])
@@ -270,6 +271,16 @@ module PricingPlans
       # Validate warn_at thresholds
       if limit[:warn_at] && !limit[:warn_at].all? { |t| t.is_a?(Numeric) && t.between?(0, 1) }
         raise ConfigurationError, "Limit #{limit[:key]} warn_at thresholds must be numbers between 0 and 1"
+      end
+
+      # Validate count_scope only for persistent caps (no per-period)
+      if limit[:count_scope] && limit[:per]
+        raise ConfigurationError, "Limit #{limit[:key]} cannot set count_scope for per-period limits"
+      end
+      if limit[:count_scope]
+        cs = limit[:count_scope]
+        allowed = cs.respond_to?(:call) || cs.is_a?(Symbol) || cs.is_a?(Hash) || (cs.is_a?(Array) && cs.all? { |e| e.respond_to?(:call) || e.is_a?(Symbol) || e.is_a?(Hash) })
+        raise ConfigurationError, "Limit #{limit[:key]} count_scope must be a Proc, Symbol, Hash, or Array of these" unless allowed
       end
     end
 

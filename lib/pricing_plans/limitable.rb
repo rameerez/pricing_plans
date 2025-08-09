@@ -43,18 +43,18 @@ module PricingPlans
       # - Infers limit_key from model's collection/table name when not provided
       # - Infers billable association from configured billable_class (or common conventions)
       # - Accepts `per:` to declare per-period allowances
-      def limited_by_pricing_plans(limit_key = nil, billable: nil, per: nil, on: nil, error_after_limit: nil)
+      def limited_by_pricing_plans(limit_key = nil, billable: nil, per: nil, on: nil, error_after_limit: nil, count_scope: nil)
         include PricingPlans::Limitable unless ancestors.include?(PricingPlans::Limitable)
 
         inferred_limit_key = (limit_key || inferred_limit_key_for_model).to_sym
         effective_billable  = billable || on
         inferred_billable   = infer_billable_association(effective_billable)
 
-        limited_by(inferred_limit_key, billable: inferred_billable, per: per, error_after_limit: error_after_limit)
+        limited_by(inferred_limit_key, billable: inferred_billable, per: per, error_after_limit: error_after_limit, count_scope: count_scope)
       end
 
       # Backing implementation used by both the classic and new macro
-      def limited_by(limit_key, billable:, per: nil, error_after_limit: nil, source: nil)
+      def limited_by(limit_key, billable:, per: nil, error_after_limit: nil, source: nil, count_scope: nil)
         limit_key = limit_key.to_sym
         billable_method = billable.to_sym
 
@@ -64,20 +64,28 @@ module PricingPlans
             billable_method: billable_method,
             per: per,
             error_after_limit: error_after_limit,
-            source: source
+            source: source,
+            count_scope: count_scope
           }
         )
 
         # Register counter only for persistent caps
         unless per
-          source_proc = source
+          source_proc = count_scope || source
           PricingPlans::LimitableRegistry.register_counter(limit_key) do |billable_instance|
-            if source_proc.respond_to?(:call)
-              relation = source_proc.arity == 1 ? source_proc.call(billable_instance) : billable_instance.instance_exec(&source_proc)
-              relation.respond_to?(:count) ? relation.count : count_for_billable(billable_instance, billable_method)
-            else
-              count_for_billable(billable_instance, billable_method)
+            # Base relation for this limited model and billable
+            base_relation = relation_for_billable(billable_instance, billable_method)
+
+            # Prefer plan-level count_scope if present; fallback to model-provided one
+            scope_cfg = begin
+              plan = PlanResolver.effective_plan_for(billable_instance)
+              cfg = plan&.limit_for(limit_key)
+              cfg && cfg[:count_scope]
             end
+            scope_cfg ||= source_proc if source_proc
+
+            relation = apply_count_scope(base_relation, scope_cfg, billable_instance)
+            relation.respond_to?(:count) ? relation.count : base_relation.count
           end
         end
 
@@ -86,14 +94,45 @@ module PricingPlans
       end
 
       def count_for_billable(billable_instance, billable_method)
-        # Count all non-destroyed records for this billable
+        relation_for_billable(billable_instance, billable_method).count
+      end
+
+      def relation_for_billable(billable_instance, billable_method)
         joins_condition = if billable_method == :self
           { id: billable_instance.id }
         else
           { billable_method => billable_instance }
         end
+        where(joins_condition)
+      end
 
-        where(joins_condition).count
+      # Apply a flexible count_scope to an ActiveRecord::Relation.
+      # Accepts Proc/Lambda, Symbol (scope name), Hash (where), or Array of these.
+      def apply_count_scope(relation, scope_cfg, billable_instance)
+        return relation unless scope_cfg
+
+        case scope_cfg
+        when Array
+          scope_cfg.reduce(relation) { |rel, cfg| apply_count_scope(rel, cfg, billable_instance) }
+        when Proc
+          # Support arity variants: (rel) or (rel, billable)
+          case scope_cfg.arity
+          when 1 then scope_cfg.call(relation)
+          when 2 then scope_cfg.call(relation, billable_instance)
+          else
+            relation.instance_exec(&scope_cfg)
+          end
+        when Symbol
+          if relation.respond_to?(scope_cfg)
+            relation.public_send(scope_cfg)
+          else
+            relation
+          end
+        when Hash
+          relation.where(scope_cfg)
+        else
+          relation
+        end
       end
 
       private

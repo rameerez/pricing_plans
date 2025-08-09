@@ -12,6 +12,8 @@ PricingPlans.configure do |config|
 
     limits :projects, to: 1.max, after_limit: :block_usage
     limits :team_members, to: 3.max
+    # Example scoped persistent cap (active-only rows)
+    # limits :licenses, to: 5.max, count_scope: { status: "active" }
     default!
   end
 

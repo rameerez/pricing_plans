@@ -67,6 +67,16 @@ module PricingPlans
       end
     end
 
+    # Aggregate helpers for multiple limits
+    def any_grace_active_for?(billable, *limit_keys)
+      limit_keys.flatten.any? { |k| GraceManager.grace_active?(billable, k) }
+    end
+
+    def earliest_grace_ends_at_for(billable, *limit_keys)
+      times = limit_keys.flatten.map { |k| GraceManager.grace_ends_at(billable, k) }.compact
+      times.min
+    end
+
     def current_plan_name(billable)
       plan = PlanResolver.effective_plan_for(billable)
       plan&.name || "Unknown"

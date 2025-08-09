@@ -18,3 +18,25 @@
     </div>
   <% end %>
 </div>
+
+<%# Optional composite widget for 2–3 limits (pass :limits => [:products, :licenses, :activations]) %>
+<% if defined?(limits) && limits.respond_to?(:each) && defined?(billable) %>
+  <div class="pricing-plans-composite">
+    <% limits.each do |k| %>
+      <% plan = PricingPlans::PlanResolver.effective_plan_for(billable) %>
+      <% cfg  = plan&.limit_for(k) %>
+      <% next unless cfg %>
+      <% usage = PricingPlans::LimitChecker.current_usage_for(billable, k, cfg) %>
+      <% amt   = cfg[:to] %>
+      <% pct   = PricingPlans::LimitChecker.percent_used(billable, k) %>
+      <div class="pricing-plans-composite__item">
+        <div class="pricing-plans-composite__label"><%= k.to_s.humanize %>: <%= usage %> / <%= amt == :unlimited ? 'Unlimited' : amt %></div>
+        <% unless amt == :unlimited %>
+          <div class="pricing-plans-composite__bar">
+            <div class="pricing-plans-composite__fill" style="width: <%= [pct, 100].min %>%"></div>
+          </div>
+        <% end %>
+      </div>
+    <% end %>
+  </div>
+<% end %>

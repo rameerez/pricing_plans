@@ -183,5 +183,15 @@ module PricingPlans
     def plan_blocked_for?(limit_key)
       GraceManager.should_block?(self, limit_key)
     end
+
+    # Aggregate helpers across multiple limit keys
+    def any_grace_active_for?(*limit_keys)
+      limit_keys.flatten.any? { |k| GraceManager.grace_active?(self, k) }
+    end
+
+    def earliest_grace_ends_at_for(*limit_keys)
+      times = limit_keys.flatten.map { |k| GraceManager.grace_ends_at(self, k) }.compact
+      times.min
+    end
   end
 end

@@ -77,10 +77,10 @@ PricingPlans.configure do |config|
     meta      support_tier: "dedicated"
   end
 
-  # Optional events: you decide the side effects
-  config.on_warning     :products  { |org, threshold| PlanMailer.quota_warning(org, :products, threshold).deliver_later }
-  config.on_grace_start :products  { |org, ends_at|   PlanMailer.grace_started(org, :products, ends_at).deliver_later  }
-  config.on_block       :products  { |org|            PlanMailer.blocked(org, :products).deliver_later                 }
+  # Optional events: you decide the side effects (parentheses required)
+  config.on_warning(:products)     { |org, threshold| PlanMailer.quota_warning(org, :products, threshold).deliver_later }
+  config.on_grace_start(:products) { |org, ends_at|   PlanMailer.grace_started(org, :products, ends_at).deliver_later  }
+  config.on_block(:products)       { |org|            PlanMailer.blocked(org, :products).deliver_later                 }
 end
 ```
 
@@ -154,6 +154,18 @@ Rules enforced at boot:
   - Validation on create: blocks immediately on `:block_usage`, or blocks when grace is considered “blocked” on `:grace_then_block`. `:just_warn` passes.
   - Deletes automatically lower the count. Backfills simply reflect current rows.
 
+  - Filtered counting via count_scope: scope persistent caps to active-only rows.
+    - Idiomatic options:
+      - Plan DSL with AR Hash: `limits :licenses, to: 25, count_scope: { status: 'active' }`
+      - Plan DSL with named scope: `limits :activations, to: 50, count_scope: :active`
+      - Plan DSL with multiple: `limits :seats, to: 10, count_scope: [:active, { kind: 'paid' }]`
+      - Macro form: `has_many :licenses, limited_by_pricing_plans: { limit_key: :licenses, count_scope: :active }`
+      - Full freedom: `->(rel) { rel.where(status: 'active') }` or `->(rel, org) { rel.where(organization_id: org.id) }`
+    - Accepted types: Symbol (named scope), Hash (where), Proc (arity 1 or 2), or Array of these (applied left-to-right).
+    - Precedence: plan-level `count_scope` overrides macro-level `count_scope`.
+    - Restriction: `count_scope` only applies to persistent caps (not allowed on per-period limits).
+    - Performance: add indexes for your filters (e.g., `status`, `deactivated_at`).
+
 - Per-period allowances
   - Increments a usage row on create for the current window (no decrement on delete).
   - Window resets:
@@ -213,6 +225,10 @@ org.grace_ends_at_for(:projects)                 # => Time or nil
 org.grace_remaining_seconds_for(:projects)       # => Integer seconds
 org.grace_remaining_days_for(:projects)          # => Integer days (ceil)
 org.plan_blocked_for?(:projects)                 # => true/false (considering after_limit policy)
+
+  # Aggregates across keys
+  org.any_grace_active_for?(:products, :activations)
+  org.earliest_grace_ends_at_for(:products, :activations)
 ```
 
 ## Controllers — English guards that “just work”
@@ -260,6 +276,19 @@ class ProjectsController < ApplicationController
   end
 end
 ```
+Trusted system overrides (webhooks/jobs):
+
+```ruby
+result = PricingPlans::ControllerGuards.require_plan_limit!(
+  :licenses,
+  billable: org,
+  by: 1,
+  allow_system_override: true
+)
+if result.blocked? && result.metadata[:system_override]
+  # Proceed to create but mark for review/cleanup; you decide semantics here
+end
+```
 
 Notes:
 
@@ -290,6 +319,17 @@ end
 <%= plan_usage_meter  :projects, billable: current_organization %>
 <%= plan_pricing_table highlight: true %>
 ```
+
+### Composite usage widget (2–3 limits panel)
+
+If you generated the pricing UI into your app, `_usage_meter.html.erb` also supports a compact, multi-limit block when given locals:
+
+```erb
+<%= render partial: "pricing_plans/usage_meter",
+           locals: { limits: [:products, :licenses, :activations], billable: current_organization } %>
+```
+
+It renders per-limit labels and bars using your plan configuration and live counts.
 
 ### CTA and Pay (Stripe/Paddle/etc.)
 
@@ -411,16 +451,18 @@ Use its API directly for metered workloads (`spend_credits_on`, etc.). We only r
 
 ## Events
 
-- `on_warning :limit_key { |billable, threshold| ... }`
-- `on_grace_start :limit_key { |billable, ends_at| ... }`
-- `on_block :limit_key { |billable| ... }`
+- `on_warning(:limit_key) { |billable, threshold| ... }`
+- `on_grace_start(:limit_key) { |billable, ends_at| ... }`
+- `on_block(:limit_key) { |billable| ... }`
+
+Note: parentheses are required for event DSL methods.
 
 Fire once per threshold per window, and once at grace start/block. You own the side effects (email, Slack, etc.).
 
 ## Generators
 
 - `rails g pricing_plans:install` — migrations + initializer scaffold (includes the `using PricingPlans::IntegerRefinements` line).
-- `rails g pricing_plans:pricing` — pricing controller + partials + CSS.
+- `rails g pricing_plans:pricing` — pricing controller + partials + CSS (includes a composite usage widget block).
 - `rails g pricing_plans:mailers` — mailer stubs (optional).
 
 ## Complex names and associations

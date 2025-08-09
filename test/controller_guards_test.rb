@@ -331,4 +331,20 @@ class ControllerGuardsTest < ActiveSupport::TestCase
       end
     end
   end
+
+  def test_require_plan_limit_with_system_override
+    org = @org
+    # Plan with low limit to trigger exceed
+    plan = OpenStruct.new
+    plan.define_singleton_method(:limit_for) do |key|
+      { to: 0, after_limit: :block_usage } if key == :projects
+    end
+
+    PricingPlans::PlanResolver.stub(:effective_plan_for, plan) do
+      result = require_plan_limit!(:projects, billable: org, by: 1, allow_system_override: true)
+
+      assert result.blocked?
+      assert_equal true, result.metadata[:system_override]
+    end
+  end
 end

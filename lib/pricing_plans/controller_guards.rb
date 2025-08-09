@@ -80,7 +80,7 @@ module PricingPlans
       end if base.respond_to?(:define_method)
     end
 
-    def require_plan_limit!(limit_key, billable:, by: 1)
+    def require_plan_limit!(limit_key, billable:, by: 1, allow_system_override: false)
       plan = PlanResolver.effective_plan_for(billable)
       limit_config = plan&.limit_for(limit_key)
 
@@ -103,6 +103,11 @@ module PricingPlans
       would_exceed = remaining < by
 
       if would_exceed
+        # Allow trusted flows to bypass hard block while signaling downstream
+        if allow_system_override
+          metadata = build_metadata(billable, limit_key, current_usage, limit_amount)
+          return Result.new(state: :blocked, message: build_over_limit_message(limit_key, current_usage, limit_amount, :blocked), limit_key: limit_key, billable: billable, metadata: metadata.merge(system_override: true))
+        end
         # Handle exceeded limit based on after_limit policy
         case limit_config[:after_limit]
         when :just_warn

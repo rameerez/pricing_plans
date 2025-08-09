@@ -16,7 +16,7 @@ class ViewHelpersTest < ActiveSupport::TestCase
   def test_current_plan_name_with_plan
     plan = PricingPlans::Plan.new(:pro)
     plan.name("Pro Plan")
-    
+
     PricingPlans::PlanResolver.stub(:effective_plan_for, plan) do
       assert_equal "Pro Plan", current_plan_name(@org)
     end
@@ -31,7 +31,7 @@ class ViewHelpersTest < ActiveSupport::TestCase
   def test_plan_allows_with_allowed_feature
     plan = PricingPlans::Plan.new(:pro)
     plan.allows(:api_access)
-    
+
     PricingPlans::PlanResolver.stub(:effective_plan_for, plan) do
       assert plan_allows?(@org, :api_access)
     end
@@ -39,7 +39,7 @@ class ViewHelpersTest < ActiveSupport::TestCase
 
   def test_plan_allows_with_disallowed_feature
     plan = PricingPlans::Plan.new(:free)
-    
+
     PricingPlans::PlanResolver.stub(:effective_plan_for, plan) do
       refute plan_allows?(@org, :api_access)
     end
@@ -107,13 +107,27 @@ class ViewHelpersTest < ActiveSupport::TestCase
     test_class = Class.new do
       include PricingPlans::ViewHelpers
     end
-    
+
     instance = test_class.new
-    
+
     # Test that the methods are available
     assert_respond_to instance, :current_plan_name
     assert_respond_to instance, :plan_allows?
     assert_respond_to instance, :plan_limit_remaining
     assert_respond_to instance, :plan_limit_percent_used
+  end
+
+  def test_aggregate_helpers
+    org = @org
+    # No grace initially
+    refute any_grace_active_for?(org, :projects, :custom_models)
+
+    # Start grace for projects and ensure aggregation reflects it
+    PricingPlans::GraceManager.mark_exceeded!(org, :projects)
+    assert any_grace_active_for?(org, :projects, :custom_models)
+
+    # Earliest grace ends at should be set and be a Time
+    t = earliest_grace_ends_at_for(org, :projects, :custom_models)
+    assert t.is_a?(Time)
   end
 end
