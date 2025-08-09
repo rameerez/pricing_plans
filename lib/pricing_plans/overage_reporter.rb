@@ -14,7 +14,7 @@ module PricingPlans
     )
 
     Report = Struct.new(:items, :message, keyword_init: true)
-
+ 
     class << self
       # Compute overage against a target plan for the given billable.
       # Returns an array of OverageItem for limits that are over the target.
@@ -60,6 +60,7 @@ module PricingPlans
 
         Report.new(items: items, message: msg)
       end
+
     end
   end
 end
