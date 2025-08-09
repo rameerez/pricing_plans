@@ -4,6 +4,27 @@
 using PricingPlans::IntegerRefinements
 
 PricingPlans.configure do |config|
+  # Example plans
+  plan :free do
+    price 0
+    description "Perfect for getting started"
+    bullets "Basic features", "Community support"
+
+    limits :projects, to: 1.max, after_limit: :block_usage
+    limits :team_members, to: 3.max
+    default!
+  end
+
+  plan :pro do
+    description "For growing teams and businesses"
+    bullets "Advanced features", "Priority support", "API access"
+
+    allows :api_access, :premium_features
+    limits :projects, to: 25.max, after_limit: :grace_then_block, grace: 7.days
+    unlimited :team_members
+    highlighted!
+  end
+
   # Optional ergonomics
   # You can specify your billable class if you want controller inference to prefer it (e.g., "User", "Organization").
   # Otherwise it will try common conventions like current_organization, current_user, etc.
@@ -15,7 +36,7 @@ PricingPlans.configure do |config|
   # Period cycle for per-period limits
   # :billing_cycle, :calendar_month, :calendar_week, :calendar_day
   # Global default period for per-period limits (can be overridden per limit via `per:`)
-  config.period_cycle = :billing_cycle
+  # config.period_cycle = :billing_cycle
 
   # Optional defaults for pricing UI calls-to-action
   # config.default_cta_text = "Choose plan"
@@ -36,27 +57,4 @@ PricingPlans.configure do |config|
   #   session.url
   # end
 
-  # Example plans
-  plan :free do
-    name "Free"
-    description "Perfect for getting started"
-    price 0
-    bullets "Basic features", "Community support"
-
-    disallows :api_access, :premium_features
-    limits :projects, to: 1.max, after_limit: :grace_then_block, grace: 10.days
-    limits :team_members, to: 3.max
-    default!
-  end
-
-  plan :pro do
-    name "Pro"
-    description "For growing teams and businesses"
-    bullets "Advanced features", "Priority support", "API access"
-
-    allows :api_access, :premium_features
-    limits :projects, to: 25.max, after_limit: :grace_then_block, grace: 7.days
-    unlimited :team_members
-    highlighted!
-  end
 end

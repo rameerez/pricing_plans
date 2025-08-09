@@ -22,7 +22,7 @@ Then generate and migrate:
 
 ```bash
 bundle install
-rails generate pricing_plans:install
+rails g pricing_plans:install
 rails db:migrate
 ```
 
@@ -38,7 +38,7 @@ PricingPlans.configure do |config|
   # Optional defaults; can also be set via DSL sugar within plans
   # config.default_plan     = :free
   # config.highlighted_plan = :pro
-  config.period_cycle     = :billing_cycle
+  # config.period_cycle     = :billing_cycle
 
   plan :free do
     name        "Free"
