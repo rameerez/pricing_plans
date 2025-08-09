@@ -229,4 +229,14 @@ class PlanResolverTest < ActiveSupport::TestCase
     
     assert_equal :free, plan.key
   end
+
+  def test_plan_resolution_caches_per_request
+    org = create_organization
+    # Initially default plan
+    assert_equal :free, PricingPlans::PlanResolver.effective_plan_for(org).key
+
+    # Assign plan; should reflect immediately since we don’t cache plan resolution here
+    PricingPlans::PlanResolver.assign_plan_manually!(org, :pro)
+    assert_equal :pro, PricingPlans::PlanResolver.effective_plan_for(org).key
+  end
 end

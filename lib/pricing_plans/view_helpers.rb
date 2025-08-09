@@ -32,16 +32,20 @@ module PricingPlans
       css_classes << html_options.delete(:class) if html_options[:class]
 
       content_tag :div, class: css_classes.join(" "), **html_options do
-        concat(content_tag :div, class: "pricing-plans-meter__label" do
-          "#{limit_key.to_s.humanize}: #{current_usage} / #{limit_amount}"
-        end)
+        concat(
+          content_tag(:div, class: "pricing-plans-meter__label") do
+            "#{limit_key.to_s.humanize}: #{current_usage} / #{limit_amount}"
+          end
+        )
 
-        concat(content_tag :div, class: "pricing-plans-meter__bar" do
-          content_tag :div, "",
-            class: "pricing-plans-meter__fill",
-            style: "width: #{[percent_used, 100].min}%",
-            data: { percent: percent_used }
-        end)
+        concat(
+          content_tag(:div, class: "pricing-plans-meter__bar") do
+            content_tag :div, "",
+              class: "pricing-plans-meter__fill",
+              style: "width: #{[percent_used, 100].min}%",
+              data: { percent: percent_used }
+          end
+        )
       end
     end
 
@@ -78,6 +82,54 @@ module PricingPlans
 
     def current_pricing_plan(billable)
       PlanResolver.effective_plan_for(billable)
+    end
+
+    def plan_limit_status(limit_key, billable:)
+      plan = PlanResolver.effective_plan_for(billable)
+      limit_config = plan&.limit_for(limit_key)
+      return { configured: false } unless limit_config
+
+      usage = LimitChecker.current_usage_for(billable, limit_key, limit_config)
+      limit_amount = limit_config[:to]
+      percent = LimitChecker.percent_used(billable, limit_key)
+      grace = GraceManager.grace_active?(billable, limit_key)
+      blocked = GraceManager.should_block?(billable, limit_key)
+
+      {
+        configured: true,
+        limit_key: limit_key.to_sym,
+        limit_amount: limit_amount,
+        current_usage: usage,
+        percent_used: percent,
+        grace_active: grace,
+        grace_ends_at: GraceManager.grace_ends_at(billable, limit_key),
+        blocked: blocked,
+        after_limit: limit_config[:after_limit],
+        per: !!limit_config[:per]
+      }
+    end
+
+    # Render a minimal partial-like snippet for admin visibility. In real Rails apps,
+    # apps can replace with their own partial; this provides a sensible default.
+    def render_plan_limit_status(limit_key, billable:, **html_options)
+      status = plan_limit_status(limit_key, billable: billable)
+      return "".html_safe unless status[:configured]
+
+      css = ["pricing-plans-status", (status[:blocked] ? "is-blocked" : (status[:grace_active] ? "is-grace" : "is-ok"))]
+      css << html_options.delete(:class) if html_options[:class]
+
+      content_tag :div, class: css.join(" "), **html_options do
+        parts = []
+        parts << content_tag(:strong, limit_key.to_s.humanize)
+        parts << content_tag(:span, "#{status[:current_usage]} / #{status[:limit_amount]}") unless status[:limit_amount] == :unlimited
+        parts << content_tag(:span, "Unlimited") if status[:limit_amount] == :unlimited
+        parts << content_tag(:span, "#{status[:percent_used].round(1)}%")
+        if status[:grace_active]
+          ends = status[:grace_ends_at]&.utc&.iso8601
+          parts << content_tag(:span, "Grace ends at #{ends}", class: "pricing-plans-status__grace")
+        end
+        parts.join(" ").html_safe
+      end
     end
 
     private

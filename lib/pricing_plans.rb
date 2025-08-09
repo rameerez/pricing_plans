@@ -59,6 +59,7 @@ module PricingPlans
       @configuration = nil
       Registry.clear!
       LimitableRegistry.clear!
+      RequestCache.clear!
     end
 
     def registry
