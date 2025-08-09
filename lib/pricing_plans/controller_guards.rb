@@ -160,13 +160,18 @@ module PricingPlans
           return true
         end
 
-        path = redirect_to
-        path ||= (respond_to?(:pricing_path) ? pricing_path : nil)
+        # Prefer centralized handler if present
+        if respond_to?(:handle_pricing_plans_limit_blocked)
+          handle_pricing_plans_limit_blocked(result)
+        else
+          path = redirect_to
+          path ||= (respond_to?(:pricing_path) ? pricing_path : nil)
 
-        if path && respond_to?(:redirect_to)
-          redirect_to(path, alert: result.message, status: :see_other)
-        elsif respond_to?(:render)
-          respond_to?(:request) && request&.format&.json? ? render(json: { error: result.message }, status: :forbidden) : render(plain: result.message, status: :forbidden)
+          if path && respond_to?(:redirect_to)
+            redirect_to(path, alert: result.message, status: :see_other)
+          elsif respond_to?(:render)
+            respond_to?(:request) && request&.format&.json? ? render(json: { error: result.message }, status: :forbidden) : render(plain: result.message, status: :forbidden)
+          end
         end
         # Stop the filter chain (for before_action ergonomics)
         throw :abort

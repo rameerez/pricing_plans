@@ -124,6 +124,13 @@ module PricingPlans
       }
     end
 
+    # Bulk convenience: fetch statuses for multiple limit keys
+    # Returns a hash { key => status_hash }
+    def plan_limit_statuses(*limit_keys, billable:)
+      keys = limit_keys.flatten
+      keys.index_with { |k| plan_limit_status(k, billable: billable) }
+    end
+
     # Render a minimal partial-like snippet for admin visibility. In real Rails apps,
     # apps can replace with their own partial; this provides a sensible default.
     def render_plan_limit_status(limit_key, billable:, **html_options)
@@ -188,6 +195,68 @@ module PricingPlans
           content_tag :span, "See Stripe", class: "pricing-plans-card__price-text"
         end
       end
+    end
+
+    public
+
+    # UX: compute a single severity across many limits for a billable
+    # Returns one of :ok, :warning, :grace, :blocked
+    def highest_severity_for(billable, *limit_keys)
+      keys = limit_keys.flatten
+      severities = keys.map do |key|
+        status = plan_limit_status(key, billable: billable)
+        next :ok unless status[:configured]
+        return :blocked if status[:blocked]
+        return :grace if status[:grace_active]
+        percent = status[:percent_used].to_f
+        warn_thresholds = LimitChecker.warning_thresholds(billable, key)
+        highest_warn = warn_thresholds.max.to_f * 100.0
+        (percent >= highest_warn && highest_warn.positive?) ? :warning : :ok
+      end
+      severities.include?(:warning) ? :warning : :ok
+    end
+
+    # UX: combine messages for a set of limits into one human string
+    def combine_messages_for(billable, *limit_keys)
+      keys = limit_keys.flatten
+      parts = keys.map do |key|
+        result = ControllerGuards.require_plan_limit!(key, billable: billable, by: 0)
+        next nil if result.ok?
+        "#{key.to_s.humanize}: #{result.message}"
+      end.compact
+      return nil if parts.empty?
+      parts.join(" · ")
+    end
+
+    # UI: small helper to return a human label for a plan price
+    # Returns a pair [label, price]
+    def plan_label(plan)
+      return [plan.name, "Free"] if plan.price && plan.price.to_i.zero?
+      return [plan.name, plan.price_string] if plan.price_string
+      return [plan.name, "$#{plan.price}/mo"] if plan.price
+      return [plan.name, "Contact"] if plan.stripe_price || plan.price.nil?
+      [plan.name, nil]
+    end
+
+    # Suggest the smallest plan that satisfies current usage for the given billable
+    def suggest_next_plan_for(billable, keys: nil)
+      current_plan = PlanResolver.effective_plan_for(billable)
+      all_plans = Registry.plans.values
+      sorted = all_plans.sort_by { |p| p.price.nil? ? Float::INFINITY : p.price.to_f }
+      keys ||= current_plan&.limits&.keys || []
+      keys = keys.map(&:to_sym)
+
+      candidate = sorted.find do |plan|
+        if current_plan && current_plan.price && plan.price && plan.price.to_f < current_plan.price.to_f
+          next false
+        end
+        keys.all? do |key|
+          limit = plan.limit_for(key)
+          next true unless limit
+          limit[:to] == :unlimited || LimitChecker.current_usage_for(billable, key, limit) <= limit[:to].to_i
+        end
+      end
+      candidate || current_plan || Registry.default_plan
     end
 
     def render_plan_features(plan)

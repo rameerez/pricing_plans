@@ -130,4 +130,91 @@ class ViewHelpersTest < ActiveSupport::TestCase
     t = earliest_grace_ends_at_for(org, :projects, :custom_models)
     assert t.is_a?(Time)
   end
+
+  def test_plan_limit_statuses_bulk
+    org = @org
+    statuses = plan_limit_statuses(:projects, :custom_models, billable: org)
+    assert statuses.is_a?(Hash)
+    assert statuses.key?(:projects)
+    assert statuses.key?(:custom_models)
+    assert_includes [true, false], statuses[:projects][:configured]
+  end
+
+  def test_highest_severity_for_many_limits
+    org = @org
+    # Initially should be ok
+    assert_equal :ok, highest_severity_for(org, :projects, :custom_models)
+
+    # Exceed projects to enter grace
+    PricingPlans::Assignment.assign_plan_to(org, :free)
+    org.projects.create!(name: "P1")
+    result = PricingPlans::ControllerGuards.require_plan_limit!(:projects, billable: org)
+    assert result.grace?
+    assert_equal :grace, highest_severity_for(org, :projects, :custom_models)
+  end
+
+  def test_combine_messages_for
+    org = @org
+    org.projects.create!(name: "P1")
+    msg = combine_messages_for(org, :projects, :custom_models)
+    assert msg.nil? || msg.is_a?(String)
+  end
+
+  def test_plan_label_helper
+    plans = []
+    p_free = PricingPlans::Plan.new(:free)
+    p_free.price(0)
+    plans << p_free
+
+    p_pro = PricingPlans::Plan.new(:pro)
+    p_pro.price(29)
+    plans << p_pro
+
+    p_ent = PricingPlans::Plan.new(:ent)
+    p_ent.price_string("Contact")
+    plans << p_ent
+
+    labels = plans.map { |p| plan_label(p) }
+    assert_equal ["Free"], labels[0][1].scan(/Free/)
+    assert_match(/\$29\/mo/, labels[1][1])
+    assert_equal "Contact", labels[2][1]
+  end
+
+  def test_suggest_next_plan_for
+    org = @org
+    # Configure a small custom set of plans for determinism
+    PricingPlans.reset_configuration!
+    PricingPlans.configure do |config|
+      config.default_plan = :free
+
+      config.plan :free do
+        price 0
+        limits :projects, to: 1
+      end
+
+      config.plan :basic do
+        price 10
+        limits :projects, to: 3
+      end
+
+      config.plan :pro do
+        price 20
+        limits :projects, to: 10
+      end
+    end
+
+    # Re-register counters cleared by reset_configuration!
+    Project.send(:limited_by_pricing_plans, :projects, billable: :organization)
+
+    # usage 0 -> suggest free
+    assert_equal :free, suggest_next_plan_for(org, keys: [:projects]).key
+
+    # usage 2 -> suggest basic
+    2.times { |i| org.projects.create!(name: "P#{i}") }
+    assert_equal :basic, suggest_next_plan_for(org, keys: [:projects]).key
+
+    # usage 5 -> suggest pro
+    3.times { |i| org.projects.create!(name: "Q#{i}") }
+    assert_equal :pro, suggest_next_plan_for(org, keys: [:projects]).key
+  end
 end

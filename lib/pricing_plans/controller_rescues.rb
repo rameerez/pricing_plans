@@ -53,6 +53,38 @@ module PricingPlans
       end
     end
 
+    # Centralized handler for plan limit blocks. Apps can override this method
+    # in their own ApplicationController to customize redirects/flash.
+    # Receives the PricingPlans::Result for the blocked check.
+    def handle_pricing_plans_limit_blocked(result)
+      message = result&.message || "Plan limit reached"
+
+      if html_request?
+        if respond_to?(:pricing_path)
+          flash[:alert] = message if respond_to?(:flash)
+          redirect_to(pricing_path, status: :see_other) if respond_to?(:redirect_to)
+        else
+          flash.now[:alert] = message if respond_to?(:flash) && flash.respond_to?(:now)
+          render(status: :forbidden, plain: message) if respond_to?(:render)
+        end
+      elsif json_request?
+        payload = {
+          error: message,
+          limit: result&.limit_key,
+          plan: begin
+            plan_obj = PricingPlans::PlanResolver.effective_plan_for(result&.billable)
+            plan_obj&.name
+          rescue StandardError
+            nil
+          end
+        }.compact
+        render(json: payload, status: :forbidden) if respond_to?(:render)
+      else
+        render(json: { error: message }, status: :forbidden) if respond_to?(:render)
+        head :forbidden if respond_to?(:head)
+      end
+    end
+
     def html_request?
       return false unless respond_to?(:request)
       req = request

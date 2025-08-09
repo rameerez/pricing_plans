@@ -385,6 +385,26 @@ class ApplicationController < ActionController::Base
 end
 ```
 
+### Global blocked-limit handler (centralized UX)
+
+When a limit check blocks an action, controllers now call a centralized handler if present:
+
+```ruby
+# ApplicationController (override as needed)
+private
+def handle_pricing_plans_limit_blocked(result)
+  # Default shipped behavior (HTML): flash + redirect_to(pricing_path) if defined; else render 403
+  # You can customize globally here. The Result carries rich context:
+  # - result.limit_key, result.billable, result.message, result.metadata
+  redirect_to(pricing_path, status: :see_other, alert: result.message)
+end
+```
+
+Details:
+- `enforce_plan_limit!` prefers this handler when `result.blocked?` to centralize redirects/messages.
+- We also ship a sensible default implementation in `PricingPlans::ControllerRescues` that responds for HTML/JSON. Define your own in `ApplicationController` to override.
+- JSON: we return `{ error, limit, plan }` with 403 by default.
+
 ## Jobs — ergonomic guard for trusted flows
 
 Background workers often need to proceed while still signaling over-limit state (e.g., webhooks). Use the job helper for concise semantics:
@@ -421,6 +441,65 @@ end
 <%= plan_limit_banner :projects, billable: current_organization %>
 <%= plan_usage_meter  :projects, billable: current_organization %>
 <%= plan_pricing_table highlight: true %>
+```
+
+### Multi-limit UX helpers
+
+Small helpers that compute a single state/message across a set of limits:
+
+```ruby
+# Highest severity across keys for a billable: :ok | :warning | :grace | :blocked
+highest_severity_for(current_organization, :products, :licenses, :activations)
+
+# Combine per-limit human messages into a single banner string (or nil if all ok)
+combine_messages_for(current_organization, :products, :licenses, :activations)
+```
+
+These pair nicely with a single banner:
+
+```erb
+<% severity = highest_severity_for(current_organization, :products, :licenses, :activations) %>
+<% if severity != :ok %>
+  <div class="pricing-plans-banner pricing-plans-banner--<%= severity %>">
+    <%= combine_messages_for(current_organization, :products, :licenses, :activations) %>
+  </div>
+<% end %>
+```
+
+### Bulk dashboard status
+
+Fetch statuses for multiple keys at once:
+
+```ruby
+statuses = plan_limit_statuses(:products, :licenses, :activations, billable: current_organization)
+# => {
+#      products: { configured:, limit_amount:, current_usage:, percent_used:, grace_active:, blocked:, ... },
+#      licenses: { ... },
+#      activations: { ... }
+#    }
+```
+
+### Plan label helper for pricing UI
+
+Normalize price labels for view conditionals:
+
+```ruby
+name, price_label = plan_label(plan)
+# Examples: ["Free", "Free"], ["Pro", "$29/mo"], ["Enterprise", "Contact"]
+```
+
+### Suggest next plan (upgrade path)
+
+Suggests the smallest plan that satisfies current usage across relevant limit keys:
+
+```ruby
+next_plan = suggest_next_plan_for(current_organization)
+# or restrict to explicit keys
+next_plan = suggest_next_plan_for(current_organization, keys: [:products, :licenses])
+
+if next_plan && next_plan != current_pricing_plan(current_organization)
+  link_to "Upgrade to #{next_plan.name}", pricing_path
+end
 ```
 
 ### Composite usage widget (2–3 limits panel)
@@ -633,6 +712,13 @@ gem "pricing_plans"
   - `configured`, `limit_key`, `limit_amount`, `current_usage`, `percent_used`, `grace_active`, `grace_ends_at`, `blocked`, `after_limit`, `per`.
 - `render_plan_limit_status(limit_key, billable:)` renders a minimal status block (OK/GRACE/BLOCKED, usage, percent, grace timer). Tailwind-friendly classes:
   - Container: `pricing-plans-status is-ok|is-grace|is-blocked`.
+
+Bulk variant:
+
+```ruby
+plan_limit_statuses(:products, :licenses, :activations, billable: current_organization)
+```
+
 
 ## Downgrade overage flow (UX)
 

@@ -373,6 +373,30 @@ class ControllerGuardsTest < ActiveSupport::TestCase
     end
   end
 
+  def test_enforce_plan_limit_uses_global_handler_when_available
+    org = @org
+    plan = PricingPlans::Plan.new(:tmp)
+    plan.limits :projects, to: 0, after_limit: :block_usage
+
+    controller = Class.new do
+      include PricingPlans::ControllerGuards
+      include PricingPlans::ControllerRescues
+      attr_reader :handled
+      def handle_pricing_plans_limit_blocked(result)
+        @handled = result.message
+      end
+    end.new
+
+    PricingPlans::PlanResolver.stub(:effective_plan_for, plan) do
+      caught = catch(:abort) do
+        controller.enforce_plan_limit!(:projects, billable: org, by: 1)
+        :no_abort
+      end
+      refute_equal :no_abort, caught
+      assert_match(/limit/i, controller.instance_variable_get(:@handled))
+    end
+  end
+
   def test_dynamic_enforce_limit_helper
     org = @org
     plan = PricingPlans::Plan.new(:tmp)
