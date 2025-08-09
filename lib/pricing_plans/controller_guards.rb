@@ -71,6 +71,37 @@ module PricingPlans
       true
     end
 
+    # Syntactic sugar: dynamic helpers
+    def self.included(base)
+      base.define_method(:method_missing) do |method_name, *args, &block|
+        name = method_name.to_s
+        if name.end_with?("_limit!") && name.start_with?("enforce_")
+          limit_key = name.sub(/^enforce_/, '').sub(/_limit!$/, '').to_sym
+          options = args.first.is_a?(Hash) ? args.first : {}
+          billable = options[:billable] || (options[:on] && (options[:on].is_a?(Symbol) ? send(options[:on]) : instance_exec(&options[:on]))) || (options[:for] && (options[:for].is_a?(Symbol) ? send(options[:for]) : instance_exec(&options[:for])))
+          by = options.key?(:by) ? options[:by] : 1
+          allow_system_override = !!options[:allow_system_override]
+          result = PricingPlans::ControllerGuards.require_plan_limit!(limit_key, billable: billable, by: by, allow_system_override: allow_system_override)
+          return true unless result.blocked?
+          return true if allow_system_override && result.metadata && result.metadata[:system_override]
+          throw :abort if defined?(throw)
+          return false
+        elsif name.start_with?("enforce_") && name.end_with?("!")
+          feature_key = name.sub(/^enforce_/, '').sub(/!$/, '').to_sym
+          options = args.first.is_a?(Hash) ? args.first : {}
+          billable = options[:billable] || (options[:on] && (options[:on].is_a?(Symbol) ? send(options[:on]) : instance_exec(&options[:on]))) || (options[:for] && (options[:for].is_a?(Symbol) ? send(options[:for]) : instance_exec(&options[:for])))
+          PricingPlans::ControllerGuards.require_feature!(feature_key, billable: billable)
+          return true
+        end
+        super(method_name, *args, &block)
+      end if base.respond_to?(:define_method)
+
+      base.define_method(:respond_to_missing?) do |method_name, include_private = false|
+        str = method_name.to_s
+        (str.start_with?("enforce_") && str.end_with?("!")) || super(method_name, include_private)
+      end if base.respond_to?(:define_method)
+    end
+
     private
 
     def handle_warning_only(_billable, limit_key, current_usage, limit_amount)
