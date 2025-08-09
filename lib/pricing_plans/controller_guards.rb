@@ -9,10 +9,38 @@ module PricingPlans
       if base.respond_to?(:class_attribute)
         base.class_attribute :pricing_plans_billable_method, instance_accessor: false, default: nil
         base.class_attribute :pricing_plans_billable_proc, instance_accessor: false, default: nil
+        # Optional per-controller default redirect target when a limit blocks
+        # Accepts the same types as the global configuration: Symbol | String | Proc
+        base.class_attribute :pricing_plans_redirect_on_blocked_limit, instance_accessor: false, default: nil
       end
       # Fallback storage on eigenclass for environments without class_attribute
       if !base.respond_to?(:pricing_plans_billable_proc) && base.respond_to?(:singleton_class)
         base.singleton_class.send(:attr_accessor, :_pricing_plans_billable_proc)
+      end
+      if !base.respond_to?(:pricing_plans_redirect_on_blocked_limit) && base.respond_to?(:singleton_class)
+        base.singleton_class.send(:attr_accessor, :_pricing_plans_redirect_on_blocked_limit)
+      end
+
+      # Provide portable class-level API for redirect default regardless of class_attribute availability
+      if base.respond_to?(:define_singleton_method)
+        unless base.respond_to?(:pricing_plans_redirect_on_blocked_limit=)
+          base.define_singleton_method(:pricing_plans_redirect_on_blocked_limit=) do |value|
+            if respond_to?(:pricing_plans_redirect_on_blocked_limit)
+              self.pricing_plans_redirect_on_blocked_limit = value
+            elsif respond_to?(:_pricing_plans_redirect_on_blocked_limit=)
+              self._pricing_plans_redirect_on_blocked_limit = value
+            end
+          end
+        end
+        unless base.respond_to?(:pricing_plans_redirect_on_blocked_limit)
+          base.define_singleton_method(:pricing_plans_redirect_on_blocked_limit) do
+            if respond_to?(:_pricing_plans_redirect_on_blocked_limit)
+              self._pricing_plans_redirect_on_blocked_limit
+            else
+              nil
+            end
+          end
+        end
       end
 
       base.define_singleton_method(:pricing_plans_billable) do |method_name = nil, &block|
@@ -73,8 +101,8 @@ module PricingPlans
           end
           by = options.key?(:by) ? options[:by] : 1
           allow_system_override = !!options[:allow_system_override]
-          redirect_path = options[:redirect_to]
-          enforce_plan_limit!(limit_key, billable: billable, by: by, allow_system_override: allow_system_override, redirect_to: redirect_path)
+           redirect_path = options[:redirect_to]
+           enforce_plan_limit!(limit_key, billable: billable, by: by, allow_system_override: allow_system_override, redirect_to: redirect_path)
           return true
         elsif method_name.to_s =~ /^enforce_(.+)!$/
           feature_key = Regexp.last_match(1).to_sym
@@ -165,6 +193,44 @@ module PricingPlans
           handle_pricing_plans_limit_blocked(result)
         else
           path = redirect_to
+          # Per-controller default, if set
+          if path.nil?
+            ctrl = if self.class.respond_to?(:pricing_plans_redirect_on_blocked_limit)
+              self.class.pricing_plans_redirect_on_blocked_limit
+            elsif self.class.respond_to?(:_pricing_plans_redirect_on_blocked_limit)
+              self.class._pricing_plans_redirect_on_blocked_limit
+            else
+              nil
+            end
+            case ctrl
+            when Symbol
+              path = send(ctrl) if respond_to?(ctrl)
+            when String
+              path = ctrl
+            when Proc
+              begin
+                path = instance_exec(result, &ctrl)
+              rescue StandardError
+                path = nil
+              end
+            end
+          end
+          # Global default from configuration
+          if path.nil?
+            global = PricingPlans.configuration.redirect_on_blocked_limit rescue nil
+            case global
+            when Symbol
+              path = send(global) if respond_to?(global)
+            when String
+              path = global
+            when Proc
+              begin
+                path = instance_exec(result, &global)
+              rescue StandardError
+                path = nil
+              end
+            end
+          end
           path ||= (respond_to?(:pricing_path) ? pricing_path : nil)
 
           if path && respond_to?(:redirect_to)

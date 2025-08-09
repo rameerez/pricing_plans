@@ -373,6 +373,99 @@ class ControllerGuardsTest < ActiveSupport::TestCase
     end
   end
 
+  def test_enforce_plan_limit_uses_per_controller_default_before_global
+    org = @org
+    plan = PricingPlans::Plan.new(:tmp)
+    plan.limits :projects, to: 0, after_limit: :block_usage
+
+    controller_class = Class.new do
+      include PricingPlans::ControllerGuards
+      class << self; attr_accessor :pricing_plans_redirect_on_blocked_limit; end
+      attr_reader :redirected, :redirect_options
+      def redirect_to(path, opts={}); @redirected = path; @redirect_options = opts; end
+      def flash; @flash ||= {}; end
+    end
+    controller = controller_class.new
+
+    PricingPlans::PlanResolver.stub(:effective_plan_for, plan) do
+      original = PricingPlans.configuration.redirect_on_blocked_limit
+      begin
+        PricingPlans.configuration.redirect_on_blocked_limit = "/global"
+        controller_class.pricing_plans_redirect_on_blocked_limit = "/local"
+        caught = catch(:abort) do
+          controller.enforce_plan_limit!(:projects, billable: org, by: 1)
+          :no_abort
+        end
+        refute_equal :no_abort, caught
+        assert_equal "/local", controller.instance_variable_get(:@redirected)
+      ensure
+        controller_class.pricing_plans_redirect_on_blocked_limit = nil
+        PricingPlans.configuration.redirect_on_blocked_limit = original
+      end
+    end
+  end
+
+  def test_enforce_plan_limit_uses_global_when_no_local_and_no_pricing_path
+    org = @org
+    plan = PricingPlans::Plan.new(:tmp)
+    plan.limits :projects, to: 0, after_limit: :block_usage
+
+    controller = Class.new do
+      include PricingPlans::ControllerGuards
+      attr_reader :redirected, :redirect_options
+      def redirect_to(path, opts={}); @redirected = path; @redirect_options = opts; end
+      def flash; @flash ||= {}; end
+    end.new
+
+    PricingPlans::PlanResolver.stub(:effective_plan_for, plan) do
+      original = PricingPlans.configuration.redirect_on_blocked_limit
+      begin
+        PricingPlans.configuration.redirect_on_blocked_limit = "/global_only"
+        caught = catch(:abort) do
+          controller.enforce_plan_limit!(:projects, billable: org, by: 1)
+          :no_abort
+        end
+        refute_equal :no_abort, caught
+        assert_equal "/global_only", controller.instance_variable_get(:@redirected)
+      ensure
+        PricingPlans.configuration.redirect_on_blocked_limit = original
+      end
+    end
+  end
+
+  def test_enforce_plan_limit_renders_403_when_no_redirect_targets
+    org = @org
+    plan = PricingPlans::Plan.new(:tmp)
+    plan.limits :projects, to: 0, after_limit: :block_usage
+
+    controller = Class.new do
+      include PricingPlans::ControllerGuards
+      attr_reader :rendered
+      def render(status:, plain: nil, json: nil)
+        @rendered = { status: status, plain: plain, json: json }
+      end
+      def request
+        OpenStruct.new(format: OpenStruct.new(html?: true, json?: false))
+      end
+      def flash; @flash ||= { now: {} }; end
+    end.new
+
+    PricingPlans::PlanResolver.stub(:effective_plan_for, plan) do
+      original = PricingPlans.configuration.redirect_on_blocked_limit
+      begin
+        PricingPlans.configuration.redirect_on_blocked_limit = nil
+        caught = catch(:abort) do
+          controller.enforce_plan_limit!(:projects, billable: org, by: 1)
+          :no_abort
+        end
+        refute_equal :no_abort, caught
+        assert_equal :forbidden, controller.instance_variable_get(:@rendered)[:status]
+      ensure
+        PricingPlans.configuration.redirect_on_blocked_limit = original
+      end
+    end
+  end
+
   def test_enforce_plan_limit_uses_global_handler_when_available
     org = @org
     plan = PricingPlans::Plan.new(:tmp)

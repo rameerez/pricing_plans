@@ -59,4 +59,14 @@ PricingPlans.configure do |config|
   #   session.url
   # end
 
+  # Controller ergonomics — global default redirect when a limit blocks
+  # Accepts:
+  #   - Symbol: a controller helper method, e.g. :pricing_path
+  #   - String: a path or URL, e.g. "/pricing"
+  #   - Proc: instance-exec'd in the controller with the Result: ->(result) { pricing_path }
+  # Examples:
+  # config.redirect_on_blocked_limit = :pricing_path
+  # config.redirect_on_blocked_limit = "/pricing"
+  # config.redirect_on_blocked_limit = ->(result) { pricing_path }
+
 end

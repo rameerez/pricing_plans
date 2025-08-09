@@ -9,6 +9,14 @@ module PricingPlans
     attr_accessor :default_plan, :highlighted_plan, :period_cycle
     # Optional ergonomics
     attr_accessor :default_cta_text, :default_cta_url, :auto_cta_with_pay
+    # Global controller ergonomics
+    # When a limit check blocks, controllers can redirect to a global default target.
+    # Accepts:
+    # - Symbol: a controller helper to call (e.g., :pricing_path)
+    # - String: an absolute/relative path or full URL
+    # - Proc: instance-exec'd in the controller (self is the controller). Signature: ->(result) { ... }
+    #   Result contains: limit_key, billable, message, metadata
+    attr_accessor :redirect_on_blocked_limit
     # Optional global message builder proc for human copy (i18n/hooks)
     # Signature suggestion: (context:, **kwargs) -> string
     # Contexts used: :over_limit, :grace, :feature_denied
@@ -26,6 +34,7 @@ module PricingPlans
       @default_cta_url = nil
       @auto_cta_with_pay = false
       @message_builder = nil
+      @redirect_on_blocked_limit = nil
       @plans = {}
       @event_handlers = {
         warning: {},

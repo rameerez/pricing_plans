@@ -14,6 +14,11 @@ class ControllerDynamicCallbacksTest < ActiveSupport::TestCase
     def current_organization
       @billable
     end
+
+    # Simulate Rails redirect/flash helpers for tests below
+    def redirect_to(path, **opts); @redirected_to = [path, opts]; end
+    def redirected_to; @redirected_to; end
+    def flash; @flash ||= {}; end
   end
 
   class DummyConfiguredController
@@ -57,6 +62,123 @@ class ControllerDynamicCallbacksTest < ActiveSupport::TestCase
 
     PricingPlans::Assignment.assign_plan_to(@org, :pro)
     assert_equal true, controller.enforce_api_access!
+  end
+
+  def test_per_controller_default_redirect_is_used_when_blocked
+    controller = DummyController.new(@org)
+    # Force a small limit to trigger block
+    plan = PricingPlans::Plan.new(:tmp)
+    plan.limits :licenses, to: 0, after_limit: :block_usage
+    PricingPlans::PlanResolver.stub(:effective_plan_for, plan) do
+      DummyController.pricing_plans_redirect_on_blocked_limit = "/pricing"
+      caught = catch(:abort) do
+        controller.enforce_licenses_limit!(on: :current_organization)
+        :no_abort
+      end
+      refute_equal :no_abort, caught
+      path, opts = controller.redirected_to
+      assert_equal "/pricing", path
+      assert_equal :see_other, opts[:status]
+      assert_kind_of String, opts[:alert]
+      assert_match(/limit/i, opts[:alert])
+    ensure
+      DummyController.pricing_plans_redirect_on_blocked_limit = nil
+    end
+  end
+
+  def test_global_default_redirect_is_used_when_no_per_controller
+    controller = DummyController.new(@org)
+    plan = PricingPlans::Plan.new(:tmp)
+    plan.limits :licenses, to: 0, after_limit: :block_usage
+    PricingPlans::PlanResolver.stub(:effective_plan_for, plan) do
+      original = PricingPlans.configuration.redirect_on_blocked_limit
+      PricingPlans.configuration.redirect_on_blocked_limit = "/global_pricing"
+      caught = catch(:abort) do
+        controller.enforce_licenses_limit!(on: :current_organization)
+        :no_abort
+      end
+      refute_equal :no_abort, caught
+      path, opts = controller.redirected_to
+      assert_equal "/global_pricing", path
+      assert_equal :see_other, opts[:status]
+      assert_kind_of String, opts[:alert]
+      assert_match(/limit/i, opts[:alert])
+    ensure
+      PricingPlans.configuration.redirect_on_blocked_limit = original
+    end
+  end
+
+  def test_redirect_to_option_overrides_defaults
+    controller = DummyController.new(@org)
+    plan = PricingPlans::Plan.new(:tmp)
+    plan.limits :licenses, to: 0, after_limit: :block_usage
+    PricingPlans::PlanResolver.stub(:effective_plan_for, plan) do
+      original = PricingPlans.configuration.redirect_on_blocked_limit
+      PricingPlans.configuration.redirect_on_blocked_limit = "/global"
+      DummyController.pricing_plans_redirect_on_blocked_limit = "/local"
+
+      caught = catch(:abort) do
+        controller.enforce_licenses_limit!(on: :current_organization, redirect_to: "/override")
+        :no_abort
+      end
+      refute_equal :no_abort, caught
+      path, opts = controller.redirected_to
+      assert_equal "/override", path
+      assert_equal :see_other, opts[:status]
+      assert_kind_of String, opts[:alert]
+    ensure
+      DummyController.pricing_plans_redirect_on_blocked_limit = nil
+      PricingPlans.configuration.redirect_on_blocked_limit = original
+    end
+  end
+
+  def test_per_controller_default_symbol_helper
+    controller_class = Class.new do
+      include PricingPlans::ControllerGuards
+      def pricing_path; "/from_helper"; end
+      def redirect_to(path, **opts); @redir = [path, opts]; end
+      def redirected_to; @redir; end
+      def flash; @flash ||= {}; end
+    end
+    controller = controller_class.new
+    org = create_organization
+    plan = PricingPlans::Plan.new(:tmp)
+    plan.limits :licenses, to: 0, after_limit: :block_usage
+    PricingPlans::PlanResolver.stub(:effective_plan_for, plan) do
+      controller_class.pricing_plans_redirect_on_blocked_limit = :pricing_path
+      # Provide billable via common convention method
+      controller.define_singleton_method(:current_organization) { org }
+      caught = catch(:abort) do
+        controller.enforce_licenses_limit!
+        :no_abort
+      end
+      refute_equal :no_abort, caught
+      path, opts = controller.redirected_to
+      assert_equal "/from_helper", path
+      assert_equal :see_other, opts[:status]
+    ensure
+      controller_class.pricing_plans_redirect_on_blocked_limit = nil
+    end
+  end
+
+  def test_global_default_proc_receives_result
+    controller = DummyController.new(@org)
+    def controller.pricing_path; "/base"; end
+    plan = PricingPlans::Plan.new(:tmp)
+    plan.limits :licenses, to: 0, after_limit: :block_usage
+    PricingPlans::PlanResolver.stub(:effective_plan_for, plan) do
+      original = PricingPlans.configuration.redirect_on_blocked_limit
+      PricingPlans.configuration.redirect_on_blocked_limit = ->(result) { "/base?limit=#{result.limit_key}" }
+      caught = catch(:abort) do
+        controller.enforce_licenses_limit!(on: :current_organization)
+        :no_abort
+      end
+      refute_equal :no_abort, caught
+      path, _opts = controller.redirected_to
+      assert_match %r{^/base\?limit=licenses$}, path
+    ensure
+      PricingPlans.configuration.redirect_on_blocked_limit = original
+    end
   end
 
   def test_enforce_supports_for_option_symbol

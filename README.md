@@ -262,8 +262,15 @@ We provide both dynamic, English-y helpers and lower-level primitives.
 
 - Dynamic limit guard (before_action-friendly):
   - `enforce_<limit_key>_limit!(on:, by: 1, redirect_to: nil, allow_system_override: false)`
-    - Defaults: `by: 1` (omit for single-create). `on:` is a friendly alias for `billable:`.
-    - When blocked: redirects to `redirect_to` if given, else to `pricing_path` if available; otherwise renders HTTP 403 (JSON/plain). Aborts the filter chain.
+    - **Defaults**:
+      - `by: 1` (omit for single-create). `on:` is a friendly alias for `billable:`.
+      - Redirect resolution order when blocked:
+        1. `redirect_to:` option passed to the call
+        2. Per-controller default `self.pricing_plans_redirect_on_blocked_limit = :pricing_path` (Symbol | String | Proc)
+        3. Global default `config.redirect_on_blocked_limit` (Symbol | String | Proc)
+        4. `pricing_path` if available
+        5. Otherwise render HTTP 403 (JSON/plain)
+      - Aborts the filter chain when blocked.
     - When grace/warning: sets `flash[:warning]` with a human message.
     - With `allow_system_override: true`: returns true (no redirect), letting you proceed; the Result carries `metadata[:system_override]` for downstream handling.
 
@@ -280,8 +287,10 @@ Examples:
 
 ```ruby
 class LicensesController < ApplicationController
-  # English-y limit guard; by: defaults to 1
-  before_action { enforce_licenses_limit!(on: :current_organization) }, only: :create
+  # Preferred sugar — no lambda required, `by:` defaults to 1, billable inferred
+  # Optionally set a per-controller default redirect:
+  # self.pricing_plans_redirect_on_blocked_limit = :pricing_path
+  before_action :enforce_licenses_limit!, only: :create
 
   def create
     License.create!(organization: current_organization, ...)
@@ -372,6 +381,49 @@ Notes:
   before_action { enforce_api_access!(billable: current_organization) }
   ```
 - The gem will try to infer a billable via common conventions: `current_organization`, `current_account`, `current_user`, `current_team`, `current_company`, `current_workspace`, `current_tenant`. If you set `billable_class`, we’ll also try `current_<billable_class>`.
+
+Global default redirect (optional):
+
+```ruby
+# config/initializers/pricing_plans.rb
+PricingPlans.configure do |config|
+  config.redirect_on_blocked_limit = :pricing_path # or "/pricing" or ->(result) { pricing_path }
+end
+```
+
+Per-controller default (optional):
+
+```ruby
+class ApplicationController < ActionController::Base
+  self.pricing_plans_redirect_on_blocked_limit = :pricing_path
+end
+
+Redirect resolution cheatsheet (priority):
+
+1) `redirect_to:` option on the call
+2) Per-controller `self.pricing_plans_redirect_on_blocked_limit`
+3) Global `config.redirect_on_blocked_limit`
+4) `pricing_path` helper (if present)
+5) Fallback: render 403 (HTML or JSON)
+
+Per-controller default accepts:
+
+- Symbol: helper method name (e.g., `:pricing_path`)
+- String: path or URL (e.g., `"/pricing"`)
+- Proc: `->(result) { pricing_path }` (instance-exec'd in the controller)
+
+Global default accepts the same types. The Proc receives the `Result` so you can branch on `limit_key`, etc.
+
+Recommended patterns:
+
+- Set a single global default in your initializer.
+- Override per controller only if UX differs for a section.
+- Use the dynamic helpers as symbols in before_action for maximum clarity:
+  ```ruby
+  before_action :enforce_projects_limit!, only: :create
+  before_action :enforce_api_access!
+  ```
+```
 
 Override the default 403 handler (optional):
 
