@@ -42,7 +42,7 @@ class ConfigurationTest < ActiveSupport::TestCase
   def test_requires_default_plan
     error = assert_raises(PricingPlans::ConfigurationError) do
       PricingPlans.configure do |config|
-        # No default_plan set
+        # No default_plan set explicitly, and no plan marked default via DSL
         config.plan :free do
           price 0
         end
@@ -51,6 +51,70 @@ class ConfigurationTest < ActiveSupport::TestCase
 
     assert_match(/default_plan is required/, error.message)
   end
+  def test_default_plan_can_be_marked_via_dsl
+    PricingPlans.configure do |config|
+      # No explicit default_plan
+      config.plan :free do
+        price 0
+        default!
+      end
+    end
+
+    assert_equal :free, PricingPlans.configuration.default_plan
+    assert_equal :free, PricingPlans::Registry.default_plan.key
+  end
+
+  def test_highlighted_plan_can_be_marked_via_dsl
+    PricingPlans.configure do |config|
+      config.default_plan = :free
+
+      config.plan :free do
+        price 0
+        highlighted!
+      end
+    end
+
+    assert_equal :free, PricingPlans::Registry.highlighted_plan.key
+  end
+
+  def test_multiple_default_markers_error
+    error = assert_raises(PricingPlans::ConfigurationError) do
+      PricingPlans.configure do |config|
+        config.plan :free do
+          price 0
+          default!
+        end
+
+        config.plan :pro do
+          price 10
+          default!
+        end
+      end
+    end
+
+    assert_match(/Multiple plans marked default via DSL/, error.message)
+  end
+
+  def test_multiple_highlighted_markers_error
+    error = assert_raises(PricingPlans::ConfigurationError) do
+      PricingPlans.configure do |config|
+        config.default_plan = :free
+
+        config.plan :free do
+          price 0
+          highlighted!
+        end
+
+        config.plan :pro do
+          price 10
+          highlighted!
+        end
+      end
+    end
+
+    assert_match(/Multiple plans marked highlighted via DSL/, error.message)
+  end
+
 
   def test_default_plan_must_be_defined
     error = assert_raises(PricingPlans::ConfigurationError) do

@@ -24,6 +24,8 @@ module PricingPlans
       @meta = {}
       @cta_text = nil
       @cta_url = nil
+      @default = false
+      @highlighted = false
     end
 
     # DSL methods for plan configuration
@@ -216,6 +218,23 @@ module PricingPlans
 
     def credit_inclusion_for(operation_key)
       @credit_inclusions[operation_key.to_sym]
+    end
+
+    # Plan selection sugar
+    def default!(value = true)
+      @default = !!value
+    end
+
+    def default?
+      !!@default
+    end
+
+    def highlighted!(value = true)
+      @highlighted = !!value
+    end
+
+    def highlighted?
+      !!@highlighted
     end
 
     def validate!

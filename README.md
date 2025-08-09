@@ -35,8 +35,9 @@ using PricingPlans::IntegerRefinements
 PricingPlans.configure do |config|
   # Optional: hint controller inference of billable (we also infer via common conventions)
   # config.billable_class   = "Organization"
-  config.default_plan     = :free
-  config.highlighted_plan = :pro
+  # Optional defaults; can also be set via DSL sugar within plans
+  # config.default_plan     = :free
+  # config.highlighted_plan = :pro
   config.period_cycle     = :billing_cycle
 
   plan :free do
@@ -47,6 +48,7 @@ PricingPlans.configure do |config|
 
     limits  :products, to: 1.max, after_limit: :block_usage
     disallows :api_access, :flux_hd_access
+    default!
   end
 
   plan :pro do
@@ -60,6 +62,7 @@ PricingPlans.configure do |config|
     includes_credits 1_000, for: :generate_image
     limits :custom_models, to: 3, per: :month, after_limit: :grace_then_block, grace: 7.days, warn_at: [0.6, 0.8, 0.95]
     allows :api_access, :flux_hd_access
+    highlighted!
   end
 
   plan :enterprise do

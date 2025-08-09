@@ -8,11 +8,13 @@ PricingPlans.configure do |config|
   # You can specify your billable class if you want controller inference to prefer it (e.g., "User", "Organization").
   # Otherwise it will try common conventions like current_organization, current_user, etc.
   # config.billable_class = "Organization"
-  config.default_plan = :free
-  config.highlighted_plan = :pro
+  # Optional (can also be set via plan DSL sugar: `default!` / `highlighted!`)
+  # config.default_plan = :free
+  # config.highlighted_plan = :pro
 
   # Period cycle for per-period limits
   # :billing_cycle, :calendar_month, :calendar_week, :calendar_day
+  # Global default period for per-period limits (can be overridden per limit via `per:`)
   config.period_cycle = :billing_cycle
 
   # Optional defaults for pricing UI calls-to-action
@@ -44,6 +46,7 @@ PricingPlans.configure do |config|
     disallows :api_access, :premium_features
     limits :projects, to: 1.max, after_limit: :grace_then_block, grace: 10.days
     limits :team_members, to: 3.max
+    default!
   end
 
   plan :pro do
@@ -54,5 +57,6 @@ PricingPlans.configure do |config|
     allows :api_access, :premium_features
     limits :projects, to: 25.max, after_limit: :grace_then_block, grace: 7.days
     unlimited :team_members
+    highlighted!
   end
 end

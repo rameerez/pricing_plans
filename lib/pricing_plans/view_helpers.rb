@@ -53,7 +53,12 @@ module PricingPlans
       css_classes = ["pricing-plans-table"]
       css_classes << html_options.delete(:class) if html_options[:class]
 
-      highlighted_plan_key = highlight ? Registry.configuration.highlighted_plan : nil
+      highlighted_plan_key = nil
+      if highlight
+        # Prefer explicit config; fall back to a plan marked highlighted in DSL
+        highlighted_plan_key = Registry.configuration.highlighted_plan
+        highlighted_plan_key ||= Registry.plans.values.find(&:highlighted?)&.key
+      end
 
       content_tag :div, class: css_classes.join(" "), **html_options do
         Registry.plans.values.map do |plan|

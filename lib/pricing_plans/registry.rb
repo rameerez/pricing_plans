@@ -66,8 +66,12 @@ module PricingPlans
       end
 
       def highlighted_plan
-        return nil unless @configuration&.highlighted_plan
-        plan(@configuration.highlighted_plan)
+        return nil unless @configuration
+        if @configuration.highlighted_plan
+          return plan(@configuration.highlighted_plan)
+        end
+        # Fallback to plan flagged highlighted in DSL
+        plans.values.find(&:highlighted?)
       end
 
       def emit_event(event_type, limit_key, *args)

@@ -64,9 +64,38 @@ module PricingPlans
     end
 
     def validate!
+      select_defaults_from_dsl!
       validate_required_settings!
       validate_plan_references!
+      validate_dsl_markers!
       validate_plans!
+    end
+    def select_defaults_from_dsl!
+      # If not explicitly configured, derive from any plan marked via DSL sugar
+      if @default_plan.nil?
+        dsl_default = @plans.values.find(&:default?)&.key
+        @default_plan = dsl_default if dsl_default
+      end
+
+      if @highlighted_plan.nil?
+        dsl_highlighted = @plans.values.find(&:highlighted?)&.key
+        @highlighted_plan = dsl_highlighted if dsl_highlighted
+      end
+    end
+
+    def validate_dsl_markers!
+      defaults = @plans.values.select(&:default?)
+      highlights = @plans.values.select(&:highlighted?)
+
+      if defaults.size > 1
+        keys = defaults.map(&:key).join(", ")
+        raise PricingPlans::ConfigurationError, "Multiple plans marked default via DSL: #{keys}. Only one plan can be default."
+      end
+
+      if highlights.size > 1
+        keys = highlights.map(&:key).join(", ")
+        raise PricingPlans::ConfigurationError, "Multiple plans marked highlighted via DSL: #{keys}. Only one plan can be highlighted."
+      end
     end
 
     private

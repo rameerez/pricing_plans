@@ -76,15 +76,14 @@ class RegistryTest < ActiveSupport::TestCase
 
   def test_default_and_highlighted_plan_resolution
     PricingPlans.configure do |config|
-      config.default_plan = :free
-      config.highlighted_plan = :pro
-
       config.plan :free do
         price 0
+        default!
       end
 
       config.plan :pro do
         price 29
+        highlighted!
       end
     end
 
