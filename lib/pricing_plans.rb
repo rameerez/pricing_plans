@@ -22,7 +22,6 @@ module PricingPlans
   autoload :Registry, "pricing_plans/registry"
   autoload :Plan, "pricing_plans/plan"
   autoload :DSL, "pricing_plans/dsl"
-  autoload :IntegerRefinements, "pricing_plans/integer_refinements"
   autoload :PlanResolver, "pricing_plans/plan_resolver"
   autoload :PaySupport, "pricing_plans/pay_support"
   autoload :LimitChecker, "pricing_plans/limit_checker"
@@ -31,11 +30,9 @@ module PricingPlans
   autoload :PeriodCalculator, "pricing_plans/period_calculator"
   autoload :ControllerGuards, "pricing_plans/controller_guards"
   autoload :JobGuards, "pricing_plans/job_guards"
-  autoload :ControllerRescues, "pricing_plans/controller_rescues"
   autoload :ViewHelpers, "pricing_plans/view_helpers"
   autoload :Limitable, "pricing_plans/limitable"
   autoload :Billable, "pricing_plans/billable"
-  autoload :AssociationLimitRegistry, "pricing_plans/association_limit_registry"
   autoload :Result, "pricing_plans/result"
   autoload :OverageReporter, "pricing_plans/overage_reporter"
   
@@ -67,8 +64,6 @@ module PricingPlans
       Registry
     end
 
-    # Zero-shim Plans API for host apps
-    # Returns an array of Plan objects in a sensible order (free → paid → enterprise/contact)
     def plans
       array = Registry.plans.values
       array.sort_by do |p|
@@ -82,8 +77,6 @@ module PricingPlans
       end
     end
 
-    # One-call controller helper for dashboard pricing page
-    # Returns OpenStruct with: plans, popular_plan_key, current_plan
     def for_dashboard(billable)
       OpenStruct.new(
         plans: plans,
@@ -96,7 +89,6 @@ module PricingPlans
       )
     end
 
-    # One-call helper for marketing pages (no current plan)
     def for_marketing
       OpenStruct.new(
         plans: plans,
@@ -105,7 +97,6 @@ module PricingPlans
       )
     end
 
-    # Opinionated next-plan suggestion: pick the smallest plan that satisfies current usage
     def suggest_next_plan_for(billable, keys: nil)
       current_plan = PlanResolver.effective_plan_for(billable)
       sorted = plans

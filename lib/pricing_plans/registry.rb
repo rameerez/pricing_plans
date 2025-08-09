@@ -11,7 +11,6 @@ module PricingPlans
         validate_registry!
         lint_usage_credits_integration! if usage_credits_available?
         attach_billable_helpers!
-        attach_pending_association_limits!
 
         self
       end
@@ -70,7 +69,6 @@ module PricingPlans
         if @configuration.highlighted_plan
           return plan(@configuration.highlighted_plan)
         end
-        # Fallback to plan flagged highlighted in DSL
         plans.values.find(&:highlighted?)
       end
 
@@ -82,7 +80,6 @@ module PricingPlans
       private
 
       def validate_registry!
-        # Check for duplicate stripe price IDs
         stripe_prices = plans.values
           .map(&:stripe_price)
           .compact
@@ -91,7 +88,6 @@ module PricingPlans
             when String
               [sp]
             when Hash
-              # Extract all price ID values from the hash
               [sp[:id], sp[:month], sp[:year]].compact
             else
               []
@@ -103,7 +99,6 @@ module PricingPlans
           raise ConfigurationError, "Duplicate Stripe price IDs found: #{duplicates.join(', ')}"
         end
 
-        # Validate limit configurations
         validate_limit_consistency!
       end
 
@@ -113,11 +108,6 @@ module PricingPlans
         return if klass.included_modules.include?(PricingPlans::Billable)
         klass.include(PricingPlans::Billable)
       rescue StandardError
-        # If billable class isn't available yet, skip silently.
-      end
-
-      def attach_pending_association_limits!
-        PricingPlans::AssociationLimitRegistry.flush_pending!
       end
 
       def validate_limit_consistency!
@@ -125,21 +115,12 @@ module PricingPlans
           plan.limits.map { |key, limit| [plan.key, key, limit] }
         end
 
-        # Group by limit key to check consistency
         limit_groups = all_limits.group_by { |_, limit_key, _| limit_key }
 
         limit_groups.each do |limit_key, limit_configs|
-          # Filter out unlimited limits from consistency check
           non_unlimited_configs = limit_configs.reject { |_, _, limit| limit[:to] == :unlimited }
-
-          # Check that all non-unlimited plans with the same limit key use consistent per: configuration
           per_values = non_unlimited_configs.map { |_, _, limit| limit[:per] }.uniq
-
-          # Remove nil values to check if there are mixed per/non-per configurations
           non_nil_per_values = per_values.compact
-
-          # If we have both nil and non-nil per values, that's inconsistent
-          # If we have multiple different non-nil per values, that's also inconsistent
           has_nil = per_values.include?(nil)
           has_non_nil = non_nil_per_values.any?
 
@@ -155,7 +136,6 @@ module PricingPlans
       end
 
       def lint_usage_credits_integration!
-        # Check for collisions between per-period limits and credits
         credit_operations = if usage_credits_available?
           UsageCredits.registry.operations.keys rescue []
         else
@@ -164,15 +144,12 @@ module PricingPlans
 
         plans.each do |plan_key, plan|
           plan.credit_inclusions.each do |operation_key, inclusion|
-            # Check if operation exists in usage_credits
             unless credit_operations.include?(operation_key)
-              # When usage_credits is present, unknown operations are configuration errors
               raise ConfigurationError,
                 "Plan #{plan_key} includes_credits for unknown usage_credits operation '#{operation_key}'. " \
                 "Define the operation in usage_credits or remove includes_credits."
             end
 
-            # Check for collision with per-period limits
             limit = plan.limit_for(operation_key)
             if limit && limit[:per]
               raise ConfigurationError,
@@ -181,16 +158,11 @@ module PricingPlans
             end
           end
 
-          # Check the opposite - per-period limits that might conflict with credits
           plan.limits.each do |limit_key, limit|
-            next unless limit[:per] # Only per-period limits
+            next unless limit[:per]
 
             if credit_operations.include?(limit_key)
-              # Check if any plan has credit inclusions for this operation
-              has_credit_inclusion = plans.values.any? do |other_plan|
-                other_plan.credit_inclusion_for(limit_key)
-              end
-
+              has_credit_inclusion = plans.values.any? { |other_plan| other_plan.credit_inclusion_for(limit_key) }
               if has_credit_inclusion
                 raise ConfigurationError,
                   "Limit '#{limit_key}' is defined as both a per-period limit and has credit inclusions. " \

@@ -14,18 +14,15 @@ module PricingPlans
       # Add billable-centric convenience methods to instances of the billable class
       # when possible. These are no-ops if the model isn't the billable itself.
       define_method :within_plan_limits? do |limit_key, by: 1|
-        billable = self
-        LimitChecker.within_limit?(billable, limit_key)
+        LimitChecker.within_limit?(self, limit_key, by: by)
       end
 
       define_method :plan_limit_remaining do |limit_key|
-        billable = self
-        LimitChecker.remaining(billable, limit_key)
+        LimitChecker.remaining(self, limit_key)
       end
 
       define_method :plan_limit_percent_used do |limit_key|
-        billable = self
-        LimitChecker.percent_used(billable, limit_key)
+        LimitChecker.percent_used(self, limit_key)
       end
 
       define_method :current_pricing_plan do
@@ -43,18 +40,7 @@ module PricingPlans
       # - Infers limit_key from model's collection/table name when not provided
       # - Infers billable association from configured billable_class (or common conventions)
       # - Accepts `per:` to declare per-period allowances
-      def limited_by_pricing_plans(limit_key = nil, billable: nil, per: nil, on: nil, error_after_limit: nil, count_scope: nil)
-        include PricingPlans::Limitable unless ancestors.include?(PricingPlans::Limitable)
-
-        inferred_limit_key = (limit_key || inferred_limit_key_for_model).to_sym
-        effective_billable  = billable || on
-        inferred_billable   = infer_billable_association(effective_billable)
-
-        limited_by(inferred_limit_key, billable: inferred_billable, per: per, error_after_limit: error_after_limit, count_scope: count_scope)
-      end
-
-      # Backing implementation used by both the classic and new macro
-      def limited_by(limit_key, billable:, per: nil, error_after_limit: nil, source: nil, count_scope: nil)
+      def limited_by_pricing_plans(limit_key, billable:, per: nil, error_after_limit: nil, count_scope: nil)
         limit_key = limit_key.to_sym
         billable_method = billable.to_sym
 
@@ -64,14 +50,13 @@ module PricingPlans
             billable_method: billable_method,
             per: per,
             error_after_limit: error_after_limit,
-            source: source,
             count_scope: count_scope
           }
         )
 
         # Register counter only for persistent caps
         unless per
-          source_proc = count_scope || source
+          source_proc = count_scope
           PricingPlans::LimitableRegistry.register_counter(limit_key) do |billable_instance|
             # Base relation for this limited model and billable
             base_relation = relation_for_billable(billable_instance, billable_method)
@@ -137,42 +122,6 @@ module PricingPlans
 
       private
 
-      def inferred_limit_key_for_model
-        # Prefer table_name (works for anonymous AR classes with explicit table_name)
-        return table_name if respond_to?(:table_name) && table_name
-
-        # Fallback to model_name.collection only if the class has a real name
-        if respond_to?(:name) && name && respond_to?(:model_name) && model_name.respond_to?(:collection)
-          return model_name.collection
-        end
-
-        raise PricingPlans::ConfigurationError, "Cannot infer limit key: provide one explicitly"
-      end
-
-      def infer_billable_association(explicit)
-        return explicit.to_sym if explicit
-
-        # Prefer configured billable_class association name if present
-        begin
-          billable_klass = PricingPlans::Registry.billable_class
-        rescue StandardError
-          billable_klass = nil
-        end
-
-        if billable_klass
-          association_name = billable_klass.name.underscore.to_sym
-          return association_name if reflect_on_association(association_name)
-        end
-
-        # Common conventions fallback
-        %i[organization account user team company workspace tenant].each do |candidate|
-          return candidate if reflect_on_association(candidate)
-        end
-
-        # If nothing found, assume the record limits itself
-        :self
-      end
-
       def validate_limit_on_create(limit_key, billable_method, per, error_after_limit)
         method_name = :"check_limit_on_create_#{limit_key}"
 
@@ -181,12 +130,7 @@ module PricingPlans
           validate method_name, on: :create
 
           define_method method_name do
-            billable_instance = if billable_method == :self
-              self
-            else
-              send(billable_method)
-            end
-
+            billable_instance = (billable_method == :self) ? self : send(billable_method)
             return unless billable_instance
 
             # Skip validation if the billable doesn't have limits configured
@@ -237,11 +181,7 @@ module PricingPlans
       self.class.pricing_plans_limits.each do |limit_key, config|
         next unless config[:per] # Only per-period limits
 
-        billable_instance = if config[:billable_method] == :self
-          self
-        else
-          send(config[:billable_method])
-        end
+        billable_instance = (config[:billable_method] == :self) ? self : send(config[:billable_method])
 
         next unless billable_instance
 

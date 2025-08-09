@@ -1,10 +1,7 @@
 # frozen_string_literal: true
 
-require_relative "integer_refinements"
-
 module PricingPlans
   class Plan
-    using IntegerRefinements
 
     attr_reader :key, :name, :description, :bullets, :price, :price_string, :stripe_price,
                 :features, :limits, :credit_inclusions, :meta,
@@ -101,7 +98,6 @@ module PricingPlans
             end
           end
         rescue StandardError
-          # fallthrough to nil
         end
       end
       nil
@@ -168,7 +164,6 @@ module PricingPlans
     def highlighted!(value = true); @highlighted = !!value; end
     def highlighted?; !!@highlighted; end
 
-    # Convenience booleans used by views/hosts
     def free?
       @price.respond_to?(:to_i) && @price.to_i.zero?
     end
@@ -188,28 +183,23 @@ module PricingPlans
     end
 
     def validate_limit_options!(limit)
-      # Validate to: value
       unless limit[:to] == :unlimited || limit[:to].is_a?(Integer) || (limit[:to].respond_to?(:to_i) && !limit[:to].is_a?(String))
         raise ConfigurationError, "Limit #{limit[:key]} 'to' must be :unlimited, Integer, or respond to to_i"
       end
 
-      # Validate after_limit values
       valid_after_limit = [:grace_then_block, :block_usage, :just_warn]
       unless valid_after_limit.include?(limit[:after_limit])
         raise ConfigurationError, "Limit #{limit[:key]} after_limit must be one of #{valid_after_limit.join(', ')}"
       end
 
-      # Validate grace only applies to blocking behaviors
       if limit[:grace] && limit[:after_limit] == :just_warn
         raise ConfigurationError, "Limit #{limit[:key]} cannot have grace with :just_warn after_limit"
       end
 
-      # Validate warn_at thresholds
       if limit[:warn_at] && !limit[:warn_at].all? { |t| t.is_a?(Numeric) && t.between?(0, 1) }
         raise ConfigurationError, "Limit #{limit[:key]} warn_at thresholds must be numbers between 0 and 1"
       end
 
-      # Validate count_scope only for persistent caps (no per-period)
       if limit[:count_scope] && limit[:per]
         raise ConfigurationError, "Limit #{limit[:key]} cannot set count_scope for per-period limits"
       end
