@@ -199,4 +199,41 @@ class LimitCheckerMoreTest < ActiveSupport::TestCase
     end
     assert_match(/cannot set count_scope for per-period/, error.message)
   end
+
+  def test_job_guards_within_limit_yields
+    org = @org
+    plan = OpenStruct.new
+    plan.define_singleton_method(:limit_for) { |key| { to: 1 } if key == :projects }
+    PricingPlans::PlanResolver.stub(:effective_plan_for, plan) do
+      yielded = false
+      result = PricingPlans::JobGuards.with_plan_limit(:projects, billable: org, by: 1) { yielded = true }
+      assert yielded
+      assert result.within?
+    end
+  end
+
+  def test_job_guards_blocked_without_override_does_not_yield
+    org = @org
+    plan = OpenStruct.new
+    plan.define_singleton_method(:limit_for) { |key| { to: 0, after_limit: :block_usage } if key == :projects }
+    PricingPlans::PlanResolver.stub(:effective_plan_for, plan) do
+      yielded = false
+      result = PricingPlans::JobGuards.with_plan_limit(:projects, billable: org, by: 1) { yielded = true }
+      refute yielded
+      assert result.blocked?
+    end
+  end
+
+  def test_job_guards_blocked_with_system_override_yields
+    org = @org
+    plan = OpenStruct.new
+    plan.define_singleton_method(:limit_for) { |key| { to: 0, after_limit: :block_usage } if key == :projects }
+    PricingPlans::PlanResolver.stub(:effective_plan_for, plan) do
+      yielded = false
+      result = PricingPlans::JobGuards.with_plan_limit(:projects, billable: org, by: 1, allow_system_override: true) { yielded = true }
+      assert yielded
+      assert result.blocked?
+      assert_equal true, result.metadata[:system_override]
+    end
+  end
 end

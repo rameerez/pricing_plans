@@ -253,28 +253,101 @@ Default behavior out of the box:
 
 You can override the behavior by defining `handle_pricing_plans_feature_denied(error)` in your `ApplicationController`, or by adding your own `rescue_from PricingPlans::FeatureDenied`.
 
+### Controller guards — API and options
+
+We provide both dynamic, English-y helpers and lower-level primitives.
+
+- Dynamic feature guard (before_action-friendly):
+  - `enforce_<feature_key>!(on: :current_organization)` — raises `FeatureDenied` when disallowed (we rescue it for you by default).
+
+- Dynamic limit guard (before_action-friendly):
+  - `enforce_<limit_key>_limit!(on:, by: 1, redirect_to: nil, allow_system_override: false)`
+    - Defaults: `by: 1` (omit for single-create). `on:` is a friendly alias for `billable:`.
+    - When blocked: redirects to `redirect_to` if given, else to `pricing_path` if available; otherwise renders HTTP 403 (JSON/plain). Aborts the filter chain.
+    - When grace/warning: sets `flash[:warning]` with a human message.
+    - With `allow_system_override: true`: returns true (no redirect), letting you proceed; the Result carries `metadata[:system_override]` for downstream handling.
+
+- Generic helpers and primitives:
+  - `enforce_plan_limit!(limit_key, on: ..., by: 1, redirect_to: nil, allow_system_override: false)` — same behavior as the dynamic version.
+  - `require_plan_limit!(limit_key, billable:, by: 1, allow_system_override: false)` — returns a `Result` (`within?/warning?/grace?/blocked?`) for manual handling.
+
+Billable resolution options:
+- `on: :current_organization` or `on: -> { find_org }` — alias of `billable:` for controllers.
+- `billable:` — pass the instance directly.
+- You can globally configure a resolver via `self.pricing_plans_billable_method = :current_organization` or `pricing_plans_billable { current_account }`.
+
+Examples:
+
+```ruby
+class LicensesController < ApplicationController
+  # English-y limit guard; by: defaults to 1
+  before_action { enforce_licenses_limit!(on: :current_organization) }, only: :create
+
+  def create
+    License.create!(organization: current_organization, ...)
+    redirect_to licenses_path, notice: "Created"
+  end
+end
+```
+
+Inline usage (custom redirect target):
+
+```ruby
+def create
+  enforce_plan_limit!(:products, on: :current_organization, redirect_to: pricing_path)
+  Product.create!(organization: current_organization, ...)
+  redirect_to products_path
+end
+```
+
+Bulk actions (set by:) — e.g. importing 5 at once:
+
+```ruby
+def import
+  enforce_products_limit!(on: :current_organization, by: 5)
+  ProductImporter.import!(current_organization, rows)
+  redirect_to products_path
+end
+```
+
+Trusted flows (system override) — proceed but mark downstream:
+
+```ruby
+def webhook_create
+  result = require_plan_limit!(:licenses, billable: current_organization, allow_system_override: true)
+  # Proceed to create; inspect result.grace?/warning? and result.metadata[:system_override]
+  License.create!(organization: current_organization, metadata: { created_during_grace: result.grace? || result.warning?, system_override: result.metadata[:system_override] })
+  head :ok
+end
+```
+
 Feature guard (dynamic):
 
 ```ruby
 class ApiController < ApplicationController
   # Enforces a boolean feature. Reads like English; no extra config line.
-  before_action :enforce_api_access!, for: :current_organization
+  before_action { enforce_api_access!(on: :current_organization) }
 end
 ```
 
-Limit guard (returns a Result with human message and state):
+Limit guard (English-y, redirect/flash handled for you; use as a before_action or inline):
 
 ```ruby
 class ProjectsController < ApplicationController
+  # Defaults by: 1, so you can omit it; on: is an English alias for billable:
+  before_action { enforce_projects_limit!(on: :current_organization) }
+
   def create
-    org = current_organization
-    result = PricingPlans::ControllerGuards.require_plan_limit!(:projects, billable: org, by: 1)
-    return redirect_to(pricing_path, alert: result.message) if result.blocked?
-    flash[:warning] = result.message if result.warning? || result.grace?
-    Project.create!(organization: org, name: params[:name])
+    Project.create!(organization: current_organization, name: params[:name])
     redirect_to root_path, notice: "Created"
   end
 end
+```
+
+Inline usage:
+
+```ruby
+enforce_projects_limit!(on: :current_organization, redirect_to: pricing_path)
 ```
 Trusted system overrides (webhooks/jobs):
 
@@ -311,6 +384,36 @@ class ApplicationController < ActionController::Base
   end
 end
 ```
+
+## Jobs — ergonomic guard for trusted flows
+
+Background workers often need to proceed while still signaling over-limit state (e.g., webhooks). Use the job helper for concise semantics:
+
+```ruby
+# In any job/service
+PricingPlans::JobGuards.with_plan_limit(
+  :licenses,
+  billable: org,
+  by: 1,
+  allow_system_override: true
+) do |result|
+  # Perform the work; result carries human state
+  # result.ok?/warning?/grace?/blocked?
+  # result.metadata[:system_override] is set when we’re over the limit but allowed to proceed
+
+  LicenseIssuer.issue!(
+    plan_key: mapping.license_plan.key,
+    product: mapping.license_plan.product,
+    tenant: org,
+    owner: customer,
+    metadata: { created_during_grace: result.grace? || result.warning? }
+  )
+end
+```
+
+- Yields only when within limit, or when `allow_system_override: true`.
+- Always returns the `Result` object so you can branch even without a block.
+- Use sparingly; UI paths should use controller helpers that redirect/flash on block.
 
 ## Views — drop-in helpers
 

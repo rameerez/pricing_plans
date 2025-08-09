@@ -57,12 +57,34 @@ module PricingPlans
 
       # Dynamic enforce_*! feature guards for before_action ergonomics
       base.define_method(:method_missing) do |method_name, *args, &block|
-        if method_name.to_s =~ /^enforce_(.+)!$/
+        if method_name.to_s =~ /^enforce_(.+)_limit!$/
+          limit_key = Regexp.last_match(1).to_sym
+          options = args.first.is_a?(Hash) ? args.first : {}
+          billable = if options[:billable]
+            options[:billable]
+          elsif options[:on]
+            resolver = options[:on]
+            resolver.is_a?(Symbol) ? send(resolver) : instance_exec(&resolver)
+          elsif options[:for]
+            resolver = options[:for]
+            resolver.is_a?(Symbol) ? send(resolver) : instance_exec(&resolver)
+          else
+            respond_to?(:pricing_plans_billable) ? pricing_plans_billable : nil
+          end
+          by = options.key?(:by) ? options[:by] : 1
+          allow_system_override = !!options[:allow_system_override]
+          redirect_path = options[:redirect_to]
+          enforce_plan_limit!(limit_key, billable: billable, by: by, allow_system_override: allow_system_override, redirect_to: redirect_path)
+          return true
+        elsif method_name.to_s =~ /^enforce_(.+)!$/
           feature_key = Regexp.last_match(1).to_sym
           options = args.first.is_a?(Hash) ? args.first : {}
           # Support: enforce_feature!(for: :current_organization) and enforce_feature!(billable: obj)
           billable = if options[:billable]
             options[:billable]
+          elsif options[:on]
+            resolver = options[:on]
+            resolver.is_a?(Symbol) ? send(resolver) : instance_exec(&resolver)
           elsif options[:for]
             resolver = options[:for]
             resolver.is_a?(Symbol) ? send(resolver) : instance_exec(&resolver)
@@ -123,6 +145,39 @@ module PricingPlans
         # Within limit - check for warnings
         handle_within_limit(billable, limit_key, current_usage, limit_amount, by)
       end
+    end
+
+    # Rails-y controller ergonomics: enforce, set flash/redirect, and abort the callback chain when blocked.
+    # Defaults:
+    # - On blocked: redirect_to pricing_path (if available) with alert; else render 403 JSON.
+    # - On grace/warning: set flash[:warning] with the human message.
+    def enforce_plan_limit!(limit_key, billable:, by: 1, allow_system_override: false, redirect_to: nil)
+      result = require_plan_limit!(limit_key, billable: billable, by: by, allow_system_override: allow_system_override)
+
+      if result.blocked?
+        # If caller opted into system override, let them handle downstream
+        if allow_system_override && result.metadata && result.metadata[:system_override]
+          return true
+        end
+
+        path = redirect_to
+        path ||= (respond_to?(:pricing_path) ? pricing_path : nil)
+
+        if path && respond_to?(:redirect_to)
+          redirect_to(path, alert: result.message, status: :see_other)
+        elsif respond_to?(:render)
+          respond_to?(:request) && request&.format&.json? ? render(json: { error: result.message }, status: :forbidden) : render(plain: result.message, status: :forbidden)
+        end
+        # Stop the filter chain (for before_action ergonomics)
+        throw :abort
+        return false
+      elsif result.warning? || result.grace?
+        if respond_to?(:flash) && flash.respond_to?(:[]=)
+          flash[:warning] ||= result.message
+        end
+      end
+
+      true
     end
 
     def require_feature!(feature_key, billable:)

@@ -347,4 +347,138 @@ class ControllerGuardsTest < ActiveSupport::TestCase
       assert_equal true, result.metadata[:system_override]
     end
   end
+
+  def test_enforce_plan_limit_helper_redirects_on_block
+    org = @org
+    # Force a small limit to trigger block
+    plan = PricingPlans::Plan.new(:tmp)
+    plan.limits :projects, to: 0, after_limit: :block_usage
+
+    controller = Class.new do
+      include PricingPlans::ControllerGuards
+      attr_reader :redirected, :redirect_options
+      def pricing_path; "/pricing"; end
+      def redirect_to(path, opts={}); @redirected = path; @redirect_options = opts; end
+      def flash; @flash ||= {}; end
+    end.new
+
+    PricingPlans::PlanResolver.stub(:effective_plan_for, plan) do
+      caught = catch(:abort) do
+        controller.enforce_plan_limit!(:projects, billable: org, by: 1)
+        :no_abort
+      end
+      assert_equal "/pricing", controller.instance_variable_get(:@redirected)
+      assert_equal :see_other, controller.instance_variable_get(:@redirect_options)[:status]
+      assert caught != :no_abort
+    end
+  end
+
+  def test_dynamic_enforce_limit_helper
+    org = @org
+    plan = PricingPlans::Plan.new(:tmp)
+    plan.limits :projects, to: 0, after_limit: :block_usage
+
+    controller = Class.new do
+      include PricingPlans::ControllerGuards
+      def pricing_path; "/pricing"; end
+      def redirect_to(*); end
+    end.new
+
+    PricingPlans::PlanResolver.stub(:effective_plan_for, plan) do
+      caught = catch(:abort) do
+        controller.enforce_projects_limit!(billable: org, by: 1)
+        :no_abort
+      end
+      refute_equal :no_abort, caught
+    end
+  end
+
+  def test_enforce_plan_limit_helper_with_system_override_does_not_redirect
+    org = @org
+    plan = PricingPlans::Plan.new(:tmp)
+    plan.limits :projects, to: 0, after_limit: :block_usage
+
+    controller = Class.new do
+      include PricingPlans::ControllerGuards
+      attr_reader :redirected
+      def redirect_to(*); @redirected = true; end
+      def flash; @flash ||= {}; end
+    end.new
+
+    PricingPlans::PlanResolver.stub(:effective_plan_for, plan) do
+      # allow_system_override should short-circuit block handling
+      result = controller.enforce_plan_limit!(
+        :projects,
+        billable: org,
+        by: 1,
+        allow_system_override: true
+      )
+      assert result
+      refute controller.instance_variable_get(:@redirected)
+    end
+  end
+
+  def test_dynamic_enforce_limit_with_custom_redirect
+    org = @org
+    plan = PricingPlans::Plan.new(:tmp)
+    plan.limits :projects, to: 0, after_limit: :block_usage
+
+    controller = Class.new do
+      include PricingPlans::ControllerGuards
+      attr_reader :redirect_target
+      def redirect_to(path, **opts); @redirect_target = [path, opts]; end
+    end.new
+
+    PricingPlans::PlanResolver.stub(:effective_plan_for, plan) do
+      caught = catch(:abort) do
+        controller.enforce_projects_limit!(billable: org, by: 1, redirect_to: "/upgrade")
+        :no_abort
+      end
+      assert controller.instance_variable_get(:@redirect_target)
+      path, opts = controller.instance_variable_get(:@redirect_target)
+      assert_equal "/upgrade", path
+      assert_equal :see_other, opts[:status]
+      assert caught != :no_abort
+    end
+  end
+
+  def test_dynamic_enforce_limit_with_on_alias_symbol
+    org = @org
+    plan = PricingPlans::Plan.new(:tmp)
+    plan.limits :projects, to: 0, after_limit: :block_usage
+
+    controller = Class.new do
+      include PricingPlans::ControllerGuards
+      def org_alias; @org; end
+      def pricing_path; "/pricing"; end
+      def redirect_to(*); end
+    end.new
+    controller.instance_variable_set(:@org, org)
+
+    PricingPlans::PlanResolver.stub(:effective_plan_for, plan) do
+      caught = catch(:abort) do
+        controller.enforce_projects_limit!(on: :org_alias)
+        :no_abort
+      end
+      refute_equal :no_abort, caught
+    end
+  end
+
+  def test_dynamic_feature_guard_with_on_alias
+    org = @org
+    controller = Class.new do
+      include PricingPlans::ControllerGuards
+      def current_organization; @org; end
+    end.new
+    controller.instance_variable_set(:@org, org)
+
+    # Free plan disallows api_access, should raise
+    assert_raises(PricingPlans::FeatureDenied) do
+      controller.enforce_api_access!(on: :current_organization)
+    end
+
+    # Assign pro which allows api_access; should pass
+    PricingPlans::Assignment.assign_plan_to(org, :pro)
+    assert_equal true, controller.enforce_api_access!(on: :current_organization)
+  end
 end
