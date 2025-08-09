@@ -33,7 +33,6 @@ module PricingPlans
   autoload :JobGuards, "pricing_plans/job_guards"
   autoload :ControllerRescues, "pricing_plans/controller_rescues"
   autoload :ViewHelpers, "pricing_plans/view_helpers"
-  autoload :PricingViews, "pricing_plans/pricing_views"
   autoload :Limitable, "pricing_plans/limitable"
   autoload :Billable, "pricing_plans/billable"
   autoload :AssociationLimitRegistry, "pricing_plans/association_limit_registry"
@@ -53,13 +52,6 @@ module PricingPlans
     end
 
     def configure(&block)
-      # Support both styles simultaneously inside the block:
-      # - Bare DSL:   plan :free { ... }
-      # - Explicit:   config.plan :free { ... }
-      # We evaluate the block with self = configuration, while also
-      # passing the configuration object as the first block parameter.
-      # Evaluate with self = configuration and also pass the configuration
-      # object as a block parameter for explicit calls (config.plan ...).
       configuration.instance_exec(configuration, &block) if block
       configuration.validate!
       Registry.build_from_configuration(configuration)
@@ -80,13 +72,12 @@ module PricingPlans
     def plans
       array = Registry.plans.values
       array.sort_by do |p|
-        # Free first, then numeric price ascending, then price_string/stripe-price at the end
         if p.price && p.price.to_f.zero?
           0
         elsif p.price
           1 + p.price.to_f
         else
-          10_000 # price_string or stripe_price (enterprise/contact) last
+          10_000
         end
       end
     end
@@ -132,19 +123,6 @@ module PricingPlans
         end
       end
       candidate || current_plan || Registry.default_plan
-    end
-
-    # Drop-in partials entrypoints
-    def render_pricing_cards(view:, context: :marketing, billable: nil)
-      PricingViews.pricing_cards(view: view, context: context, billable: billable)
-    end
-
-    def render_usage_widget(view:, billable:, limits: [:products, :licenses, :activations])
-      PricingViews.usage_widget(view: view, billable: billable, limits: limits)
-    end
-
-    def render_overage_banner(view:, billable:, limits: [:products, :licenses, :activations])
-      PricingViews.overage_banner(view: view, billable: billable, limits: limits)
     end
   end
 end
