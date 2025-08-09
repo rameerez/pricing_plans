@@ -515,10 +515,11 @@ It renders per-limit labels and bars using your plan configuration and live coun
 
 ### CTA and Pay (Stripe/Paddle/etc.)
 
-When a plan has a `stripe_price`, the default `cta_text` becomes "Subscribe" and the default `cta_url` is nil. We intentionally do not hardwire Pay integration in the gem views because the host app controls processor, routes, and checkout UI. You have two simple options:
+When a plan has a `stripe_price`, the default `cta_text` becomes "Subscribe" and the default `cta_url` is nil. We intentionally do not hardwire Pay integration in the gem views because the host app controls processor, routes, and checkout UI. You have two simple options (plus an auto option):
 
 - Use your own controller action to start checkout and set `cta_url` to that path. Inside the action, call your Pay integration (e.g., Stripe Checkout, Billing Portal, or Paddle). See the official Pay docs (bundled here as `docs/pay.md`) for the exact APIs.
 - Override the pricing partial `_plan_card.html.erb` to attach your desired data attributes for Pay’s JavaScript integrations (e.g., Paddle.js, Lemon.js) or link to a Checkout URL.
+- Auto: set `config.auto_cta_with_pay` with a proc `(billable, plan, view)` and call `plan.cta_url(view:, billable:)` or the helper `pricing_plans_cta_url(plan, billable:, view:)`.
 
 Recommended baseline for Stripe via Pay:
 
@@ -616,6 +617,21 @@ If you want Stripe/Paddle/Lemon Squeezy checkout to power your plan CTAs, instal
 5) Point CTA buttons to your action or override the pricing partial to embed the attributes.
 
 We do not add any Pay routes or include concerns automatically; you stay in control.
+
+### Zero-plumbing APIs for pricing UI
+
+- Plans: `PricingPlans.plans #=> [Plan, ...]`
+- Dashboard data: `PricingPlans.for_dashboard(current_organization)` returns `OpenStruct` with `plans`, `popular_plan_key`, `current_plan`.
+- Marketing data: `PricingPlans.for_marketing`.
+- CTA helpers: `pricing_plans_cta_url(plan, billable:, view:)`, `pricing_plans_cta_button(plan, billable:, view:, context: :dashboard)`.
+- Usage/status bulk: `pricing_plans_status(billable, limits: [:products, :licenses, :activations])`.
+- Overage report with human message: `PricingPlans::OverageReporter.report_with_message(billable, :free)`.
+- Suggest next plan: `PricingPlans.suggest_next_plan_for(billable)`.
+
+Drop-in partials shipped by the engine (no overrides needed):
+- `pricing_plans/pricing_cards` (takes `context:` and optional `billable:`)
+- `pricing_plans/usage_widget` (takes `billable:` and optional `limits:`)
+- `pricing_plans/overage_banner` (takes `billable:` and optional `limits:`)
 
 
 <!-- Utilities -->

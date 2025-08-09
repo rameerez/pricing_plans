@@ -2,14 +2,14 @@
 
 class PricingController < ApplicationController
   def index
-    @plans = PricingPlans::Registry.plans.values
-    @highlighted_plan = PricingPlans::Registry.highlighted_plan
-
-    # If user is authenticated, show their current plan
-    if respond_to?(:current_user) && current_user
-      billable = current_user.respond_to?(:organization) ? current_user.organization : current_user
-      @current_plan = PricingPlans::PlanResolver.effective_plan_for(billable)
+    # One-call API: minimal plumbing
+    billable = if respond_to?(:current_user) && current_user
+      current_user.respond_to?(:organization) ? current_user.organization : current_user
     end
+    data = billable ? PricingPlans.for_dashboard(billable) : PricingPlans.for_marketing
+    @plans = data.plans
+    @highlighted_plan = PricingPlans::Registry.highlighted_plan
+    @current_plan = data.current_plan
   end
 
   # Optional Pay (Stripe) integration — quickstart example

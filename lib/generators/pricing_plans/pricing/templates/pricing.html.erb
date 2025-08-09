@@ -5,6 +5,8 @@
   </div>
 
   <%= plan_pricing_table highlight: true %>
+  <%# Or use the drop-in engine partial: %>
+  <%#= PricingPlans.render_pricing_cards(view: self, context: (defined?(current_user) && current_user ? :dashboard : :marketing), billable: (defined?(current_organization) ? current_organization : current_user)) %>
   
   <div class="pricing-faq">
     <h2>Frequently Asked Questions</h2>

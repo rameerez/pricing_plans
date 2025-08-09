@@ -9,6 +9,11 @@ module PricingPlans
     attr_accessor :default_plan, :highlighted_plan, :period_cycle
     # Optional ergonomics
     attr_accessor :default_cta_text, :default_cta_url, :auto_cta_with_pay
+    # Optional global message builder proc for human copy (i18n/hooks)
+    # Signature suggestion: (context:, **kwargs) -> string
+    # Contexts used: :over_limit, :grace, :feature_denied
+    # Example kwargs: limit_key:, current_usage:, limit_amount:, grace_ends_at:, feature_key:, plan_name:
+    attr_accessor :message_builder
     attr_reader :billable_class
     attr_reader :plans, :event_handlers
 
@@ -20,6 +25,7 @@ module PricingPlans
       @default_cta_text = nil
       @default_cta_url = nil
       @auto_cta_with_pay = false
+      @message_builder = nil
       @plans = {}
       @event_handlers = {
         warning: {},

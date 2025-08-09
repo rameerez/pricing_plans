@@ -14,7 +14,7 @@ module PricingPlans
     )
 
     Report = Struct.new(:items, :message, keyword_init: true)
- 
+
     class << self
       # Compute overage against a target plan for the given billable.
       # Returns an array of OverageItem for limits that are over the target.
@@ -55,7 +55,18 @@ module PricingPlans
           "#{i.limit_key} grace ends at #{ends}"
         end
 
-        msg = "Over target plan on: #{parts.join(', ')}. "
+        msg = if PricingPlans.configuration&.message_builder
+          begin
+            built = PricingPlans.configuration.message_builder.call(
+              context: :overage_report,
+              items: items
+            )
+            built if built
+          rescue StandardError
+            nil
+          end
+        end
+        msg ||= "Over target plan on: #{parts.join(', ')}. "
         msg += "Grace active — #{grace_info.join(', ')}." unless grace_info.empty?
 
         Report.new(items: items, message: msg)

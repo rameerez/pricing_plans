@@ -77,6 +77,18 @@ module PricingPlans
       end
     end
 
+    # Rails-y ergonomics for UI: expose integer cents as optional helper
+    def price_cents
+      return nil unless @price
+      (
+        if @price.respond_to?(:to_f)
+          (@price.to_f * 100).round
+        else
+          nil
+        end
+      )
+    end
+
     def set_price_string(value)
       @price_string = value.to_s
     end
@@ -137,12 +149,34 @@ module PricingPlans
       @cta_url = value&.to_s
     end
 
-    def cta_url(value = nil)
-      if value.nil?
-        @cta_url || PricingPlans.configuration.default_cta_url || default_cta_url_derived
-      else
+    # Unified ergonomic API:
+    # - Setter/getter: cta_url, cta_url("/checkout")
+    # - Resolver: cta_url(view: view_context, billable: org)
+    def cta_url(value = :__no_arg__, view: nil, billable: nil)
+      unless value == :__no_arg__
         set_cta_url(value)
+        return @cta_url
       end
+
+      return @cta_url if @cta_url
+      default = PricingPlans.configuration.default_cta_url
+      return default if default
+      # best-effort auto
+      if PricingPlans.configuration.auto_cta_with_pay
+        begin
+          gen = PricingPlans.configuration.auto_cta_with_pay
+          if gen.respond_to?(:call)
+            case gen.arity
+            when 3 then return gen.call(billable, self, view)
+            when 2 then return gen.call(billable, self)
+            else        return gen.call(billable)
+            end
+          end
+        rescue StandardError
+          # fallthrough to nil
+        end
+      end
+      nil
     end
 
     # Feature methods
@@ -238,13 +272,21 @@ module PricingPlans
       !!@highlighted
     end
 
+    # Convenience booleans used by views/hosts
+    def free?
+      @price.respond_to?(:to_i) && @price.to_i.zero?
+    end
+
+    def purchasable?
+      !!@stripe_price || (!free? && !!@price)
+    end
+
     def validate!
       validate_limits!
       validate_pricing!
     end
 
     private
-
     def validate_limits!
       @limits.each do |key, limit|
         validate_limit_options!(limit)
@@ -290,6 +332,8 @@ module PricingPlans
         raise ConfigurationError, "Plan #{@key} can only have one of: price, price_string, or stripe_price"
       end
     end
+
+    # (cta_url resolver moved above with unified signature)
 
     def default_cta_text_derived
       return "Subscribe" if @stripe_price

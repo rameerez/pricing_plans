@@ -33,6 +33,7 @@ module PricingPlans
   autoload :JobGuards, "pricing_plans/job_guards"
   autoload :ControllerRescues, "pricing_plans/controller_rescues"
   autoload :ViewHelpers, "pricing_plans/view_helpers"
+  autoload :PricingViews, "pricing_plans/pricing_views"
   autoload :Limitable, "pricing_plans/limitable"
   autoload :Billable, "pricing_plans/billable"
   autoload :AssociationLimitRegistry, "pricing_plans/association_limit_registry"
@@ -74,6 +75,96 @@ module PricingPlans
 
     def registry
       Registry
+    end
+
+    # Zero-shim Plans API for host apps
+    # Returns an array of Plan objects in a sensible order (free → paid → enterprise/contact)
+    def plans
+      array = Registry.plans.values
+      array.sort_by do |p|
+        # Free first, then numeric price ascending, then price_string/stripe-price at the end
+        if p.price && p.price.to_f.zero?
+          0
+        elsif p.price
+          1 + p.price.to_f
+        else
+          10_000 # price_string or stripe_price (enterprise/contact) last
+        end
+      end
+    end
+
+    # One-call controller helper for dashboard pricing page
+    # Returns OpenStruct with: plans, popular_plan_key, current_plan
+    def for_dashboard(billable)
+      OpenStruct.new(
+        plans: plans,
+        popular_plan_key: (Registry.highlighted_plan&.key),
+        current_plan: begin
+          PlanResolver.effective_plan_for(billable)
+        rescue StandardError
+          nil
+        end
+      )
+    end
+
+    # One-call helper for marketing pages (no current plan)
+    def for_marketing
+      OpenStruct.new(
+        plans: plans,
+        popular_plan_key: (Registry.highlighted_plan&.key),
+        current_plan: nil
+      )
+    end
+
+    # Opinionated next-plan suggestion: pick the smallest plan that satisfies current usage
+    def suggest_next_plan_for(billable, keys: nil)
+      current_plan = PlanResolver.effective_plan_for(billable)
+      sorted = plans
+      keys ||= (current_plan&.limits&.keys || [])
+      keys = keys.map(&:to_sym)
+
+      candidate = sorted.find do |plan|
+        if current_plan && current_plan.price && plan.price && plan.price.to_f < current_plan.price.to_f
+          next false
+        end
+        keys.all? do |key|
+          limit = plan.limit_for(key)
+          next true unless limit
+          limit[:to] == :unlimited || LimitChecker.current_usage_for(billable, key, limit) <= limit[:to].to_i
+        end
+      end
+      candidate || current_plan || Registry.default_plan
+    end
+
+    # Optional view-model decorator for UIs
+    def decorate_for_view(plan, context: :marketing, billable: nil, view: nil)
+      is_current = billable ? (PlanResolver.effective_plan_for(billable)&.key == plan.key) : false
+      is_popular = Registry.highlighted_plan&.key == plan.key
+      name, price_label = ViewHelpers.instance_method(:plan_label).bind(Object.new.extend(ViewHelpers)).call(plan)
+      {
+        key: plan.key,
+        name: name,
+        description: plan.description,
+        bullets: plan.bullets,
+        price_label: price_label,
+        is_current: is_current,
+        is_popular: is_popular,
+        button_text: plan.cta_text,
+        button_url: plan.cta_url(view: view, billable: billable)
+      }
+    end
+
+    # Drop-in partials entrypoints
+    def render_pricing_cards(view:, context: :marketing, billable: nil)
+      PricingViews.pricing_cards(view: view, context: context, billable: billable)
+    end
+
+    def render_usage_widget(view:, billable:, limits: [:products, :licenses, :activations])
+      PricingViews.usage_widget(view: view, billable: billable, limits: limits)
+    end
+
+    def render_overage_banner(view:, billable:, limits: [:products, :licenses, :activations])
+      PricingViews.overage_banner(view: view, billable: billable, limits: limits)
     end
   end
 end

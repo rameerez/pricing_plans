@@ -192,7 +192,15 @@ module PricingPlans
         highlighted_plan = Registry.highlighted_plan
         current_plan_name = plan&.name || Registry.default_plan&.name || "Current"
         feature_human = feature_key.to_s.humanize
-        upgrade_message = if highlighted_plan
+        upgrade_message = if PricingPlans.configuration&.message_builder
+          begin
+            builder = PricingPlans.configuration.message_builder
+            builder.call(context: :feature_denied, feature_key: feature_key, billable: billable, plan_name: current_plan_name, highlighted_plan: highlighted_plan&.name)
+          rescue StandardError
+            nil
+          end
+        end
+        upgrade_message ||= if highlighted_plan
           "Your current plan (#{current_plan_name}) doesn't allow you to #{feature_human}. Please upgrade to #{highlighted_plan.name} or higher to access #{feature_human}."
         else
           "#{feature_human} is not available on your current plan (#{current_plan_name})."
@@ -283,6 +291,23 @@ module PricingPlans
       resource_name = limit_key.to_s.humanize.downcase
       highlighted_plan = Registry.highlighted_plan
 
+      # Allow global message builder override
+      if PricingPlans.configuration&.message_builder
+        begin
+          built = PricingPlans.configuration.message_builder.call(
+            context: :over_limit,
+            limit_key: limit_key,
+            current_usage: current_usage,
+            limit_amount: limit_amount,
+            severity: severity,
+            highlighted_plan: highlighted_plan&.name
+          )
+          return built if built
+        rescue StandardError
+          # fall through to default
+        end
+      end
+
       base_message = "You've reached your limit of #{limit_amount} #{resource_name} (currently using #{current_usage})"
 
       return base_message unless highlighted_plan
@@ -293,6 +318,21 @@ module PricingPlans
     def build_grace_message(limit_key, current_usage, limit_amount, grace_ends_at)
       resource_name = limit_key.to_s.humanize.downcase
       highlighted_plan = Registry.highlighted_plan
+
+      if PricingPlans.configuration&.message_builder
+        begin
+          built = PricingPlans.configuration.message_builder.call(
+            context: :grace,
+            limit_key: limit_key,
+            current_usage: current_usage,
+            limit_amount: limit_amount,
+            grace_ends_at: grace_ends_at,
+            highlighted_plan: highlighted_plan&.name
+          )
+          return built if built
+        rescue StandardError
+        end
+      end
 
       time_remaining = time_ago_in_words(grace_ends_at)
       base_message = "You've exceeded your limit of #{limit_amount} #{resource_name}. " \

@@ -40,11 +40,11 @@
 
   <div class="pricing-plans-card__cta">
     <% cta_label = plan.cta_text %>
-    <% cta_href  = plan.cta_url.presence || pricing_plans_auto_cta_url(plan, (defined?(current_user) && current_user)) %>
+    <% cta_href  = plan.cta_url(view: self, billable: (defined?(current_organization) ? current_organization : (defined?(current_user) ? current_user : nil))) %>
     <% if cta_href.present? %>
       <a href="<%= cta_href %>" class="pricing-plans-card__button" data-plan="<%= plan.key %>"><%= cta_label %></a>
     <% else %>
-      <button class="pricing-plans-card__button" data-plan="<%= plan.key %>"><%= cta_label %></button>
+      <button class="pricing-plans-card__button" data-plan="<%= plan.key %>" disabled><%= cta_label %></button>
     <% end %>
   </div>
 </div>

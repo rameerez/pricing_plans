@@ -2,6 +2,46 @@
 
 module PricingPlans
   module ViewHelpers
+    # Bulk usage/status helper used by usage_widget
+    # Returns an array of structs with: key, current, allowed, percent_used, grace_active, blocked, per
+    StatusItem = Struct.new(:key, :current, :allowed, :percent_used, :grace_active, :grace_ends_at, :blocked, :per, keyword_init: true)
+
+    def pricing_plans_status(billable, limits: [:products, :licenses, :activations])
+      limits.map do |limit_key|
+        status = plan_limit_status(limit_key, billable: billable)
+        next StatusItem.new(key: limit_key, current: 0, allowed: nil, percent_used: 0.0, grace_active: false, blocked: false, per: false) unless status[:configured]
+        StatusItem.new(
+          key: limit_key,
+          current: status[:current_usage],
+          allowed: status[:limit_amount],
+          percent_used: status[:percent_used],
+          grace_active: status[:grace_active],
+          grace_ends_at: status[:grace_ends_at],
+          blocked: status[:blocked],
+          per: status[:per]
+        )
+      end
+    end
+    # First-class CTA helpers
+    # Returns best-effort CTA URL based on plan + config + Pay auto generator.
+    def pricing_plans_cta_url(plan, billable:, view: self)
+      return nil unless plan
+      plan.cta_url(view: view, billable: billable)
+    end
+
+    # Returns a button HTML (safe) with proper state; disabled when current plan on dashboard context.
+    def pricing_plans_cta_button(plan, billable:, view: self, context: :dashboard)
+      is_current = (context == :dashboard && billable && PricingPlans::PlanResolver.effective_plan_for(billable)&.key == plan.key)
+      text = plan.cta_text
+      url  = pricing_plans_cta_url(plan, billable: billable, view: view)
+      css  = ["pricing-plans-cta-button"]
+      css << (is_current ? "is-current" : "is-actionable")
+      if is_current || url.nil?
+        content_tag(:button, text, class: css.join(" "), disabled: true)
+      else
+        link_to(text, url, class: css.join(" "))
+      end
+    end
     def plan_limit_banner(limit_key, billable:, **html_options)
       result = require_plan_limit!(limit_key, billable: billable, by: 0)
       return unless result.warning? || result.grace? || result.blocked?
@@ -57,11 +97,11 @@ module PricingPlans
       if highlight
         # Prefer explicit config; fall back to a plan marked highlighted in DSL
         highlighted_plan_key = Registry.configuration.highlighted_plan
-        highlighted_plan_key ||= Registry.plans.values.find(&:highlighted?)&.key
+        highlighted_plan_key ||= PricingPlans.plans.find(&:highlighted?)&.key
       end
 
       content_tag :div, class: css_classes.join(" "), **html_options do
-        Registry.plans.values.map do |plan|
+        PricingPlans.plans.map do |plan|
           render_plan_card(plan, highlighted: plan.key == highlighted_plan_key)
         end.join.html_safe
       end
@@ -190,9 +230,6 @@ module PricingPlans
               "$#{plan.price}"
             end
           end
-        elsif plan.stripe_price
-          # In a real implementation, you'd fetch the price from Stripe
-          content_tag :span, "See Stripe", class: "pricing-plans-card__price-text"
         end
       end
     end
@@ -240,23 +277,7 @@ module PricingPlans
 
     # Suggest the smallest plan that satisfies current usage for the given billable
     def suggest_next_plan_for(billable, keys: nil)
-      current_plan = PlanResolver.effective_plan_for(billable)
-      all_plans = Registry.plans.values
-      sorted = all_plans.sort_by { |p| p.price.nil? ? Float::INFINITY : p.price.to_f }
-      keys ||= current_plan&.limits&.keys || []
-      keys = keys.map(&:to_sym)
-
-      candidate = sorted.find do |plan|
-        if current_plan && current_plan.price && plan.price && plan.price.to_f < current_plan.price.to_f
-          next false
-        end
-        keys.all? do |key|
-          limit = plan.limit_for(key)
-          next true unless limit
-          limit[:to] == :unlimited || LimitChecker.current_usage_for(billable, key, limit) <= limit[:to].to_i
-        end
-      end
-      candidate || current_plan || Registry.default_plan
+      PricingPlans.suggest_next_plan_for(billable, keys: keys)
     end
 
     def render_plan_features(plan)
@@ -285,11 +306,13 @@ module PricingPlans
 
     def render_plan_cta(plan)
       content_tag :div, class: "pricing-plans-card__cta" do
-        # This would typically include upgrade/subscribe buttons
-        # For now, just a placeholder
-        content_tag :button, "Choose Plan",
-          class: "pricing-plans-card__button",
-          data: { plan: plan.key }
+        text = plan.cta_text
+        url  = plan.cta_url(view: self, billable: (respond_to?(:current_user) ? current_user : nil))
+        if url
+          link_to text, url, class: "pricing-plans-card__button"
+        else
+          content_tag :button, text, class: "pricing-plans-card__button", disabled: true
+        end
       end
     end
     # Optional helper: generate a checkout URL via Pay for a plan that has a stripe_price.
