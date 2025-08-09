@@ -39,8 +39,12 @@
   <% end %>
 
   <div class="pricing-plans-card__cta">
-    <button class="pricing-plans-card__button" data-plan="<%= plan.key %>">
-      Choose <%= plan.name %>
-    </button>
+    <% cta_label = plan.cta_text %>
+    <% cta_href  = plan.cta_url.presence || pricing_plans_auto_cta_url(plan, (defined?(current_user) && current_user)) %>
+    <% if cta_href.present? %>
+      <a href="<%= cta_href %>" class="pricing-plans-card__button" data-plan="<%= plan.key %>"><%= cta_label %></a>
+    <% else %>
+      <button class="pricing-plans-card__button" data-plan="<%= plan.key %>"><%= cta_label %></button>
+    <% end %>
   </div>
 </div>

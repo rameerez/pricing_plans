@@ -11,7 +11,6 @@ class RegistryTest < ActiveSupport::TestCase
 
   def test_builds_from_configuration
     PricingPlans.configure do |config|
-      config.billable_class = "Organization"
       config.default_plan = :free
 
       config.plan :free do
@@ -77,7 +76,6 @@ class RegistryTest < ActiveSupport::TestCase
 
   def test_default_and_highlighted_plan_resolution
     PricingPlans.configure do |config|
-      config.billable_class = "Organization"
       config.default_plan = :free
       config.highlighted_plan = :pro
 
@@ -99,7 +97,6 @@ class RegistryTest < ActiveSupport::TestCase
   def test_duplicate_stripe_price_validation
     error = assert_raises(PricingPlans::ConfigurationError) do
       PricingPlans.configure do |config|
-        config.billable_class = "Organization"
         config.default_plan = :free
 
         config.plan :free do
@@ -122,7 +119,6 @@ class RegistryTest < ActiveSupport::TestCase
   def test_limit_consistency_validation
     error = assert_raises(PricingPlans::ConfigurationError) do
       PricingPlans.configure do |config|
-        config.billable_class = "Organization"
         config.default_plan = :free
 
         config.plan :free do
@@ -145,7 +141,6 @@ class RegistryTest < ActiveSupport::TestCase
 
     error = assert_raises(PricingPlans::ConfigurationError) do
       PricingPlans.configure do |config|
-        config.billable_class = "Organization"
         config.default_plan = :free
 
         config.plan :free do
@@ -169,7 +164,6 @@ class RegistryTest < ActiveSupport::TestCase
     # Now should error when usage_credits is present and operation is unknown
     error = assert_raises(PricingPlans::ConfigurationError) do
       PricingPlans.configure do |config|
-        config.billable_class = "Organization"
         config.default_plan = :free
 
         config.plan :free do
@@ -190,7 +184,6 @@ class RegistryTest < ActiveSupport::TestCase
     handler_args = nil
 
     PricingPlans.configure do |config|
-      config.billable_class = "Organization"
       config.default_plan = :free
 
       config.plan :free do
@@ -221,7 +214,6 @@ class RegistryTest < ActiveSupport::TestCase
 
   def test_clear_registry
     PricingPlans.configure do |config|
-      config.billable_class = "Organization"
       config.default_plan = :free
 
       config.plan :free do
@@ -249,7 +241,6 @@ class RegistryTest < ActiveSupport::TestCase
   def test_complex_stripe_price_collision_detection
     error = assert_raises(PricingPlans::ConfigurationError) do
       PricingPlans.configure do |config|
-        config.billable_class = "Organization"
         config.default_plan = :free
 
         config.plan :free do
@@ -271,7 +262,6 @@ class RegistryTest < ActiveSupport::TestCase
 
   def test_event_handlers_structure
     PricingPlans.configure do |config|
-      config.billable_class = "Organization"
       config.default_plan = :free
 
       config.plan :free do

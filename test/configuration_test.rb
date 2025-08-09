@@ -10,7 +10,6 @@ class ConfigurationTest < ActiveSupport::TestCase
 
   def test_basic_configuration_setup
     PricingPlans.configure do |config|
-      config.billable_class = "Organization"
       config.default_plan = :free
       config.highlighted_plan = :pro
 
@@ -24,25 +23,29 @@ class ConfigurationTest < ActiveSupport::TestCase
     end
 
     config = PricingPlans.configuration
-    assert_equal "Organization", config.billable_class
     assert_equal :free, config.default_plan
     assert_equal :pro, config.highlighted_plan
   end
 
-  def test_requires_billable_class
-    error = assert_raises(PricingPlans::ConfigurationError) do
+  # billable_class is now optional; we infer via common conventions in controllers/models
+  def test_billable_class_is_optional
+    assert_nothing_raised do
       PricingPlans.configure do |config|
         config.default_plan = :free
+        config.plan :free do
+          price 0
+        end
       end
     end
-
-    assert_match(/billable_class is required/, error.message)
   end
 
   def test_requires_default_plan
     error = assert_raises(PricingPlans::ConfigurationError) do
       PricingPlans.configure do |config|
-        config.billable_class = "Organization"
+        # No default_plan set
+        config.plan :free do
+          price 0
+        end
       end
     end
 
@@ -52,7 +55,6 @@ class ConfigurationTest < ActiveSupport::TestCase
   def test_default_plan_must_be_defined
     error = assert_raises(PricingPlans::ConfigurationError) do
       PricingPlans.configure do |config|
-        config.billable_class = "Organization"
         config.default_plan = :nonexistent
       end
     end
@@ -63,7 +65,6 @@ class ConfigurationTest < ActiveSupport::TestCase
   def test_highlighted_plan_must_be_defined_if_set
     error = assert_raises(PricingPlans::ConfigurationError) do
       PricingPlans.configure do |config|
-        config.billable_class = "Organization"
         config.default_plan = :free
         config.highlighted_plan = :nonexistent
 
@@ -79,7 +80,6 @@ class ConfigurationTest < ActiveSupport::TestCase
   def test_duplicate_plan_keys_not_allowed
     error = assert_raises(PricingPlans::ConfigurationError) do
       PricingPlans.configure do |config|
-        config.billable_class = "Organization"
         config.default_plan = :free
 
         config.plan :free do
@@ -98,7 +98,6 @@ class ConfigurationTest < ActiveSupport::TestCase
   def test_plan_keys_must_be_symbols
     error = assert_raises(PricingPlans::ConfigurationError) do
       PricingPlans.configure do |config|
-        config.billable_class = "Organization"
         config.default_plan = :free
 
         config.plan "free" do  # String instead of symbol!
@@ -153,7 +152,6 @@ class ConfigurationTest < ActiveSupport::TestCase
 
   def test_reset_configuration_clears_everything
     PricingPlans.configure do |config|
-      config.billable_class = "Organization"
       config.default_plan = :free
 
       config.plan :free do
@@ -161,7 +159,8 @@ class ConfigurationTest < ActiveSupport::TestCase
       end
     end
 
-    refute_nil PricingPlans.configuration.billable_class
+    # billable_class is optional now; not set
+    assert_nil PricingPlans.configuration.billable_class
 
     PricingPlans.reset_configuration!
 
@@ -171,7 +170,6 @@ class ConfigurationTest < ActiveSupport::TestCase
   def test_malformed_plan_blocks_handled
     error = assert_raises do
       PricingPlans.configure do |config|
-        config.billable_class = "Organization"
         config.default_plan = :free
 
         config.plan :free do
@@ -214,7 +212,6 @@ class ConfigurationTest < ActiveSupport::TestCase
 
   def test_bare_dsl_inside_yielded_block
     PricingPlans.configure do |config|
-      config.billable_class = "Organization"
       config.default_plan = :free
 
       # Bare DSL despite yielded config
@@ -230,7 +227,6 @@ class ConfigurationTest < ActiveSupport::TestCase
 
   def test_mixed_dsl_styles_inside_yielded_block
     PricingPlans.configure do |config|
-      config.billable_class = "Organization"
       config.default_plan = :free
 
       # Bare
@@ -267,7 +263,6 @@ class ConfigurationTest < ActiveSupport::TestCase
 
   def test_period_cycle_validation
     PricingPlans.configure do |config|
-      config.billable_class = "Organization"
       config.default_plan = :free
       config.period_cycle = :billing_cycle
 
@@ -283,7 +278,6 @@ class ConfigurationTest < ActiveSupport::TestCase
     custom_callable = ->(billable) { [Time.current, 1.day.from_now] }
 
     PricingPlans.configure do |config|
-      config.billable_class = "Organization"
       config.default_plan = :free
       config.period_cycle = custom_callable
 

@@ -7,7 +7,6 @@ class ComplexAssociationsTest < ActiveSupport::TestCase
     super
     PricingPlans.reset_configuration!
     PricingPlans.configure do |config|
-      config.billable_class = "Organization"
       config.default_plan   = :free
       config.plan :free do
         limits :ai_models, to: 1

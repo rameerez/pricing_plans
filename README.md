@@ -33,7 +33,8 @@ Define your catalog in `config/initializers/pricing_plans.rb`:
 using PricingPlans::IntegerRefinements
 
 PricingPlans.configure do |config|
-  config.billable_class   = "Organization"
+  # Optional: hint controller inference of billable (we also infer via common conventions)
+  # config.billable_class   = "Organization"
   config.default_plan     = :free
   config.highlighted_plan = :pro
   config.period_cycle     = :billing_cycle
@@ -51,6 +52,10 @@ PricingPlans.configure do |config|
   plan :pro do
     stripe_price "price_pro_29"
     bullets "Flux HD", "3 custom models/month", "1,000 image credits/month"
+    # Optional CTA overrides for pricing UI (defaults provided)
+    cta_text "Subscribe"
+    # If using Pay, prefer using their helpers/routes for checkout. See the Pay docs link below.
+    # cta_url  checkout_path # or a full URL if you’re handling checkout yourself
 
     includes_credits 1_000, for: :generate_image
     limits :custom_models, to: 3, per: :month, after_limit: :grace_then_block, grace: 7.days, warn_at: [0.6, 0.8, 0.95]
@@ -61,6 +66,8 @@ PricingPlans.configure do |config|
     price_string "Contact"
     description  "Get in touch and we'll fit your needs."
     bullets      "Custom limits", "Dedicated SLAs", "Dedicated support"
+    cta_text "Contact sales"
+    cta_url  "mailto:sales@example.com"
 
     unlimited :products
     allows    :api_access, :flux_hd_access
@@ -259,9 +266,7 @@ Notes:
   # or explicitly
   before_action { enforce_api_access!(billable: current_organization) }
   ```
-- The gem will try to infer a billable via:
-  - `current_<billable_class>` (e.g., `current_organization`), then
-  - common conventions: `current_organization`, `current_account`, `current_user`, `current_team`, `current_company`, `current_workspace`, `current_tenant`.
+- The gem will try to infer a billable via common conventions: `current_organization`, `current_account`, `current_user`, `current_team`, `current_company`, `current_workspace`, `current_tenant`. If you set `billable_class`, we’ll also try `current_<billable_class>`.
 
 Override the default 403 handler (optional):
 
@@ -281,6 +286,112 @@ end
 <%= plan_limit_banner :projects, billable: current_organization %>
 <%= plan_usage_meter  :projects, billable: current_organization %>
 <%= plan_pricing_table highlight: true %>
+```
+
+### CTA and Pay (Stripe/Paddle/etc.)
+
+When a plan has a `stripe_price`, the default `cta_text` becomes "Subscribe" and the default `cta_url` is nil. We intentionally do not hardwire Pay integration in the gem views because the host app controls processor, routes, and checkout UI. You have two simple options:
+
+- Use your own controller action to start checkout and set `cta_url` to that path. Inside the action, call your Pay integration (e.g., Stripe Checkout, Billing Portal, or Paddle). See the official Pay docs (bundled here as `docs/pay.md`) for the exact APIs.
+- Override the pricing partial `_plan_card.html.erb` to attach your desired data attributes for Pay’s JavaScript integrations (e.g., Paddle.js, Lemon.js) or link to a Checkout URL.
+
+Recommended baseline for Stripe via Pay:
+
+1) Create an action that sets the processor and creates a Checkout Session.
+
+```ruby
+class SubscriptionsController < ApplicationController
+  def checkout
+    current_user.set_payment_processor :stripe
+    checkout = current_user.payment_processor.checkout(
+      mode: "subscription",
+      line_items: [{ price: "price_pro_29" }],
+      success_url: root_url,
+      cancel_url: root_url
+    )
+    redirect_to checkout.url, allow_other_host: true, status: :see_other
+  end
+end
+```
+
+2) Point your plan’s `cta_url` to that controller route or override the partial to link it. Alternatively, opt-in to an automatic CTA URL generator:
+
+```ruby
+# config/initializers/pricing_plans.rb
+PricingPlans.configure do |config|
+  # Global generator (optional). Arity can be (billable, plan, view) | (billable, plan) | (billable)
+  config.auto_cta_with_pay = ->(billable, plan, view) do
+    billable.set_payment_processor :stripe unless billable.respond_to?(:payment_processor) && billable.payment_processor
+    price_id = plan.stripe_price.is_a?(Hash) ? (plan.stripe_price[:id] || plan.stripe_price.values.first) : plan.stripe_price
+    session = billable.payment_processor.checkout(
+      mode: "subscription",
+      line_items: [{ price: price_id }],
+      success_url: view.root_url,
+      cancel_url: view.root_url
+    )
+    session.url
+  end
+end
+```
+
+Or per-view usage:
+
+```erb
+<% # In a view: %>
+<% generator = ->(billable, plan, view) { billable.set_payment_processor(:stripe); billable.payment_processor.checkout(mode: "subscription", line_items: [{ price: plan.stripe_price[:id] || plan.stripe_price }], success_url: view.root_url, cancel_url: view.root_url).url } %>
+<%= link_to plan.cta_text, pricing_plans_auto_cta_url(plan, current_user, generator) || "#" %>
+```
+
+Notes:
+- Pay requires you to install and configure it (customers, credentials, webhooks). See `docs/pay.md` included in this repo for the full, official setup.
+- Paddle Billing and Lemon Squeezy use JS overlays/hosted pages; the approach is similar: wire a route that prepares any server state, then link or add the data attributes in the CTA.
+
+### Ultra-fast Pay quickstart (optional)
+
+We ship an example method (commented) in the generated `PricingController` that you can enable to make CTAs work immediately:
+
+```ruby
+# app/controllers/pricing_controller.rb
+# def subscribe
+#   plan_key = params[:plan]&.to_sym
+#   plan = PricingPlans.registry.plan(plan_key)
+#   return redirect_to(pricing_path, alert: "Unknown plan") unless plan
+#   return redirect_to(pricing_path, alert: "Plan not purchasable") unless plan.stripe_price
+#
+#   billable = respond_to?(:current_user) && current_user&.respond_to?(:organization) ? current_user.organization : current_user
+#   return redirect_to(pricing_path, alert: "Sign in required") unless billable
+#
+#   billable.set_payment_processor :stripe unless billable.respond_to?(:payment_processor) && billable.payment_processor
+#   price_id = plan.stripe_price.is_a?(Hash) ? (plan.stripe_price[:id] || plan.stripe_price.values.first) : plan.stripe_price
+#   session = billable.payment_processor.checkout(
+#     mode: "subscription",
+#     line_items: [{ price: price_id }],
+#     success_url: root_url,
+#     cancel_url: pricing_url
+#   )
+#   redirect_to session.url, allow_other_host: true, status: :see_other
+# end
+```
+
+Add a route, and you can set `plan.cta_url pricing_subscribe_path(plan: plan.key)` or keep using the auto generator:
+
+```ruby
+# config/routes.rb
+post "pricing/subscribe", to: "pricing#subscribe", as: :pricing_subscribe
+```
+
+### Pay integration (what you need to do)
+
+If you want Stripe/Paddle/Lemon Squeezy checkout to power your plan CTAs, install and configure the Pay gem in your app. At minimum:
+
+1) Add the gems and run the Pay generators/migrations (see `docs/pay.md`).
+2) Configure credentials and webhooks per Pay’s docs.
+3) On your billable model, add `pay_customer` and ensure it responds to `email` (and optionally `name`).
+4) Provide a controller action to start checkout (Stripe example above; Paddle/Lemon use overlay/hosted JS with data attributes).
+5) Point CTA buttons to your action or override the pricing partial to embed the attributes.
+
+We do not add any Pay routes or include concerns automatically; you stay in control.
+
 
 <!-- Utilities -->
 <%= current_plan_name(current_organization) %>
@@ -318,11 +429,22 @@ We test and support:
 - Late definition of child classes (limits and sugar wire up when the constant resolves).
 - Explicit `limit_key:` to decouple the key from the association name.
 
-## Schema
+## Schema — the three tables we create (what/why/how)
 
-- `pricing_plans_enforcement_states` — per-billable per-limit grace state.
-- `pricing_plans_usages` — per-window counters for discrete allowances.
-- `pricing_plans_assignments` — manual plan overrides.
+- `pricing_plans_enforcement_states` (model: `PricingPlans::EnforcementState`)
+  - Why: Track per-billable per-limit enforcement state for persistent caps and per-period allowances (grace/warnings/block state) in a race-safe way.
+  - What: `exceeded_at`, `blocked_at`, last warning info, and a small JSON `data` column where we persist plan-derived parameters like grace period seconds.
+  - How it’s used: When you exceed a limit, we upsert/read this row under row-level locking to start grace, compute when it ends, flip to blocked, and to ensure idempotent event emission (`on_warning`, `on_grace_start`, `on_block`).
+
+- `pricing_plans_usages` (model: `PricingPlans::Usage`)
+  - Why: Track discrete per-period allowances (e.g., “3 custom models per month”). Persistent caps don’t need a table because they are live counts.
+  - What: `period_start`, `period_end`, and a monotonic `used` counter with a last-used timestamp.
+  - How it’s used: On create of the metered model, we increment or upsert the usage for the current window (based on `PeriodCalculator`). Reads power `remaining`, `percent_used`, and warning thresholds.
+
+- `pricing_plans_assignments` (model: `PricingPlans::Assignment`)
+  - Why: Allow manual plan overrides independent of billing system (or before you wire up Stripe/Pay). Great for admin toggles, trials, demos.
+  - What: The arbitrary `plan_key` and a `source` label (default "manual"). Unique per billable.
+  - How it’s used: `PlanResolver` checks Pay → manual assignment → default plan. You can call `assign_pricing_plan!` and `remove_pricing_plan!` on the billable.
 
 ## Performance & correctness
 

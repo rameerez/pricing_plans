@@ -47,11 +47,14 @@ module PricingPlans
       def billable_class
         return nil unless @configuration
 
-        case @configuration.billable_class
+        value = @configuration.billable_class
+        return nil unless value
+
+        case value
         when String
-          @configuration.billable_class.constantize
+          value.constantize
         when Class
-          @configuration.billable_class
+          value
         else
           raise ConfigurationError, "billable_class must be a string or class"
         end

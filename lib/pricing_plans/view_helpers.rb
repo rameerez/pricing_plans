@@ -208,5 +208,54 @@ module PricingPlans
           data: { plan: plan.key }
       end
     end
+    # Optional helper: generate a checkout URL via Pay for a plan that has a stripe_price.
+    # This is OPINIONATED and expects you pass a block that knows how to
+    # create the checkout session in your app. We keep Pay optional:
+    # - If Pay is absent or the app doesn't pass a generator block, returns nil.
+    # - Usage:
+    #   checkout_url = pricing_plans_cta_url_for(plan, current_user) do |billable, plan|
+    #     # Your app code: create Pay checkout and return its URL
+    #     billable.set_payment_processor(:stripe) unless billable.payment_processor
+    #     session = billable.payment_processor.checkout(mode: "subscription", line_items: [{ price: plan.stripe_price[:id] || plan.stripe_price }], success_url: root_url, cancel_url: root_url)
+    #     session.url
+    #   end
+    #   # Then set plan.cta_url(checkout_url) or use directly in link_to
+    def pricing_plans_cta_url_for(plan, billable, &block)
+      return nil unless plan&.stripe_price
+      return nil unless PricingPlans::PaySupport.pay_available?
+      return nil unless billable
+      return nil unless block_given?
+
+      block.arity == 2 ? yield(billable, plan) : yield(billable)
+    rescue StandardError
+      nil
+    end
+
+    # Magical opt-in: when enabled via config.auto_cta_with_pay = true, we try to auto-derive CTA URL.
+    # - For plans with stripe_price and when Pay is available, we call the provided generator block once per request
+    #   to produce a CTA URL. If generation fails, we fall back to nil.
+    # - Apps opt-in and provide the generator proc once, e.g. in a helper or initializer:
+    #     PricingPlans::Registry.configuration.auto_cta_with_pay = ->(billable, plan, view) { ... return url }
+    #   or set a controller/view instance variable to a proc and pass it explicitly.
+    def pricing_plans_auto_cta_url(plan, billable, generator_proc = nil)
+      return nil unless plan&.stripe_price
+      return nil unless PricingPlans::PaySupport.pay_available?
+
+      gen = generator_proc || PricingPlans::Registry.configuration.auto_cta_with_pay
+      return nil unless gen
+
+      if gen.respond_to?(:call)
+        # Arity variants: (billable, plan, view) | (billable, plan) | (billable)
+        case gen.arity
+        when 3 then gen.call(billable, plan, self)
+        when 2 then gen.call(billable, plan)
+        else        gen.call(billable)
+        end
+      else
+        nil
+      end
+    rescue StandardError
+      nil
+    end
   end
 end

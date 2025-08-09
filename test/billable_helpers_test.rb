@@ -7,7 +7,6 @@ class BillableHelpersTest < ActiveSupport::TestCase
     super
     PricingPlans.reset_configuration!
     PricingPlans.configure do |config|
-      config.billable_class = "Organization"
       config.default_plan   = :free
       config.plan :free do
         limits :projects, to: 1
@@ -69,7 +68,6 @@ class BillableHelpersTest < ActiveSupport::TestCase
     # Reconfigure shouldn't break inclusion or duplicate
     PricingPlans.reset_configuration!
     PricingPlans.configure do |config|
-      config.billable_class = "Organization"
       config.default_plan   = :free
       config.plan :free do
         limits :projects, to: 1

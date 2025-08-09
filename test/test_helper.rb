@@ -103,6 +103,7 @@ end
 
 # Test models
 class Organization < ActiveRecord::Base
+  include PricingPlans::Billable
   has_many :projects, dependent: :destroy
   has_many :custom_models, dependent: :destroy
 
@@ -158,7 +159,6 @@ module TestConfigurationHelper
     PricingPlans.reset_configuration!
 
     PricingPlans.configure do |config|
-      config.billable_class = "Organization"
       config.default_plan = :free
       config.highlighted_plan = :pro
       config.period_cycle = :billing_cycle
