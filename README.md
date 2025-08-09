@@ -271,7 +271,70 @@ Notes:
 
 <%# Admin visibility (read-only) %>
 <%= render_plan_limit_status :projects, billable: current_organization %>
-```
+
+Use its API directly for metered workloads (`spend_credits_on`, etc.). We only read the registry to render pricing lines and lint collisions. If you define both `includes_credits` and a per-period `limits` for the same key, we raise at boot. When `usage_credits` is present, `includes_credits` must reference a known operation; unknown operations raise during boot.
+
+## Events
+
+- `on_warning :limit_key { |billable, threshold| ... }`
+- `on_grace_start :limit_key { |billable, ends_at| ... }`
+- `on_block :limit_key { |billable| ... }`
+
+Fire once per threshold per window, and once at grace start/block. You own the side effects (email, Slack, etc.).
+
+## Generators
+
+- `rails g pricing_plans:install` — migrations + initializer scaffold (includes the `using PricingPlans::IntegerRefinements` line).
+- `rails g pricing_plans:pricing` — pricing controller + partials + CSS.
+- `rails g pricing_plans:mailers` — mailer stubs (optional).
+
+## Complex names and associations
+
+We test and support:
+
+- Custom `class_name:` and `foreign_key:` on `has_many`.
+- Namespaced child classes (e.g., `Deeply::NestedResource`).
+- Late definition of child classes (limits and sugar wire up when the constant resolves).
+- Explicit `limit_key:` to decouple the key from the association name.
+
+## Schema
+
+- `pricing_plans_enforcement_states` — per-billable per-limit grace state.
+- `pricing_plans_usages` — per-window counters for discrete allowances.
+- `pricing_plans_assignments` — manual plan overrides.
+
+## Performance & correctness
+
+- Live DB counting for persistent caps; no counter caches.
+- Row-level locks for grace state; retries on deadlocks.
+- Efficient upserts for per-period usage (PG) or transaction fallback.
+- Per-period enforcement state resets at window boundaries (warnings and grace are per-window).
+
+## Testing
+
+The gem ships with comprehensive Minitest coverage for plans, registry, plan resolution, limit checking, grace manager, model mixins, association-based DSL, controller guards (including `for:`), dynamic callbacks, and view helpers. We test grace semantics, thresholds, concurrency/idempotency, custom error messages, complex associations, late binding, naming, and edge cases.
+
+## License
+
+MIT
+# 💵 pricing_plans — Plans, features, limits, and grace that read like English
+
+[![Gem Version](https://badge.fury.io/rb/pricing_plans.svg)](https://badge.fury.io/rb/pricing_plans)
+
+`pricing_plans` is your plan catalog + enforcement brain for Rails.
+
+- One Ruby file defines your plans, features, limits, and events.
+- Plain-English guards for controllers and models.
+- Real-time counts (no counter caches), race-safe grace, and friendly messages.
+
+Perfect for Rails apps using Stripe via Pay, and optionally interoperating with `usage_credits` for metered workloads.
+
+## Quickstart
+
+Add to your Gemfile:
+
+```ruby
+gem "pricing_plans"
 
 ## Visibility helpers (admin-friendly)
 
@@ -296,6 +359,31 @@ Example human message:
 - "Over target plan on: projects: 12 > 3 (reduce by 9), custom_models: 5 > 0 (reduce by 5). Grace active — projects grace ends at 2025-01-06T12:00:00Z."
 
 Display remediation inline with your resource index (e.g., list projects and let users archive/delete).
+
+## Controller ergonomics
+
+- Dynamic feature guards: `enforce_<feature_key>!` resolves the billable and raises `PricingPlans::FeatureDenied` with a friendly upgrade message if disallowed.
+- Limit guard: `require_plan_limit!(limit_key, billable:, by: 1)` returns a `Result` object with:
+  - `ok?`, `warning?`, `grace?`, `blocked?`
+  - `state` in `:within | :grace | :blocked`
+  - `message` human with clear CTA
+  - `metadata` with `limit_amount`, `current_usage`, `percent_used`, and optional `grace_ends_at`
+- Billable resolution:
+  - Configure: `self.pricing_plans_billable_method = :current_organization` or `pricing_plans_billable { current_account }`.
+  - If not configured, it tries: `current_<billable_class>` then common conventions (`current_organization`, `current_account`, `current_user`, ...).
+
+## Model ergonomics
+
+Include `PricingPlans::Limitable` and declare limits with the macro that reads like English:
+
+```ruby
+limited_by_pricing_plans :projects, billable: :organization
+limited_by_pricing_plans :custom_models, billable: :organization, per: :month
+```
+
+- If you omit the key, it infers it from the table/collection name.
+- If you omit the billable, it infers from `billable_class` or common associations, falling back to `:self`.
+- Persistent caps count live rows. Per-period allowances increment a usage row per window.
 
 ## Interop
 

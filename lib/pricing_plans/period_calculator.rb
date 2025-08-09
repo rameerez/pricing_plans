@@ -72,6 +72,7 @@ module PricingPlans
           end
         end
         subscription ||= PaySupport.current_subscription_for(billable)
+
         return fallback_window unless subscription
 
         # Use Pay's billing cycle anchor if available
