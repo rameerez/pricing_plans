@@ -27,8 +27,9 @@ module PricingPlans
         say "\n✅ pricing_plans has been installed.", :green
         say "\nNext steps:"
         say "  1. Run 'rails db:migrate' to create the necessary tables."
-        say "  2. Review and customize 'config/initializers/pricing_plans.rb'."
-        say "  3. Assign plans to your billable model (e.g., User/Organization)."
+        say "  2. Review and customize your plans in 'config/initializers/pricing_plans.rb'."
+        say "  3. Add the model mixin and attribute limits to your billable model (e.g., User, Organization)."
+        say "  4. Use the controller guards and helper methods to gate access to features based on the active plan. Read the README for information on all available methods."
       end
 
       private
