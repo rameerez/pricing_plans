@@ -39,8 +39,7 @@ module PricingPlans
   autoload :AssociationLimitRegistry, "pricing_plans/association_limit_registry"
   autoload :Result, "pricing_plans/result"
   autoload :OverageReporter, "pricing_plans/overage_reporter"
-  autoload :RequestCache, "pricing_plans/request_cache"
-
+  
   # Models
   autoload :EnforcementState, "pricing_plans/models/enforcement_state"
   autoload :Usage, "pricing_plans/models/usage"
@@ -70,7 +69,6 @@ module PricingPlans
       @configuration = nil
       Registry.clear!
       LimitableRegistry.clear!
-      RequestCache.clear!
     end
 
     def registry
@@ -134,24 +132,6 @@ module PricingPlans
         end
       end
       candidate || current_plan || Registry.default_plan
-    end
-
-    # Optional view-model decorator for UIs
-    def decorate_for_view(plan, context: :marketing, billable: nil, view: nil)
-      is_current = billable ? (PlanResolver.effective_plan_for(billable)&.key == plan.key) : false
-      is_popular = Registry.highlighted_plan&.key == plan.key
-      name, price_label = ViewHelpers.instance_method(:plan_label).bind(Object.new.extend(ViewHelpers)).call(plan)
-      {
-        key: plan.key,
-        name: name,
-        description: plan.description,
-        bullets: plan.bullets,
-        price_label: price_label,
-        is_current: is_current,
-        is_popular: is_popular,
-        button_text: plan.cta_text,
-        button_url: plan.cta_url(view: view, billable: billable)
-      }
     end
 
     # Drop-in partials entrypoints

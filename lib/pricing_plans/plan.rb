@@ -28,80 +28,34 @@ module PricingPlans
       @highlighted = false
     end
 
-    # DSL methods for plan configuration
-    def set_name(value)
+    # DSL methods for plan configuration (getter/setter duals)
+    def name(value = nil)
+      return (@name || @key.to_s.titleize) if value.nil?
       @name = value.to_s
     end
 
-    def name(value = nil)
-      if value.nil?
-        @name || @key.to_s.titleize
-      else
-        set_name(value)
-      end
-    end
-
-    def set_description(value)
+    def description(value = nil)
+      return @description if value.nil?
       @description = value.to_s
     end
 
-    def description(value = nil)
-      if value.nil?
-        @description
-      else
-        set_description(value)
-      end
-    end
-
-    def set_bullets(*values)
+    def bullets(*values)
+      return @bullets if values.empty?
       @bullets = values.flatten.map(&:to_s)
     end
 
-    def bullets(*values)
-      if values.empty?
-        @bullets
-      else
-        set_bullets(*values)
-      end
-    end
-
-    def set_price(value)
+    def price(value = nil)
+      return @price if value.nil?
       @price = value
     end
 
-    def price(value = nil)
-      if value.nil?
-        @price
-      else
-        set_price(value)
-      end
-    end
-
-    # Rails-y ergonomics for UI: expose integer cents as optional helper
-    def price_cents
-      return nil unless @price
-      (
-        if @price.respond_to?(:to_f)
-          (@price.to_f * 100).round
-        else
-          nil
-        end
-      )
-    end
-
-    def set_price_string(value)
+    def price_string(value = nil)
+      return @price_string if value.nil?
       @price_string = value.to_s
     end
 
-    def price_string(value = nil)
-      if value.nil?
-        @price_string
-      else
-        set_price_string(value)
-      end
-    end
-
-    def set_stripe_price(value)
+    def stripe_price(value = nil)
+      return @stripe_price if value.nil?
       case value
       when String
         @stripe_price = { id: value }
@@ -112,41 +66,15 @@ module PricingPlans
       end
     end
 
-    def stripe_price(value = nil)
-      if value.nil?
-        @stripe_price
-      else
-        set_stripe_price(value)
-      end
-    end
-
-    def set_meta(values)
+    def meta(values = nil)
+      return @meta if values.nil?
       @meta.merge!(values)
     end
 
-    def meta(values = nil)
-      if values.nil?
-        @meta
-      else
-        set_meta(values)
-      end
-    end
-
     # CTA helpers for pricing UI
-    def set_cta_text(value)
-      @cta_text = value&.to_s
-    end
-
     def cta_text(value = nil)
-      if value.nil?
-        @cta_text || PricingPlans.configuration.default_cta_text || default_cta_text_derived
-      else
-        set_cta_text(value)
-      end
-    end
-
-    def set_cta_url(value)
-      @cta_url = value&.to_s
+      return (@cta_text || PricingPlans.configuration.default_cta_text || default_cta_text_derived) if value.nil?
+      @cta_text = value&.to_s
     end
 
     # Unified ergonomic API:
@@ -154,7 +82,7 @@ module PricingPlans
     # - Resolver: cta_url(view: view_context, billable: org)
     def cta_url(value = :__no_arg__, view: nil, billable: nil)
       unless value == :__no_arg__
-        set_cta_url(value)
+        @cta_url = value&.to_s
         return @cta_url
       end
 
@@ -181,24 +109,14 @@ module PricingPlans
 
     # Feature methods
     def allows(*feature_keys)
-      feature_keys.flatten.each do |key|
-        @features.add(key.to_sym)
-      end
+      feature_keys.flatten.each { |key| @features.add(key.to_sym) }
     end
-
-    def allow(*feature_keys)
-      allows(*feature_keys)
-    end
+    def allow(*feature_keys); allows(*feature_keys); end
 
     def disallows(*feature_keys)
-      feature_keys.flatten.each do |key|
-        @features.delete(key.to_sym)
-      end
+      feature_keys.flatten.each { |key| @features.delete(key.to_sym) }
     end
-
-    def disallow(*feature_keys)
-      disallows(*feature_keys)
-    end
+    def disallow(*feature_keys); disallows(*feature_keys); end
 
     def allows_feature?(feature_key)
       @features.include?(feature_key.to_sym)
@@ -216,26 +134,17 @@ module PricingPlans
         warn_at: options.fetch(:warn_at, [0.6, 0.8, 0.95]),
         count_scope: options[:count_scope]
       }
-
       validate_limit_options!(@limits[limit_key])
     end
 
     def limits(key=nil, **options)
-      if key.nil?
-        @limits
-      else
-        set_limit(key, **options)
-      end
-    end
-
-    def limit(key, **options)
+      return @limits if key.nil?
       set_limit(key, **options)
     end
+    def limit(key, **options); set_limit(key, **options); end
 
     def unlimited(*keys)
-      keys.flatten.each do |key|
-        set_limit(key.to_sym, to: :unlimited)
-      end
+      keys.flatten.each { |key| set_limit(key.to_sym, to: :unlimited) }
     end
 
     def limit_for(key)
@@ -245,10 +154,7 @@ module PricingPlans
     # Credits methods
     def includes_credits(amount, for:)
       operation_key = binding.local_variable_get(:for).to_sym
-      @credit_inclusions[operation_key] = {
-        amount: amount,
-        operation: operation_key
-      }
+      @credit_inclusions[operation_key] = { amount: amount, operation: operation_key }
     end
 
     def credit_inclusion_for(operation_key)
@@ -256,21 +162,11 @@ module PricingPlans
     end
 
     # Plan selection sugar
-    def default!(value = true)
-      @default = !!value
-    end
+    def default!(value = true); @default = !!value; end
+    def default?; !!@default; end
 
-    def default?
-      !!@default
-    end
-
-    def highlighted!(value = true)
-      @highlighted = !!value
-    end
-
-    def highlighted?
-      !!@highlighted
-    end
+    def highlighted!(value = true); @highlighted = !!value; end
+    def highlighted?; !!@highlighted; end
 
     # Convenience booleans used by views/hosts
     def free?
@@ -288,9 +184,7 @@ module PricingPlans
 
     private
     def validate_limits!
-      @limits.each do |key, limit|
-        validate_limit_options!(limit)
-      end
+      @limits.each { |_, limit| validate_limit_options!(limit) }
     end
 
     def validate_limit_options!(limit)
@@ -333,18 +227,11 @@ module PricingPlans
       end
     end
 
-    # (cta_url resolver moved above with unified signature)
-
     def default_cta_text_derived
       return "Subscribe" if @stripe_price
       return "Choose #{@name || @key.to_s.titleize}" if price || price_string
       return "Contact sales" if @stripe_price.nil? && !price && !price_string
       "Choose #{@name || @key.to_s.titleize}"
-    end
-
-    def default_cta_url_derived
-      # If Stripe price present and Pay is used, UIs commonly route to checkout; we leave URL blank for app to decide.
-      nil
     end
   end
 end
