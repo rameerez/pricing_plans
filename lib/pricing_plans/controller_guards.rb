@@ -125,13 +125,15 @@ module PricingPlans
 
       unless plan&.allows_feature?(feature_key)
         highlighted_plan = Registry.highlighted_plan
+        current_plan_name = plan&.name || Registry.default_plan&.name || "Current"
+        feature_human = feature_key.to_s.humanize
         upgrade_message = if highlighted_plan
-          "Upgrade to #{highlighted_plan.name} to access #{feature_key.to_s.humanize}"
+          "Your current plan (#{current_plan_name}) doesn't allow you to #{feature_human}. Please upgrade to #{highlighted_plan.name} or higher to access #{feature_human}."
         else
-          "#{feature_key.to_s.humanize} is not available on your current plan"
+          "#{feature_human} is not available on your current plan (#{current_plan_name})."
         end
 
-        raise FeatureDenied, upgrade_message
+        raise FeatureDenied.new(upgrade_message, feature_key: feature_key, billable: billable)
       end
 
       true

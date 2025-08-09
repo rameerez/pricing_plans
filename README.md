@@ -218,6 +218,15 @@ class ApplicationController < ActionController::Base
 end
 ```
 
+Default behavior out of the box:
+
+- Disallowed features raise `PricingPlans::FeatureDenied`.
+- The engine maps this to HTTP 403 by default and installs a controller rescue that:
+  - HTML/Turbo: redirects to `pricing_path` with an alert (303 See Other) if the helper exists; otherwise renders a 403 with the message.
+  - JSON: returns `{ error: message }` with 403.
+
+You can override the behavior by defining `handle_pricing_plans_feature_denied(error)` in your `ApplicationController`, or by adding your own `rescue_from PricingPlans::FeatureDenied`.
+
 Feature guard (dynamic):
 
 ```ruby
@@ -253,6 +262,18 @@ Notes:
 - The gem will try to infer a billable via:
   - `current_<billable_class>` (e.g., `current_organization`), then
   - common conventions: `current_organization`, `current_account`, `current_user`, `current_team`, `current_company`, `current_workspace`, `current_tenant`.
+
+Override the default 403 handler (optional):
+
+```ruby
+class ApplicationController < ActionController::Base
+  private
+  def handle_pricing_plans_feature_denied(error)
+    # Custom HTML handling
+    redirect_to upgrade_path, alert: error.message, status: :see_other
+  end
+end
+```
 
 ## Views — drop-in helpers
 

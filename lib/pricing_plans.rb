@@ -7,7 +7,15 @@ module PricingPlans
   class Error < StandardError; end
   class ConfigurationError < Error; end
   class PlanNotFoundError < Error; end
-  class FeatureDenied < Error; end
+  class FeatureDenied < Error
+    attr_reader :feature_key, :billable
+
+    def initialize(message = nil, feature_key: nil, billable: nil)
+      super(message)
+      @feature_key = feature_key
+      @billable = billable
+    end
+  end
   class InvalidOperation < Error; end
 
   autoload :Configuration, "pricing_plans/configuration"
@@ -22,6 +30,7 @@ module PricingPlans
   autoload :GraceManager, "pricing_plans/grace_manager"
   autoload :PeriodCalculator, "pricing_plans/period_calculator"
   autoload :ControllerGuards, "pricing_plans/controller_guards"
+  autoload :ControllerRescues, "pricing_plans/controller_rescues"
   autoload :ViewHelpers, "pricing_plans/view_helpers"
   autoload :Limitable, "pricing_plans/limitable"
   autoload :Billable, "pricing_plans/billable"
