@@ -27,10 +27,12 @@ PricingPlans.configure do |config|
     highlighted!
   end
 
-  # Optional ergonomics
+  # Optional settings
+
   # You can specify your billable class if you want controller inference to prefer it (e.g., "User", "Organization").
   # Otherwise it will try common conventions like current_organization, current_user, etc.
   # config.billable_class = "Organization"
+
   # Optional (can also be set via plan DSL sugar: `default!` / `highlighted!`)
   # config.default_plan = :free
   # config.highlighted_plan = :pro

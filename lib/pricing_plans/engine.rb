@@ -34,8 +34,6 @@ module PricingPlans
     initializer "pricing_plans.action_view" do
       ActiveSupport.on_load(:action_view) do
         include PricingPlans::ViewHelpers
-        # Make engine views available for drop-in partials
-        append_view_path File.expand_path("../../app/views", __dir__) if respond_to?(:append_view_path)
       end
     end
 

@@ -9,7 +9,7 @@ module PricingPlans
       include ActiveRecord::Generators::Migration
 
       source_root File.expand_path("templates", __dir__)
-      desc "Install PricingPlans migrations and initializer"
+      desc "Install pricing_plans migrations and initializer"
 
       def self.next_migration_number(dir)
         ActiveRecord::Generators::Base.next_migration_number(dir)

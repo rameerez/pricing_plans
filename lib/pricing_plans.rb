@@ -33,13 +33,11 @@ module PricingPlans
   autoload :JobGuards, "pricing_plans/job_guards"
   autoload :ControllerRescues, "pricing_plans/controller_rescues"
   autoload :ViewHelpers, "pricing_plans/view_helpers"
-  autoload :PricingViews, "pricing_plans/pricing_views"
   autoload :Limitable, "pricing_plans/limitable"
   autoload :Billable, "pricing_plans/billable"
   autoload :AssociationLimitRegistry, "pricing_plans/association_limit_registry"
   autoload :Result, "pricing_plans/result"
   autoload :OverageReporter, "pricing_plans/overage_reporter"
-  autoload :RequestCache, "pricing_plans/request_cache"
 
   # Models
   autoload :EnforcementState, "pricing_plans/models/enforcement_state"
@@ -70,7 +68,6 @@ module PricingPlans
       @configuration = nil
       Registry.clear!
       LimitableRegistry.clear!
-      RequestCache.clear!
     end
 
     def registry
@@ -154,17 +151,7 @@ module PricingPlans
       }
     end
 
-    # Drop-in partials entrypoints
-    def render_pricing_cards(view:, context: :marketing, billable: nil)
-      PricingViews.pricing_cards(view: view, context: context, billable: billable)
-    end
-
-    def render_usage_widget(view:, billable:, limits: [:products, :licenses, :activations])
-      PricingViews.usage_widget(view: view, billable: billable, limits: limits)
-    end
-
-    def render_overage_banner(view:, billable:, limits: [:products, :licenses, :activations])
-      PricingViews.overage_banner(view: view, billable: billable, limits: limits)
-    end
+    # Note: We no longer ship engine partials or render helpers. Prefer the
+    # helpers in PricingPlans::ViewHelpers (e.g., plan_pricing_table, plan_usage_meter).
   end
 end

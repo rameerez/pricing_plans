@@ -554,17 +554,6 @@ if next_plan && next_plan != current_pricing_plan(current_organization)
 end
 ```
 
-### Composite usage widget (2–3 limits panel)
-
-If you generated the pricing UI into your app, `_usage_meter.html.erb` also supports a compact, multi-limit block when given locals:
-
-```erb
-<%= render partial: "pricing_plans/usage_meter",
-           locals: { limits: [:products, :licenses, :activations], billable: current_organization } %>
-```
-
-It renders per-limit labels and bars using your plan configuration and live counts.
-
 ### CTA and Pay (Stripe/Paddle/etc.)
 
 When a plan has a `stripe_price`, the default `cta_text` becomes "Subscribe" and the default `cta_url` is nil. We intentionally do not hardwire Pay integration in the gem views because the host app controls processor, routes, and checkout UI. You have two simple options (plus an auto option):
@@ -626,37 +615,7 @@ Notes:
 
 ### Ultra-fast Pay quickstart (optional)
 
-We ship an example method (commented) in the generated `PricingController` that you can enable to make CTAs work immediately:
-
-```ruby
-# app/controllers/pricing_controller.rb
-# def subscribe
-#   plan_key = params[:plan]&.to_sym
-#   plan = PricingPlans.registry.plan(plan_key)
-#   return redirect_to(pricing_path, alert: "Unknown plan") unless plan
-#   return redirect_to(pricing_path, alert: "Plan not purchasable") unless plan.stripe_price
-#
-#   billable = respond_to?(:current_user) && current_user&.respond_to?(:organization) ? current_user.organization : current_user
-#   return redirect_to(pricing_path, alert: "Sign in required") unless billable
-#
-#   billable.set_payment_processor :stripe unless billable.respond_to?(:payment_processor) && billable.payment_processor
-#   price_id = plan.stripe_price.is_a?(Hash) ? (plan.stripe_price[:id] || plan.stripe_price.values.first) : plan.stripe_price
-#   session = billable.payment_processor.checkout(
-#     mode: "subscription",
-#     line_items: [{ price: price_id }],
-#     success_url: root_url,
-#     cancel_url: pricing_url
-#   )
-#   redirect_to session.url, allow_other_host: true, status: :see_other
-# end
-```
-
-Add a route, and you can set `plan.cta_url pricing_subscribe_path(plan: plan.key)` or keep using the auto generator:
-
-```ruby
-# config/routes.rb
-post "pricing/subscribe", to: "pricing#subscribe", as: :pricing_subscribe
-```
+We do not ship controllers or views. Implement a simple controller action in your app to start checkout and wire your own routes/UI.
 
 ### Pay integration (what you need to do)
 
@@ -670,7 +629,7 @@ If you want Stripe/Paddle/Lemon Squeezy checkout to power your plan CTAs, instal
 
 We do not add any Pay routes or include concerns automatically; you stay in control.
 
-### Zero-plumbing APIs for pricing UI
+### View helpers for pricing UI
 
 - Plans: `PricingPlans.plans #=> [Plan, ...]`
 - Dashboard data: `PricingPlans.for_dashboard(current_organization)` returns `OpenStruct` with `plans`, `popular_plan_key`, `current_plan`.
@@ -679,11 +638,6 @@ We do not add any Pay routes or include concerns automatically; you stay in cont
 - Usage/status bulk: `pricing_plans_status(billable, limits: [:products, :licenses, :activations])`.
 - Overage report with human message: `PricingPlans::OverageReporter.report_with_message(billable, :free)`.
 - Suggest next plan: `PricingPlans.suggest_next_plan_for(billable)`.
-
-Drop-in partials shipped by the engine (no overrides needed):
-- `pricing_plans/pricing_cards` (takes `context:` and optional `billable:`)
-- `pricing_plans/usage_widget` (takes `billable:` and optional `limits:`)
-- `pricing_plans/overage_banner` (takes `billable:` and optional `limits:`)
 
 
 <!-- Utilities -->
@@ -712,8 +666,6 @@ Fire once per threshold per window, and once at grace start/block. You own the s
 ## Generators
 
 - `rails g pricing_plans:install` — migrations + initializer scaffold (includes the `using PricingPlans::IntegerRefinements` line).
-- `rails g pricing_plans:pricing` — pricing controller + partials + CSS (includes a composite usage widget block).
-- `rails g pricing_plans:mailers` — mailer stubs (optional).
 
 ## Complex names and associations
 
