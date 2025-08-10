@@ -93,7 +93,13 @@ This code is brittle, tends to be full of magical numbers and nested convoluted 
 
 ## Define pricing plans
 
+High level: you essentially need to do only two things:
+
+- feature gating
+- Check limits
 two limits: count and feature gate
+
+credits not included (require a ledger-like system)
 
 connect with stripe ids monthly and yearly
 
@@ -171,11 +177,15 @@ user.pay_on_grace_period?                         # => true/false
 
 ### Controllers
 
+#### Setting things up for controllers
+
 First of all, the gem needs a way to know what the current billable object is (the current user, current organization, etc.)
 
-`pricing_plans` will [auto-try common conventions](/lib/pricing_plans/controller_guards.rb) like `current_user`, `current_organization`, `current_account`... in case any of these methods are already defined in your controller (for example: it works out of the box with Devise)
+`pricing_plans` will [auto-try common conventions](/lib/pricing_plans/controller_guards.rb): `current_organization`, `current_account`, `current_user`, `current_team`, `current_company`, `current_workspace`, `current_tenant`. If you set `billable_class`, we’ll also try `current_<billable_class>`.
 
-If none of those are defined, or you have custom logic, we recommend defining a current billable helper in your `ApplicationController`:
+If these methods already defined in your controller(s), there's nothing you need to do! For example: `pricing_plans` works out of the box with Devise.
+
+If none of those methods are defined, or you want custom logic, we recommend defining a current billable helper in your `ApplicationController`:
 ```ruby
 class ApplicationController < ActionController::Base
   # Adapt to your auth/session logic
@@ -185,35 +195,34 @@ class ApplicationController < ActionController::Base
 end
 ```
 
-You can also specify which controller helper `pricing_plans` should use in the `pricing_plans.rb` initializer:
+You can also specify which controller helper `pricing_plans` should use globally in the `pricing_plans.rb` initializer:
 ```ruby
   config. ## TODO: do we have this? we should
+  # from old docs: You can globally configure a resolver via `self.pricing_plans_billable_method = :current_organization` or `pricing_plans_billable { current_account }`.
+  # Per-controller default `self.pricing_plans_redirect_on_blocked_limit = :pricing_path` (Symbol | String | Proc)
+  #  but we need a global default too??
 ```
 
-Once that's configured, you can feature gate any controller action with:
+You can also override the `current_<billable_class>` per helper (with `on: :current_organization` or `on: -> { find_org }`), as we'll see in the next sections.
+
+Once all of this is configured, you can gate features and enforce limits easily in your controllers.
+
+#### Gate features in controllers
+
+Feature-gate any controller action with:
 ```ruby
 before_action :enforce_api_access!, only: [:create]
 ```
 
-These controller helper methods are dynamically generated for each of the features `<feature_key>` you defined in your plans:
-```ruby
-enforce_<feature_key>!
-```
+These `enforce_<feature_key>!` controller helper methods are dynamically generated for each of the features `<feature_key>` you defined in your plans. So, for the helper above to work, you would have to have defined a `allows :api_access` in your `pricing_plans.rb` file.
 
-You can also specify which the current billable object is, in each controller callback:
-```ruby
-before_action { enforce_api_access!(on: :current_team) }
-```
-
-When the feature is disallowed, the controller will raise a `FeatureDenied` (we rescue it for you by default). You can configure what happens when a feature is disallowed, by overwriting the:
-```ruby
-```
-
-Override the default 403 handler (optional):
+When the feature is disallowed, the controller will raise a `FeatureDenied` (we rescue it for you by default). You can customize the response by overriding `handle_pricing_plans_feature_denied(error)` in your `ApplicationController`:
 
 ```ruby
 class ApplicationController < ActionController::Base
   private
+
+  # Override the default 403 handler (optional)
   def handle_pricing_plans_feature_denied(error)
     # Custom HTML handling
     redirect_to upgrade_path, alert: error.message, status: :see_other
@@ -221,92 +230,60 @@ class ApplicationController < ActionController::Base
 end
 ```
 
-When a limit check blocks an action, controllers now call a centralized handler if present:
-
+You can also specify which the current billable object is **per action** by passing it to the `enforce_` callback via the `on:` param:
 ```ruby
-# ApplicationController (override as needed)
-private
-def handle_pricing_plans_limit_blocked(result)
-  # Default shipped behavior (HTML): flash + redirect_to(pricing_path) if defined; else render 403
-  # You can customize globally here. The Result carries rich context:
-  # - result.limit_key, result.billable, result.message, result.metadata
-  redirect_to(pricing_path, status: :see_other, alert: result.message)
-end
+before_action { enforce_api_access!(on: :current_organization) }
 ```
 
-Details:
-- `enforce_plan_limit!` prefers this handler when `result.blocked?` to centralize redirects/messages.
-- We also ship a sensible default implementation in `PricingPlans::ControllerRescues` that responds for HTML/JSON. Define your own in `ApplicationController` to override.
-- JSON: we return `{ error, limit, plan }` with 403 by default.
-
-
-
-Default behavior out of the box:
-
-- Disallowed features raise `PricingPlans::FeatureDenied`.
-- The engine maps this to HTTP 403 by default and installs a controller rescue that:
-  - HTML/Turbo: redirects to `pricing_path` with an alert (303 See Other) if the helper exists; otherwise renders a 403 with the message.
-  - JSON: returns `{ error: message }` with 403.
-
-You can override the behavior by defining `handle_pricing_plans_feature_denied(error)` in your `ApplicationController`, or by adding your own `rescue_from PricingPlans::FeatureDenied`.
-
-
-We provide both dynamic, English-y helpers and lower-level primitives.
-
-- Dynamic feature guard (before_action-friendly):
-
-
-- Dynamic limit guard (before_action-friendly):
-  - `enforce_<limit_key>_limit!(on:, by: 1, redirect_to: nil, allow_system_override: false)`
-    - **Defaults**:
-      - `by: 1` (omit for single-create). `on:` is a friendly alias for `billable:`.
-      - Redirect resolution order when blocked:
-        1. `redirect_to:` option passed to the call
-        2. Per-controller default `self.pricing_plans_redirect_on_blocked_limit = :pricing_path` (Symbol | String | Proc)
-        3. Global default `config.redirect_on_blocked_limit` (Symbol | String | Proc)
-        4. `pricing_path` if available
-        5. Otherwise render HTTP 403 (JSON/plain)
-      - Aborts the filter chain when blocked.
-    - When grace/warning: sets `flash[:warning]` with a human message.
-    - With `allow_system_override: true`: returns true (no redirect), letting you proceed; the Result carries `metadata[:system_override]` for downstream handling.
-
-- Generic helpers and primitives:
-  - `enforce_plan_limit!(limit_key, on: ..., by: 1, redirect_to: nil, allow_system_override: false)` — same behavior as the dynamic version.
-  - `require_plan_limit!(limit_key, billable:, by: 1, allow_system_override: false)` — returns a `Result` (`within?/warning?/grace?/blocked?`) for manual handling.
-
-Billable resolution options:
-- `on: :current_organization` or `on: -> { find_org }` — alias of `billable:` for controllers.
-- `billable:` — pass the instance directly.
-- You can globally configure a resolver via `self.pricing_plans_billable_method = :current_organization` or `pricing_plans_billable { current_account }`.
-
-Examples:
-
+Or if you need a lambda:
 ```ruby
-class LicensesController < ApplicationController
-  # Preferred sugar — no lambda required, `by:` defaults to 1, billable inferred
-  # Optionally set a per-controller default redirect:
-  # self.pricing_plans_redirect_on_blocked_limit = :pricing_path
-  before_action :enforce_licenses_limit!, only: :create
-
-  def create
-    License.create!(organization: current_organization, ...)
-    redirect_to licenses_path, notice: "Created"
-  end
-end
+before_action { enforce_api_access!(on: -> { find_org }) }
 ```
 
-Inline usage (custom redirect target):
+Of course, this is all syntactic sugar for the primitive method, which you can also use:
+```ruby
+before_action { require_feature!(:api_access, on: current_organization) }
+```
 
+#### Enforce plan limits in controllers
+
+You can enforce limits for any action:
+```ruby
+before_action :enforce_projects_limit!, only: :create
+```
+
+As in feature gating, this is syntactic sugar (`enforce_<limit_key>_limit!`) that gets generated for every `limits` key in `pricing_plans.rb`. You can also use the primitive method:
+```ruby
+before_action { enforce_plan_limit!(:projects) }
+```
+
+And you can also pass a custom billable:
+```ruby
+before_action { enforce_projects_limit!(on: current_organization) }
+# or
+before_action { enforce_plan_limit!(:projects, on: current_organization) }
+```
+
+You can also specify a custom redirect path that will override the global config:
+```ruby
+before_action { enforce_plan_limit!(:projects, redirect_to: pricing_path) }
+```
+
+In the example aboves, the gem assumes the action to call will only create one extra project. So, if the plan limit is 5, and you're currently at 4 projects, you can still create one extra one, and the action will get called. If your action creates more than one object per call (creating multiple objects at once, importing objects in bulk etc.) you can enforce it will stay within plan limits by passing the `by:` parameter like this:
+```ruby
+before_action { enforce_projects_limit!(by: 10) }
+```
+
+You can also use all these methods inline within any controller action, instead of a callback:
 ```ruby
 def create
   enforce_plan_limit!(:products, on: :current_organization, redirect_to: pricing_path)
-  Product.create!(organization: current_organization, ...)
+  Product.create!(...)
   redirect_to products_path
 end
 ```
 
-Bulk actions (set by:) — e.g. importing 5 at once:
-
+Another example:
 ```ruby
 def import
   enforce_products_limit!(on: :current_organization, by: 5)
@@ -314,6 +291,30 @@ def import
   redirect_to products_path
 end
 ```
+
+You can define how your application responds when a limit check blocks an action by defining `handle_pricing_plans_limit_blocked` in your controller:
+
+```ruby
+class ApplicationController < ActionController::Base
+  private
+
+  def handle_pricing_plans_limit_blocked(result)
+    # Default behavior (HTML): flash + redirect_to(pricing_path) if defined; else render 403
+    # You can customize globally here. The Result carries rich context:
+    # - result.limit_key, result.billable, result.message, result.metadata
+    redirect_to(pricing_path, status: :see_other, alert: result.message)
+  end
+end
+```
+
+`enforce_plan_limit!` invokes this handler when `result.blocked?`, passing a `Result` enriched with `metadata[:redirect_to]` resolved via:
+  1. explicit `redirect_to:` option
+  2. per-controller default `self.pricing_plans_redirect_on_blocked_limit`
+  3. global `config.redirect_on_blocked_limit`
+  4. `pricing_path` helper if available
+
+
+#### Override
 
 Trusted flows (system override) — proceed but mark downstream:
 
@@ -326,34 +327,6 @@ def webhook_create
 end
 ```
 
-Feature guard (dynamic):
-
-```ruby
-class ApiController < ApplicationController
-  # Enforces a boolean feature. Reads like English; no extra config line.
-  before_action { enforce_api_access!(on: :current_organization) }
-end
-```
-
-Limit guard (English-y, redirect/flash handled for you; use as a before_action or inline):
-
-```ruby
-class ProjectsController < ApplicationController
-  # Defaults by: 1, so you can omit it; on: is an English alias for billable:
-  before_action { enforce_projects_limit!(on: :current_organization) }
-
-  def create
-    Project.create!(organization: current_organization, name: params[:name])
-    redirect_to root_path, notice: "Created"
-  end
-end
-```
-
-Inline usage:
-
-```ruby
-enforce_projects_limit!(on: :current_organization, redirect_to: pricing_path)
-```
 Trusted system overrides (webhooks/jobs):
 
 ```ruby
@@ -368,15 +341,8 @@ if result.blocked? && result.metadata[:system_override]
 end
 ```
 
-Notes:
 
-- The dynamic `enforce_<feature>!` guard also accepts `billable:` and a `for:` proc:
-  ```ruby
-  before_action { enforce_api_access!(for: -> { current_organization }) }
-  # or explicitly
-  before_action { enforce_api_access!(billable: current_organization) }
-  ```
-- The gem will try to infer a billable via common conventions: `current_organization`, `current_account`, `current_user`, `current_team`, `current_company`, `current_workspace`, `current_tenant`. If you set `billable_class`, we’ll also try `current_<billable_class>`.
+#### Set up a redirect when a feature is blocked or fails
 
 Global default redirect (optional):
 
@@ -393,6 +359,7 @@ Per-controller default (optional):
 class ApplicationController < ActionController::Base
   self.pricing_plans_redirect_on_blocked_limit = :pricing_path
 end
+```
 
 Redirect resolution cheatsheet (priority):
 
@@ -415,12 +382,10 @@ Recommended patterns:
 - Set a single global default in your initializer.
 - Override per controller only if UX differs for a section.
 - Use the dynamic helpers as symbols in before_action for maximum clarity:
-  ```ruby
-  before_action :enforce_projects_limit!, only: :create
-  before_action :enforce_api_access!
-  ```
+```ruby
+before_action :enforce_projects_limit!, only: :create
+before_action :enforce_api_access!
 ```
-
 
 
 ### App-wide helpers

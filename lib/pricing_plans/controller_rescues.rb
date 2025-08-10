@@ -58,9 +58,14 @@ module PricingPlans
     # Receives the PricingPlans::Result for the blocked check.
     def handle_pricing_plans_limit_blocked(result)
       message = result&.message || "Plan limit reached"
+      redirect_target = (result&.metadata || {})[:redirect_to]
 
       if html_request?
-        if respond_to?(:pricing_path)
+        # Prefer explicit/derived redirect target if provided by the guard
+        if redirect_target
+          flash[:alert] = message if respond_to?(:flash)
+          redirect_to(redirect_target, status: :see_other) if respond_to?(:redirect_to)
+        elsif respond_to?(:pricing_path)
           flash[:alert] = message if respond_to?(:flash)
           redirect_to(pricing_path, status: :see_other) if respond_to?(:redirect_to)
         else

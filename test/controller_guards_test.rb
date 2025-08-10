@@ -476,8 +476,9 @@ class ControllerGuardsTest < ActiveSupport::TestCase
       include PricingPlans::ControllerRescues
       attr_reader :handled
       def handle_pricing_plans_limit_blocked(result)
-        @handled = result.message
+        @handled = [result.message, result.metadata[:redirect_to]]
       end
+      def pricing_path; "/pricing"; end
     end.new
 
     PricingPlans::PlanResolver.stub(:effective_plan_for, plan) do
@@ -486,7 +487,9 @@ class ControllerGuardsTest < ActiveSupport::TestCase
         :no_abort
       end
       refute_equal :no_abort, caught
-      assert_match(/limit/i, controller.instance_variable_get(:@handled))
+      handled = controller.instance_variable_get(:@handled)
+      assert_match(/limit/i, handled.first)
+      assert_equal "/pricing", handled.last
     end
   end
 

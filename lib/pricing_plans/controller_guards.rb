@@ -188,53 +188,22 @@ module PricingPlans
           return true
         end
 
-        # Prefer centralized handler if present
-        if respond_to?(:handle_pricing_plans_limit_blocked)
-          handle_pricing_plans_limit_blocked(result)
-        else
-          path = redirect_to
-          # Per-controller default, if set
-          if path.nil?
-            ctrl = if self.class.respond_to?(:pricing_plans_redirect_on_blocked_limit)
-              self.class.pricing_plans_redirect_on_blocked_limit
-            elsif self.class.respond_to?(:_pricing_plans_redirect_on_blocked_limit)
-              self.class._pricing_plans_redirect_on_blocked_limit
-            else
-              nil
-            end
-            case ctrl
-            when Symbol
-              path = send(ctrl) if respond_to?(ctrl)
-            when String
-              path = ctrl
-            when Proc
-              begin
-                path = instance_exec(result, &ctrl)
-              rescue StandardError
-                path = nil
-              end
-            end
-          end
-          # Global default from configuration
-          if path.nil?
-            global = PricingPlans.configuration.redirect_on_blocked_limit rescue nil
-            case global
-            when Symbol
-              path = send(global) if respond_to?(global)
-            when String
-              path = global
-            when Proc
-              begin
-                path = instance_exec(result, &global)
-              rescue StandardError
-                path = nil
-              end
-            end
-          end
-          path ||= (respond_to?(:pricing_path) ? pricing_path : nil)
+        # Resolve the best redirect target once, and surface it to any handler via metadata
+        resolved_target = resolve_redirect_target_for_blocked_limit(result, redirect_to)
 
-          if path && respond_to?(:redirect_to)
-            redirect_to(path, alert: result.message, status: :see_other)
+        if respond_to?(:handle_pricing_plans_limit_blocked)
+          # Enrich result with redirect target for the centralized handler
+          enriched_result = PricingPlans::Result.blocked(
+            result.message,
+            limit_key: result.limit_key,
+            billable: result.billable,
+            metadata: (result.metadata || {}).merge(redirect_to: resolved_target)
+          )
+          handle_pricing_plans_limit_blocked(enriched_result)
+        else
+          # Local fallback when centralized handler isn't available
+          if resolved_target && respond_to?(:redirect_to)
+            redirect_to(resolved_target, alert: result.message, status: :see_other)
           elsif respond_to?(:render)
             respond_to?(:request) && request&.format&.json? ? render(json: { error: result.message }, status: :forbidden) : render(plain: result.message, status: :forbidden)
           end
@@ -250,6 +219,63 @@ module PricingPlans
 
       true
     end
+
+    private
+
+    # Decide which redirect target to use when a limit is blocked.
+    # Resolution order:
+    # 1) explicit option passed to the call
+    # 2) per-controller default (Symbol | String | Proc)
+    # 3) global configuration default (Symbol | String | Proc)
+    # 4) pricing_path helper if available
+    # Returns a String path or nil
+    def resolve_redirect_target_for_blocked_limit(result, explicit)
+      return explicit if explicit && !explicit.is_a?(Proc)
+
+      path = nil
+      # Per-controller default
+      ctrl = if self.class.respond_to?(:pricing_plans_redirect_on_blocked_limit)
+        self.class.pricing_plans_redirect_on_blocked_limit
+      elsif self.class.respond_to?(:_pricing_plans_redirect_on_blocked_limit)
+        self.class._pricing_plans_redirect_on_blocked_limit
+      else
+        nil
+      end
+      candidate = explicit || ctrl
+      case candidate
+      when Symbol
+        path = send(candidate) if respond_to?(candidate)
+      when String
+        path = candidate
+      when Proc
+        begin
+          path = instance_exec(result, &candidate)
+        rescue StandardError
+          path = nil
+        end
+      end
+
+      if path.nil?
+        global = PricingPlans.configuration.redirect_on_blocked_limit rescue nil
+        case global
+        when Symbol
+          path = send(global) if respond_to?(global)
+        when String
+          path = global
+        when Proc
+          begin
+            path = instance_exec(result, &global)
+          rescue StandardError
+            path = nil
+          end
+        end
+      end
+
+      path ||= (respond_to?(:pricing_path) ? pricing_path : nil)
+      path
+    end
+
+    public
 
     def require_feature!(feature_key, billable:)
       plan = PlanResolver.effective_plan_for(billable)

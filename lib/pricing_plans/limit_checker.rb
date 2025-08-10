@@ -3,6 +3,14 @@
 module PricingPlans
   class LimitChecker
     class << self
+      # English-y aliases used widely across helpers/tests
+      def plan_limit_remaining(billable, limit_key)
+        remaining(billable, limit_key)
+      end
+
+      def plan_limit_percent_used(billable, limit_key)
+        percent_used(billable, limit_key)
+      end
       def within_limit?(billable, limit_key, by: 1)
         remaining_amount = remaining(billable, limit_key)
         return true if remaining_amount == :unlimited
@@ -32,6 +40,8 @@ module PricingPlans
         current_usage = current_usage_for(billable, limit_key, limit_config)
         [(current_usage.to_f / limit_amount) * 100, 100.0].min
       end
+
+      # Keep short helpers undocumented; public API is plan_limit_* aliases
 
       def after_limit_action(billable, limit_key)
         plan = PlanResolver.effective_plan_for(billable)

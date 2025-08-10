@@ -52,19 +52,19 @@ class ViewHelpersTest < ActiveSupport::TestCase
   end
 
   def test_plan_limit_remaining
-    PricingPlans::LimitChecker.stub(:remaining, 5) do
+    PricingPlans::LimitChecker.stub(:plan_limit_remaining, 5) do
       assert_equal 5, plan_limit_remaining(@org, :projects)
     end
   end
 
   def test_plan_limit_remaining_unlimited
-    PricingPlans::LimitChecker.stub(:remaining, :unlimited) do
+    PricingPlans::LimitChecker.stub(:plan_limit_remaining, :unlimited) do
       assert_equal :unlimited, plan_limit_remaining(@org, :projects)
     end
   end
 
   def test_plan_limit_percent_used
-    PricingPlans::LimitChecker.stub(:percent_used, 75.5) do
+    PricingPlans::LimitChecker.stub(:plan_limit_percent_used, 75.5) do
       assert_equal 75.5, plan_limit_percent_used(@org, :projects)
     end
   end

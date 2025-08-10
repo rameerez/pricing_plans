@@ -44,6 +44,19 @@ class ControllerRescuesLimitBlockedTest < ActiveSupport::TestCase
     assert_match(/blocked!/i, ctrl._flash[:alert])
   end
 
+  def test_handle_pricing_plans_limit_blocked_html_prefers_redirect_from_metadata
+    ctrl = DummyController.new
+    result = PricingPlans::Result.blocked(
+      "blocked!",
+      limit_key: :projects,
+      billable: create_organization,
+      metadata: { redirect_to: "/override" }
+    )
+    ctrl.send(:handle_pricing_plans_limit_blocked, result)
+    assert_equal ["/override", :see_other, false], ctrl._redirected_to
+    assert_match(/blocked!/i, ctrl._flash[:alert])
+  end
+
   def test_handle_pricing_plans_limit_blocked_json
     ctrl = DummyController.new
     ctrl._request_format = :json
