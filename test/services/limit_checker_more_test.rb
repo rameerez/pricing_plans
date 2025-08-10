@@ -10,7 +10,7 @@ class LimitCheckerMoreTest < ActiveSupport::TestCase
 
   def test_remaining_returns_unlimited_when_no_limit_configured
     # For an unknown limit key, remaining should be :unlimited
-    assert_equal :unlimited, PricingPlans::LimitChecker.remaining(@org, :unknown_limit)
+    assert_equal :unlimited, PricingPlans::LimitChecker.plan_limit_remaining(@org, :unknown_limit)
     assert PricingPlans::LimitChecker.within_limit?(@org, :unknown_limit)
   end
 
@@ -31,8 +31,8 @@ class LimitCheckerMoreTest < ActiveSupport::TestCase
     end
 
     PricingPlans::PlanResolver.stub(:effective_plan_for, plan) do
-      assert_equal 0.0, PricingPlans::LimitChecker.percent_used(@org, :unlimited_key)
-      assert_equal 0.0, PricingPlans::LimitChecker.percent_used(@org, :zero_key)
+      assert_equal 0.0, PricingPlans::LimitChecker.plan_limit_percent_used(@org, :unlimited_key)
+      assert_equal 0.0, PricingPlans::LimitChecker.plan_limit_percent_used(@org, :zero_key)
     end
   end
 

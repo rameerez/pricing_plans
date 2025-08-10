@@ -43,13 +43,13 @@ class LimitCheckerTest < ActiveSupport::TestCase
     org = create_organization
 
     # Start with 1 remaining (free plan allows 1 project)
-    assert_equal 1, PricingPlans::LimitChecker.remaining(org, :projects)
+    assert_equal 1, PricingPlans::LimitChecker.plan_limit_remaining(org, :projects)
 
     # Create a project
     org.projects.create!(name: "Project 1")
 
     # Now 0 remaining
-    assert_equal 0, PricingPlans::LimitChecker.remaining(org, :projects)
+    assert_equal 0, PricingPlans::LimitChecker.plan_limit_remaining(org, :projects)
   end
 
   def test_remaining_with_inferred_macro_registration
@@ -57,7 +57,7 @@ class LimitCheckerTest < ActiveSupport::TestCase
     Project.send(:limited_by_pricing_plans, :projects, billable: :organization)
 
     org = create_organization
-    assert_equal 1, PricingPlans::LimitChecker.remaining(org, :projects)
+    assert_equal 1, PricingPlans::LimitChecker.plan_limit_remaining(org, :projects)
   end
 
   def test_remaining_calculation_unlimited
@@ -65,20 +65,20 @@ class LimitCheckerTest < ActiveSupport::TestCase
     PricingPlans::Assignment.assign_plan_to(create_organization, :enterprise)
     org = Organization.first
 
-    assert_equal :unlimited, PricingPlans::LimitChecker.remaining(org, :projects)
+    assert_equal :unlimited, PricingPlans::LimitChecker.plan_limit_remaining(org, :projects)
   end
 
   def test_percent_used_calculation
     org = create_organization
 
     # 0% used initially
-    assert_equal 0.0, PricingPlans::LimitChecker.percent_used(org, :projects)
+    assert_equal 0.0, PricingPlans::LimitChecker.plan_limit_percent_used(org, :projects)
 
     # Create a project (1 out of 1 allowed)
     org.projects.create!(name: "Project 1")
 
     # 100% used
-    assert_equal 100.0, PricingPlans::LimitChecker.percent_used(org, :projects)
+    assert_equal 100.0, PricingPlans::LimitChecker.plan_limit_percent_used(org, :projects)
   end
 
   def test_percent_used_with_unlimited_limit
@@ -88,7 +88,7 @@ class LimitCheckerTest < ActiveSupport::TestCase
     org.projects.create!(name: "Project 1")
 
     # Should be 0% even with projects (unlimited)
-    assert_equal 0.0, PricingPlans::LimitChecker.percent_used(org, :projects)
+    assert_equal 0.0, PricingPlans::LimitChecker.plan_limit_percent_used(org, :projects)
   end
 
   def test_after_limit_action_resolution
@@ -216,7 +216,7 @@ class LimitCheckerTest < ActiveSupport::TestCase
 
     # Usage should be 0 (real-time counting)
     assert_equal 0, PricingPlans::LimitChecker.current_usage_for(org, :projects)
-    assert_equal 1, PricingPlans::LimitChecker.remaining(org, :projects)
+    assert_equal 1, PricingPlans::LimitChecker.plan_limit_remaining(org, :projects)
   end
 
   def test_limit_checker_with_no_registered_counter
@@ -258,8 +258,8 @@ class LimitCheckerTest < ActiveSupport::TestCase
 
     # Mock PlanResolver to return nil
     PricingPlans::PlanResolver.stub(:effective_plan_for, nil) do
-      assert_equal :unlimited, PricingPlans::LimitChecker.remaining(org, :projects)
-      assert_equal 0.0, PricingPlans::LimitChecker.percent_used(org, :projects)
+      assert_equal :unlimited, PricingPlans::LimitChecker.plan_limit_remaining(org, :projects)
+      assert_equal 0.0, PricingPlans::LimitChecker.plan_limit_percent_used(org, :projects)
       assert_equal :block_usage, PricingPlans::LimitChecker.after_limit_action(org, :projects)
     end
   end

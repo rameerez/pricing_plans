@@ -20,12 +20,12 @@ module PricingPlans
 
       define_method :plan_limit_remaining do |limit_key|
         billable = self
-        LimitChecker.remaining(billable, limit_key)
+        LimitChecker.plan_limit_remaining(billable, limit_key)
       end
 
       define_method :plan_limit_percent_used do |limit_key|
         billable = self
-        LimitChecker.percent_used(billable, limit_key)
+        LimitChecker.plan_limit_percent_used(billable, limit_key)
       end
 
       define_method :current_pricing_plan do

@@ -28,13 +28,13 @@ module PricingPlans
 
       unless billable_class.method_defined?(remaining_m)
         billable_class.define_method(remaining_m) do
-          LimitChecker.remaining(self, key)
+          LimitChecker.plan_limit_remaining(self, key)
         end
       end
 
       unless billable_class.method_defined?(percent_m)
         billable_class.define_method(percent_m) do
-          LimitChecker.percent_used(self, key)
+          LimitChecker.plan_limit_percent_used(self, key)
         end
       end
 
@@ -110,21 +110,11 @@ module PricingPlans
     end
 
     def plan_limit_remaining(limit_key)
-      LimitChecker.remaining(self, limit_key)
-    end
-
-    # Short, English-y alias
-    def remaining(limit_key)
-      plan_limit_remaining(limit_key)
+      LimitChecker.plan_limit_remaining(self, limit_key)
     end
 
     def plan_limit_percent_used(limit_key)
-      LimitChecker.percent_used(self, limit_key)
-    end
-
-    # Short alias
-    def percent_used(limit_key)
-      plan_limit_percent_used(limit_key)
+      LimitChecker.plan_limit_percent_used(self, limit_key)
     end
 
     def current_pricing_plan

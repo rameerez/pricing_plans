@@ -66,7 +66,7 @@ module PricingPlans
 
       current_usage = LimitChecker.current_usage_for(billable, limit_key)
       limit_amount = limit_config[:to]
-      percent_used = LimitChecker.percent_used(billable, limit_key)
+      percent_used = LimitChecker.plan_limit_percent_used(billable, limit_key)
 
       css_classes = ["pricing-plans-meter"]
       css_classes << html_options.delete(:class) if html_options[:class]
@@ -128,11 +128,11 @@ module PricingPlans
     end
 
     def plan_limit_remaining(billable, limit_key)
-      LimitChecker.remaining(billable, limit_key)
+      LimitChecker.plan_limit_remaining(billable, limit_key)
     end
 
     def plan_limit_percent_used(billable, limit_key)
-      LimitChecker.percent_used(billable, limit_key)
+      LimitChecker.plan_limit_percent_used(billable, limit_key)
     end
 
     def current_pricing_plan(billable)
@@ -146,7 +146,7 @@ module PricingPlans
 
       usage = LimitChecker.current_usage_for(billable, limit_key, limit_config)
       limit_amount = limit_config[:to]
-      percent = LimitChecker.percent_used(billable, limit_key)
+      percent = LimitChecker.plan_limit_percent_used(billable, limit_key)
       grace = GraceManager.grace_active?(billable, limit_key)
       blocked = GraceManager.should_block?(billable, limit_key)
 
