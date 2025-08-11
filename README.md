@@ -828,43 +828,115 @@ end
 
 Note: model validations will still block creation even with `allow_system_override` -- it's just intended to bypass the block on controllers.
 
-### Views
+### Views (UI-neutral helpers)
 
-We provide some helpers that may come in handy when building views.
+We provide a small, consolidated set of data helpers that make it dead simple to build your own pricing and usage UIs.
 
-- Per‑limit status and bulk:
-  - `plan_limit_status(limit_key, billable:)`, `plan_limit_statuses(*keys, billable:)`
-  - `pricing_plans_status(billable, limits: [...])`
+- Pricing data for tables/cards:
+  - `PricingPlans.plans` → Array of `PricingPlans::Plan` objects
+  - `plan.price_label` → "Free", "$29/mo", or "Contact". If `stripe_price` is set and the Stripe gem is available, it auto-fetches the live price from Stripe. You can override or disable this (see below).
+  - `PricingPlans.suggest_next_plan_for(billable, keys: [:projects, ...])`
 
-- Banners/meters:
-  - `plan_limit_banner(limit_key, billable:)`
-  - `plan_usage_meter(limit_key, billable:)`
+- Usage/status for settings dashboards:
+  - `org.limit(:projects)` → one status hash for a limit
+  - `org.limits(:projects, :custom_models)` → Hash of statuses (with no args, defaults to all limits on the current plan)
+  - `org.limits_summary(:projects, :custom_models)` → Array of simple structs (key/current/allowed/percent_used/grace/blocked)
+  - `org.limits_severity(:projects, :custom_models)` → `:ok | :warning | :grace | :blocked`
+  - `org.limits_message(:projects, :custom_models)` → combined human message string (or `nil`)
 
-- Aggregates:
-  - `highest_severity_for(billable, *keys)` and `combine_messages_for(billable, *keys)`
-
-- Pricing UI:
-  - `plan_pricing_table(highlight: false)`
-  - `plan_label(plan)` → ["Name", "Free" | "$29/mo" | "Contact"]
-  - CTA helpers: `pricing_plans_cta_url(plan, billable:, view:)`, `pricing_plans_cta_button(...)`, `pricing_plans_auto_cta_url(...)`
+- Feature toggles (billable-centric):
+  - `current_user.plan_allows?(:api_access)`
+  - `current_user.plan_limit_remaining(:projects)` and `current_user.plan_limit_percent_used(:projects)`
 
 Message customization:
 
 - You can override copy globally via `config.message_builder`, which is used across limit checks and features. Suggested signature: `(context:, **kwargs) -> string` with contexts `:over_limit`, `:grace`, `:feature_denied`, and `:overage_report`.
 
-- Current plan/limits for views:
-  - `current_plan_name(billable)`, `plan_allows?(billable, feature)`, `plan_limit_remaining(billable, key)`, `plan_limit_percent_used(billable, key)`
+#### Example: pricing table in ERB
 
-#### Views: build a pricing plan table
+```erb
+<% PricingPlans.plans.each do |plan| %>
+  <article class="card <%= 'is-current' if plan == current_user.current_pricing_plan %> <%= 'is-popular' if plan.highlighted? %>">
+    <h3><%= plan.name %></h3>
+    <p><%= plan.description %></p>
+    <ul>
+      <% plan.bullets.each do |b| %>
+        <li><%= b %></li>
+      <% end %>
+    </ul>
+    <div class="price"><%= plan.price_label %></div>
+    <% if (url = plan.cta_url) %>
+      <%= link_to plan.cta_text, url, class: 'btn' %>
+    <% else %>
+      <%= button_tag plan.cta_text, class: 'btn', disabled: true %>
+    <% end %>
+  </article>
+<% end %>
+```
 
-- `PricingPlans.plans` (sorted sensible order)
-- `PricingPlans.for_dashboard(billable)` / `PricingPlans.for_marketing`
-- `PricingPlans.suggest_next_plan_for(billable, keys: ...)`
-- `PricingPlans.decorate_for_view(plan, ...)`
+To wire the button URL automatically with Pay, use a single initializer hook that generates a Checkout/Billing URL. The proc can accept `(billable, plan)`, `(plan)`, or no args — pick what fits your app conventions. You can also set a global `default_billable_resolver` so you never pass billable explicitly:
 
-#### Views: build plan warning messages
+```ruby
+# config/initializers/pricing_plans.rb
+PricingPlans.configure do |config|
+  # Resolve the current billable globally (optional)
+  config.default_billable_resolver = -> { Current.organization || Current.user }
 
-- `PricingPlans::OverageReporter.report_with_message(billable, target_plan_key)` -- Overage reporting for downgrade UX
+  # Auto-generate CTA URLs with Pay (optional)
+  config.auto_cta_with_pay = ->(billable, plan) do
+    next unless plan.stripe_price
+    billable ||= Current.organization || Current.user
+    return unless billable
+    billable.set_payment_processor(:stripe) unless billable.payment_processor
+    session = billable.payment_processor.checkout(
+      mode: "subscription",
+      line_items: [{ price: plan.stripe_price[:id] || plan.stripe_price }],
+      success_url: Rails.application.routes.url_helpers.root_url,
+      cancel_url: Rails.application.routes.url_helpers.root_url
+    )
+    session.url
+  end
+end
+```
+
+#### Example: settings usage summary (billable-centric)
+
+```erb
+<% org = current_organization %>
+<% org.limits_summary(:projects, :custom_models).each do |s| %>
+  <div><%= s.key.to_s.humanize %>: <%= s.current %> / <%= s.allowed %> (<%= s.percent_used.round(1) %>%)</div>
+<% end %>
+
+<% sev = org.limits_severity(:projects, :custom_models) %>
+<% if sev != :ok %>
+  <div class="notice notice--<%= sev %>"><%= org.limits_message(:projects, :custom_models) %></div>
+<% end %>
+```
+
+That’s it: you fully control the HTML/CSS, while `pricing_plans` gives you clear, composable data.
+
+#### Stripe price labels in `plan.price_label`
+
+By default, if a plan has `stripe_price` configured and the `stripe` gem is present, we auto-fetch the Stripe Price and render a friendly label (e.g., `$29/mo`).
+
+- This mirrors Pay’s use of Stripe Prices.
+- To disable auto-fetching globally:
+
+```ruby
+PricingPlans.configure do |config|
+  config.auto_price_labels_from_processor = false
+end
+```
+
+- To fully customize rendering (e.g., caching, locale):
+
+```ruby
+PricingPlans.configure do |config|
+  config.price_label_resolver = ->(plan) do
+    # Build and return a string like "$29/mo" based on your own logic
+  end
+end
+```
 
 ## Using with `pay` and/or `usage_credits`
 

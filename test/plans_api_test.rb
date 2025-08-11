@@ -29,17 +29,10 @@ class PlansApiTest < ActiveSupport::TestCase
     assert_equal [:free, :basic, :pro, :enterprise], keys
   end
 
-  def test_for_dashboard_returns_struct
-    org = create_organization
-    data = PricingPlans.for_dashboard(org)
-    assert_equal [:plans, :popular_plan_key, :current_plan].sort, data.to_h.keys.sort
-    assert data.plans.is_a?(Array)
-  end
-
-  def test_for_marketing_returns_struct_without_current
-    data = PricingPlans.for_marketing
-    assert data.plans.is_a?(Array)
-    assert_nil data.current_plan
+  def test_plans_api_returns_sorted_plans
+    array = PricingPlans.plans
+    assert array.is_a?(Array)
+    assert array.first.is_a?(PricingPlans::Plan)
   end
 
   def test_suggest_next_plan_for_progression

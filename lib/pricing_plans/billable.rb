@@ -190,5 +190,41 @@ module PricingPlans
       times = limit_keys.flatten.map { |k| GraceManager.grace_ends_at(self, k) }.compact
       times.min
     end
+
+    # Rails-y wrappers for usage/status (defaults to all configured limits)
+    def limit(limit_key)
+      PricingPlans.limit_status(limit_key, billable: self)
+    end
+
+    def limits(*limit_keys)
+      keys = normalize_limit_keys(limit_keys)
+      PricingPlans.limit_statuses(*keys, billable: self)
+    end
+
+    def limits_summary(*limit_keys)
+      keys = normalize_limit_keys(limit_keys)
+      PricingPlans.status(self, limits: keys)
+    end
+
+    def limits_severity(*limit_keys)
+      keys = normalize_limit_keys(limit_keys)
+      PricingPlans.highest_severity_for(self, *keys)
+    end
+
+    def limits_message(*limit_keys)
+      keys = normalize_limit_keys(limit_keys)
+      PricingPlans.combine_messages_for(self, *keys)
+    end
+
+    private
+
+    def normalize_limit_keys(limit_keys)
+      keys = limit_keys.flatten
+      if keys.empty?
+        plan = PlanResolver.effective_plan_for(self)
+        keys = plan ? plan.limits.keys : []
+      end
+      keys
+    end
   end
 end

@@ -151,8 +151,8 @@ module PricingPlans
 
     # Unified ergonomic API:
     # - Setter/getter: cta_url, cta_url("/checkout")
-    # - Resolver: cta_url(view: view_context, billable: org)
-    def cta_url(value = :__no_arg__, view: nil, billable: nil)
+    # - Resolver: cta_url(billable: org)
+    def cta_url(value = :__no_arg__, billable: nil)
       unless value == :__no_arg__
         set_cta_url(value)
         return @cta_url
@@ -165,11 +165,17 @@ module PricingPlans
       if PricingPlans.configuration.auto_cta_with_pay
         begin
           gen = PricingPlans.configuration.auto_cta_with_pay
+          billable ||= begin
+            resolver = PricingPlans.configuration.default_billable_resolver
+            resolver.respond_to?(:call) ? resolver.call : nil
+          rescue StandardError
+            nil
+          end
           if gen.respond_to?(:call)
             case gen.arity
-            when 3 then return gen.call(billable, self, view)
             when 2 then return gen.call(billable, self)
-            else        return gen.call(billable)
+            when 1 then return gen.call(self)
+            else        return gen.call
             end
           end
         rescue StandardError
@@ -280,6 +286,41 @@ module PricingPlans
 
     def purchasable?
       !!@stripe_price || (!free? && !!@price)
+    end
+
+    # Human label to display price in UIs. Prefers explicit string, then numeric, else contact.
+    def price_label
+      # Auto-fetch from processor (Stripe) if enabled and plan has stripe_price
+      cfg = PricingPlans.configuration
+      if cfg&.auto_price_labels_from_processor && stripe_price
+        begin
+          if defined?(::Stripe)
+            price_id = stripe_price.is_a?(Hash) ? (stripe_price[:id] || stripe_price[:month] || stripe_price[:year]) : stripe_price
+            if price_id
+              pr = ::Stripe::Price.retrieve(price_id)
+              amount = pr.unit_amount.to_f / 100.0
+              interval = pr.recurring&.interval
+              suffix = interval ? "/#{interval[0,3]}" : ""
+              return "$#{amount}#{suffix}"
+            end
+          end
+        rescue StandardError
+          # fallthrough to local derivation
+        end
+      end
+      # Allow host app override via resolver
+      if cfg&.price_label_resolver
+        begin
+          built = cfg.price_label_resolver.call(self)
+          return built if built
+        rescue StandardError
+        end
+      end
+      return "Free" if price && price.to_i.zero?
+      return price_string if price_string
+      return "$#{price}/mo" if price
+      return "Contact" if stripe_price || price.nil?
+      nil
     end
 
     def validate!

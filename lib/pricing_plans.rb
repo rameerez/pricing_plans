@@ -32,7 +32,6 @@ module PricingPlans
   autoload :ControllerGuards, "pricing_plans/controller_guards"
   autoload :JobGuards, "pricing_plans/job_guards"
   autoload :ControllerRescues, "pricing_plans/controller_rescues"
-  autoload :ViewHelpers, "pricing_plans/view_helpers"
   autoload :Limitable, "pricing_plans/limitable"
   autoload :Billable, "pricing_plans/billable"
   autoload :AssociationLimitRegistry, "pricing_plans/association_limit_registry"
@@ -90,27 +89,12 @@ module PricingPlans
       end
     end
 
-    # One-call controller helper for dashboard pricing page
-    # Returns OpenStruct with: plans, popular_plan_key, current_plan
-    def for_dashboard(billable)
-      OpenStruct.new(
-        plans: plans,
-        popular_plan_key: (Registry.highlighted_plan&.key),
-        current_plan: begin
-          PlanResolver.effective_plan_for(billable)
-        rescue StandardError
-          nil
-        end
-      )
-    end
-
-    # One-call helper for marketing pages (no current plan)
-    def for_marketing
-      OpenStruct.new(
-        plans: plans,
-        popular_plan_key: (Registry.highlighted_plan&.key),
-        current_plan: nil
-      )
+    # Single, UI-neutral helper for pricing pages.
+    # Returns an array of Hashes containing plain data for building pricing UIs.
+    # Each item includes: :key, :name, :description, :bullets, :price_label,
+    # :is_current, :is_popular, :button_text, :button_url
+    def for_pricing(billable: nil, view: nil)
+      plans.map { |plan| decorate_for_view(plan, billable: billable, view: view) }
     end
 
     # Opinionated next-plan suggestion: pick the smallest plan that satisfies current usage
@@ -133,25 +117,117 @@ module PricingPlans
       candidate || current_plan || Registry.default_plan
     end
 
-    # Optional view-model decorator for UIs
-    def decorate_for_view(plan, context: :marketing, billable: nil, view: nil)
+    # Optional view-model decorator for UIs (pure data, no HTML)
+    def decorate_for_view(plan, billable: nil, view: nil)
       is_current = billable ? (PlanResolver.effective_plan_for(billable)&.key == plan.key) : false
       is_popular = Registry.highlighted_plan&.key == plan.key
-      name, price_label = ViewHelpers.instance_method(:plan_label).bind(Object.new.extend(ViewHelpers)).call(plan)
+      price_label = plan_price_label_for(plan)
       {
         key: plan.key,
-        name: name,
+        name: plan.name,
         description: plan.description,
         bullets: plan.bullets,
         price_label: price_label,
         is_current: is_current,
         is_popular: is_popular,
         button_text: plan.cta_text,
-        button_url: plan.cta_url(view: view, billable: billable)
+        button_url: plan.cta_url(billable: billable)
       }
     end
 
-    # Note: We no longer ship engine partials or render helpers. Prefer the
-    # helpers in PricingPlans::ViewHelpers (e.g., plan_pricing_table, plan_usage_meter).
+    # Derive a human price label for a plan
+    def plan_price_label_for(plan)
+      return "Free" if plan.price && plan.price.to_i.zero?
+      return plan.price_string if plan.price_string
+      return "$#{plan.price}/mo" if plan.price
+      return "Contact" if plan.stripe_price || plan.price.nil?
+      nil
+    end
+
+    # UI-neutral status helpers for building settings/usage UIs
+    def limit_status(limit_key, billable:)
+      plan = PlanResolver.effective_plan_for(billable)
+      limit_config = plan&.limit_for(limit_key)
+      return { configured: false } unless limit_config
+
+      usage = LimitChecker.current_usage_for(billable, limit_key, limit_config)
+      limit_amount = limit_config[:to]
+      percent = LimitChecker.plan_limit_percent_used(billable, limit_key)
+      grace = GraceManager.grace_active?(billable, limit_key)
+      blocked = GraceManager.should_block?(billable, limit_key)
+
+      {
+        configured: true,
+        limit_key: limit_key.to_sym,
+        limit_amount: limit_amount,
+        current_usage: usage,
+        percent_used: percent,
+        grace_active: grace,
+        grace_ends_at: GraceManager.grace_ends_at(billable, limit_key),
+        blocked: blocked,
+        after_limit: limit_config[:after_limit],
+        per: !!limit_config[:per]
+      }
+    end
+
+    def limit_statuses(*limit_keys, billable:)
+      keys = limit_keys.flatten
+      keys.index_with { |k| limit_status(k, billable: billable) }
+    end
+
+    StatusItem = Struct.new(:key, :current, :allowed, :percent_used, :grace_active, :grace_ends_at, :blocked, :per, keyword_init: true)
+
+    def status(billable, limits: [])
+      Array(limits).map do |limit_key|
+        st = limit_status(limit_key, billable: billable)
+        unless st[:configured]
+          StatusItem.new(key: limit_key, current: 0, allowed: nil, percent_used: 0.0, grace_active: false, grace_ends_at: nil, blocked: false, per: false)
+        else
+          StatusItem.new(
+            key: limit_key,
+            current: st[:current_usage],
+            allowed: st[:limit_amount],
+            percent_used: st[:percent_used],
+            grace_active: st[:grace_active],
+            grace_ends_at: st[:grace_ends_at],
+            blocked: st[:blocked],
+            per: st[:per]
+          )
+        end
+      end
+    end
+
+    # Aggregates across multiple limits for global banners/messages
+    # Returns one of :ok, :warning, :grace, :blocked
+    def highest_severity_for(billable, *limit_keys)
+      keys = limit_keys.flatten
+      severities = keys.map do |key|
+        st = limit_status(key, billable: billable)
+        next :ok unless st[:configured]
+        if st[:blocked]
+          lim = st[:limit_amount]
+          cur = st[:current_usage]
+          return :blocked if lim != :unlimited && lim.to_i > 0 && cur.to_i >= lim.to_i
+        end
+        return :grace if st[:grace_active]
+        percent = st[:percent_used].to_f
+        warn_thresholds = LimitChecker.warning_thresholds(billable, key)
+        highest_warn = warn_thresholds.max.to_f * 100.0
+        (percent >= highest_warn && highest_warn.positive?) ? :warning : :ok
+      end
+      severities.include?(:warning) ? :warning : :ok
+    end
+
+    # Combine human messages for a set of limits into one string
+    def combine_messages_for(billable, *limit_keys)
+      keys = limit_keys.flatten
+      parts = keys.map do |key|
+        result = ControllerGuards.require_plan_limit!(key, billable: billable, by: 0)
+        next nil if result.ok?
+        "#{key.to_s.humanize}: #{result.message}"
+      end.compact
+      return nil if parts.empty?
+      parts.join(" · ")
+    end
   end
 end

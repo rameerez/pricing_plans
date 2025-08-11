@@ -9,6 +9,9 @@ module PricingPlans
     attr_accessor :default_plan, :highlighted_plan, :period_cycle
     # Optional ergonomics
     attr_accessor :default_cta_text, :default_cta_url, :auto_cta_with_pay
+    # Optional global resolver for billable outside controllers/views
+    # Signature: -> { current_billable }
+    attr_accessor :default_billable_resolver
     # Global controller ergonomics
       # Optional global resolver for controller billable. Per-controller settings still win.
       # Accepts:
@@ -28,6 +31,11 @@ module PricingPlans
     # Example kwargs: limit_key:, current_usage:, limit_amount:, grace_ends_at:, feature_key:, plan_name:
     attr_accessor :message_builder
     attr_reader :billable_class
+    # Optional: custom resolver for displaying price labels from processor
+    # Signature: ->(plan) { "${amount}/mo" }
+    attr_accessor :price_label_resolver
+    # Auto-fetch price labels from processor when possible (Stripe via stripe-ruby)
+    attr_accessor :auto_price_labels_from_processor
     attr_reader :plans, :event_handlers
 
     def initialize
@@ -38,10 +46,13 @@ module PricingPlans
       @default_cta_text = nil
       @default_cta_url = nil
       @auto_cta_with_pay = false
+      @default_billable_resolver = nil
       @message_builder = nil
       @controller_billable_method = nil
       @controller_billable_proc = nil
       @redirect_on_blocked_limit = nil
+      @price_label_resolver = nil
+      @auto_price_labels_from_processor = true
       @plans = {}
       @event_handlers = {
         warning: {},
