@@ -307,7 +307,7 @@ before_action { enforce_api_access!(on: -> { find_org }) }
 
 Of course, this is all syntactic sugar for the primitive method, which you can also use:
 ```ruby
-before_action { require_feature!(:api_access, on: :current_organization) }
+before_action { require_feature!(:api_access, billable: current_organization) }
 ```
 
 #### Enforce plan limits in controllers
@@ -319,19 +319,19 @@ before_action :enforce_projects_limit!, only: :create
 
 As in feature gating, this is syntactic sugar (`enforce_<limit_key>_limit!`) that gets generated for every `limits` key in `pricing_plans.rb`. You can also use the primitive method:
 ```ruby
-before_action { enforce_plan_limit!(:projects) }
+before_action { enforce_plan_limit!(:projects, billable: current_organization) }
 ```
 
 And you can also pass a custom billable:
 ```ruby
 before_action { enforce_projects_limit!(on: :current_organization) }
 # or
-before_action { enforce_plan_limit!(:projects, on: :current_organization) }
+before_action { enforce_plan_limit!(:projects, billable: current_organization) }
 ```
 
 You can also specify a custom redirect path that will override the global config:
 ```ruby
-before_action { enforce_plan_limit!(:projects, redirect_to: pricing_path) }
+before_action { enforce_plan_limit!(:projects, billable: current_organization, redirect_to: pricing_path) }
 ```
 
 In the example aboves, the gem assumes the action to call will only create one extra project. So, if the plan limit is 5, and you're currently at 4 projects, you can still create one extra one, and the action will get called. If your action creates more than one object per call (creating multiple objects at once, importing objects in bulk etc.) you can enforce it will stay within plan limits by passing the `by:` parameter like this:
@@ -377,8 +377,8 @@ end
   4. `pricing_path` helper if available
 
 
-#### Set up a redirect when a feature is blocked or a limit is reached
-g
+#### Set up a redirect when a limit is reached
+
 You can configure a global default redirect (optional):
 
 ```ruby
