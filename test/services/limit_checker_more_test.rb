@@ -198,6 +198,33 @@ class LimitCheckerMoreTest < ActiveSupport::TestCase
     end
   end
 
+  def test_persistent_count_scope_proc_with_billable_param
+    org1 = create_organization
+    org2 = create_organization
+    PricingPlans::Assignment.assign_plan_to(org1, :enterprise)
+    PricingPlans::Assignment.assign_plan_to(org2, :enterprise)
+
+    # Records for both orgs
+    org1.projects.create!(name: 'A')
+    org1.projects.create!(name: 'B')
+    org2.projects.create!(name: 'A')
+
+    # Plan-level scope that uses both relation and billable
+    plan = OpenStruct.new
+    plan.define_singleton_method(:limit_for) do |key|
+      if key == :projects
+        { to: 10, count_scope: ->(rel, billable) { rel.where(organization_id: billable.id).where(name: 'A') } }
+      end
+    end
+
+    PricingPlans::PlanResolver.stub(:effective_plan_for, plan) do
+      # Only org1's 'A' should count for org1
+      assert_equal 1, PricingPlans::LimitChecker.current_usage_for(org1, :projects)
+      # Only org2's 'A' should count for org2
+      assert_equal 1, PricingPlans::LimitChecker.current_usage_for(org2, :projects)
+    end
+  end
+
   def test_count_scope_disallowed_on_per_period
     error = assert_raises(PricingPlans::ConfigurationError) do
       # Force plan validation through Plan instance to trigger check
