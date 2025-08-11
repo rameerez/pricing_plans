@@ -872,50 +872,58 @@ Message customization:
 
 These gems are related but not overlapping. They're complementary. The boundaries are clear: billing is handled in Pay; metering (ledger-like) in usage_credits.
 
-### Using `pricing_plans` with the `pay` gem
-TODO
+The integration with `pay` should be seamless and is documented throughout this entire README; however, here's a brief note about using `usage_creadits` alongside `pricing_plans`.
 
 ### Using `pricing_plans` with the `usage_credits` gem
 
-    Some per-period limits are not a currency and shouldn’t be purchasable: e.g., “Create up to 3 custom AI models per month”, “1 domain change per week”, “2 exports/day”. Those are discrete allowances, not metered workloads. Credits are a bad fit (you don’t want to sell “custom-model tokens”).
+In the SaaS world, pricing plans and usage credits are related in so far credits are usually a part of a pricing plan. A plan would give you, say, 100 credits a month along other features, and users would find that information usually documented in the pricing table itself.
 
-    For classic metered workloads (API calls, image generations, tokenized compute), use credits.
+However, for the purposes of this gem, pricing plans and usage credits are two very distinct things.
 
-So the clean separation:
+If you want to add credits to your app, you should install and configure the [usage_credits](https://github.com/rameerez/usage_credits) gem separately. In the `usage_credits` configuration, you should specify how many credits your users get with each subscription.
 
-Golden rule
+#### The difference between usage credits and per-period plan limits
 
-    pricing_plans handles:
+> [!IMPORTANT]
+> Usage credits are not the same as per-period limits.
 
-        Booleans (feature flags).
+Usage credits behave like a currency. Per-period limits are not a currency and shouldn't be purchaseable.
 
-        Persistent caps (max concurrent resources: products, seats, projects).
+- Usage credits are like: "100 image-generation credits a month"
+- Per-period limits are like: "Create up to 3 new projects a month"
 
-        Discrete per-period allowances (rare; e.g., “3 custom models / month”), with no overage purchasing by default (you can still choose to allow overage via credits—see below).
+Usage credits can be refilled (buy credit packs, your balance goes up), can be spent (your balance goes down). Per-period limits do not. If you intend to sell credit packs, or if the balance needs to go both up and down, you should implement usage credits, NOT per-period limits.
 
-    usage_credits handles:
+Some other examples of per-period limits: “1 domain change per week”, “2 exports/day”. Those are discrete allowances, not metered workloads. For classic metered workloads (API calls, image generations, tokenized compute), use credits instead.
 
-        Metered consumption (API calls, generations, storage GB*hrs, etc.).
+Here's a few rules for a clean separation to help you decide when to use either gem:
 
-        Included monthly credits via subscription plans.
+`pricing_plans` handles:
+  - Booleans (feature flags).
+  - Persistent caps (max concurrent resources: products, seats, projects at a time).
+  - Discrete per-period allowances (e.g., “3 exports / month”), with no overage purchasing.
 
-        Top-ups and pay-as-you-go.
+`usage_credits` handles:
+  - Metered consumption (API calls, generations, storage GB*hrs, etc.).
+  - Included monthly credits via subscription plans.
+  - Top-ups and pay-as-you-go.
+  - Rollover/expire semantics and the entire ledger.
 
-        Rollover/expire semantics and the entire ledger.
+If a dimension is metered and you want to sell overage/top-ups, use credits only. Don’t also define a periodic limit for the same dimension in `pricing_plans`. We’ll actively lint and refuse dual definitions at boot.
 
-If a dimension is metered and you want to sell overage/top-ups → credits only. Don’t also define a periodic limit for the same dimension in pricing_plans. We’ll actively lint and refuse dual definitions at boot.
+#### How to show `usage_credits` in `pricing_plans`
 
+With all that being said, in SaaS users would typically find information about plan credits in the pricing plan table, and because of that, and since `pricing_plans` should be the single source of truth for pricing plans in your Rails app, you should include how many credits your plans give in `pricing_plans.rb`:
 
-Credits vs Limits — decision table
+```ruby
+PricingPlans.configure do |config|
+  plan :pro do
+    bullets "API access", "100 credits per month"
+  end
+end
+```
 
-- Use `includes_credits` (via `usage_credits` gem) for metered events and overage models (increment-only, wallet-like semantics, with purchase/overage handling outside this gem).
-- Use `limits` here when you want either:
-  - Persistent caps: concurrent resource ceilings (e.g., projects, seats).
-  - Discrete per-period allowances: rare monthly allowances that reset per billing window (e.g., “3 custom models per month”).
-
-Rules enforced at boot:
-- You cannot define both `includes_credits` and a per-period `limits` for the same key. This prevents double-metering.
-- When `usage_credits` is present, `includes_credits` must point to a known operation, or boot will fail.
+TODO: include here the details of the actual seamless `usage_credits` + `pricing_plans` integration.
 
 
 ## Why the models?
@@ -934,5 +942,20 @@ The `pricing_plans` gem needs three new models in the schema in order to work: `
   - What: `period_start`, `period_end`, and a monotonic `used` counter with a last-used timestamp.
   - How it’s used: On create of the metered model, we increment or upsert the usage for the current window (based on `PeriodCalculator`). Reads power `remaining`, `percent_used`, and warning thresholds.
 
+## Testing
 
-TODO: complete the readme
+We use Minitest for testing. Run the test suite with `bundle exec rake test`
+
+## Development
+
+After checking out the repo, run `bin/setup` to install dependencies. Then, run `rake spec` to run the tests. You can also run `bin/console` for an interactive prompt that will allow you to experiment.
+
+To install this gem onto your local machine, run `bundle exec rake install`.
+
+## Contributing
+
+Bug reports and pull requests are welcome on GitHub at https://github.com/rameerez/pricing_plans. Our code of conduct is: just be nice and make your mom proud of what you do and post online.
+
+## License
+
+The gem is available as open source under the terms of the [MIT License](https://opensource.org/licenses/MIT).
