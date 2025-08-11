@@ -884,13 +884,13 @@ If you want to add credits to your app, you should install and configure the [us
 
 #### The difference between usage credits and per-period plan limits
 
-> [!IMPORTANT]
+> [!WARNING]
 > Usage credits are not the same as per-period limits.
 
-Usage credits behave like a currency. Per-period limits are not a currency and shouldn't be purchaseable.
+**Usage credits behave like a currency**. Per-period limits are not a currency, and shouldn't be purchaseable.
 
-- Usage credits are like: "100 image-generation credits a month"
-- Per-period limits are like: "Create up to 3 new projects a month"
+- **Usage credits** are like: "100 image-generation credits a month"
+- **Per-period limits** are like: "Create up to 3 new projects a month"
 
 Usage credits can be refilled (buy credit packs, your balance goes up), can be spent (your balance goes down). Per-period limits do not. If you intend to sell credit packs, or if the balance needs to go both up and down, you should implement usage credits, NOT per-period limits.
 
