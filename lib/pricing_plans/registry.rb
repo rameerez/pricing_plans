@@ -9,7 +9,7 @@ module PricingPlans
         @event_handlers = configuration.event_handlers.dup
 
         validate_registry!
-        lint_usage_credits_integration! if usage_credits_available?
+        lint_usage_credits_integration!
         attach_billable_helpers!
         attach_pending_association_limits!
 
@@ -155,47 +155,24 @@ module PricingPlans
       end
 
       def lint_usage_credits_integration!
-        # Check for collisions between per-period limits and credits
-        credit_operations = if usage_credits_available?
-          UsageCredits.registry.operations.keys rescue []
+        # With single-currency credits, we only enforce separation of concerns:
+        # - pricing_plans shows declared total credits per plan (cosmetic)
+        # - usage_credits owns operations, costs, fulfillment, and spending
+        # There is no per-operation credits declaration here anymore.
+        # Still enforce that if you choose to model a metered dimension as credits in your app,
+        # you should not also define a per-period limit with the same semantic key.
+        credit_operation_keys = if usage_credits_available?
+          UsageCredits.registry.operations.keys.map(&:to_sym) rescue []
         else
           []
         end
 
-        plans.each do |plan_key, plan|
-          plan.credit_inclusions.each do |operation_key, inclusion|
-            # Check if operation exists in usage_credits
-            unless credit_operations.include?(operation_key)
-              # When usage_credits is present, unknown operations are configuration errors
-              raise ConfigurationError,
-                "Plan #{plan_key} includes_credits for unknown usage_credits operation '#{operation_key}'. " \
-                "Define the operation in usage_credits or remove includes_credits."
-            end
-
-            # Check for collision with per-period limits
-            limit = plan.limit_for(operation_key)
-            if limit && limit[:per]
-              raise ConfigurationError,
-                "Plan #{plan_key} defines both includes_credits and a per-period limit for '#{operation_key}'. " \
-                "Use either credits (via usage_credits gem) OR per-period limits, not both."
-            end
-          end
-
-          # Check the opposite - per-period limits that might conflict with credits
+        plans.each do |_plan_key, plan|
           plan.limits.each do |limit_key, limit|
             next unless limit[:per] # Only per-period limits
-
-            if credit_operations.include?(limit_key)
-              # Check if any plan has credit inclusions for this operation
-              has_credit_inclusion = plans.values.any? do |other_plan|
-                other_plan.credit_inclusion_for(limit_key)
-              end
-
-              if has_credit_inclusion
-                raise ConfigurationError,
-                  "Limit '#{limit_key}' is defined as both a per-period limit and has credit inclusions. " \
-                  "Use either credits (via usage_credits gem) OR per-period limits, not both."
-              end
+            if credit_operation_keys.include?(limit_key.to_sym)
+              raise ConfigurationError,
+                "Limit '#{limit_key}' is also a usage_credits operation. Use credits (usage_credits) OR a per-period limit (pricing_plans), not both."
             end
           end
         end

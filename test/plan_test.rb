@@ -189,14 +189,10 @@ class PlanTest < ActiveSupport::TestCase
     assert_equal :month, limit[:per]
   end
 
-  def test_credit_inclusions
+  def test_total_credits_included
     plan = PricingPlans::Plan.new(:pro)
-
-    plan.includes_credits 1000, for: :api_calls
-
-    inclusion = plan.credit_inclusion_for(:api_calls)
-    assert_equal 1000, inclusion[:amount]
-    assert_equal :api_calls, inclusion[:operation]
+    plan.includes_credits 1000
+    assert_equal 1000, plan.credits_included
   end
 
   def test_plan_metadata
@@ -264,9 +260,5 @@ class PlanTest < ActiveSupport::TestCase
     assert_nil plan.limit_for(:nonexistent)
   end
 
-  def test_nonexistent_credit_inclusion_returns_nil
-    plan = PricingPlans::Plan.new(:pro)
-
-    assert_nil plan.credit_inclusion_for(:nonexistent)
-  end
+  # No per-operation credit inclusions anymore; single currency credits only
 end

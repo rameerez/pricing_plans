@@ -7,7 +7,7 @@ module PricingPlans
     using IntegerRefinements
 
     attr_reader :key, :name, :description, :bullets, :price, :price_string, :stripe_price,
-                :features, :limits, :credit_inclusions, :meta,
+                :features, :limits, :meta,
                 :cta_text, :cta_url
 
     def initialize(key)
@@ -20,7 +20,7 @@ module PricingPlans
       @stripe_price = nil
       @features = Set.new
       @limits = {}
-      @credit_inclusions = {}
+      @credits_included = nil
       @meta = {}
       @cta_text = nil
       @cta_url = nil
@@ -242,17 +242,18 @@ module PricingPlans
       @limits[key.to_sym]
     end
 
-    # Credits methods
-    def includes_credits(amount, for:)
-      operation_key = binding.local_variable_get(:for).to_sym
-      @credit_inclusions[operation_key] = {
-        amount: amount,
-        operation: operation_key
-      }
+    # Credits display methods (cosmetic, for pricing UI)
+    # Single-currency credits. We do not tie credits to operations here.
+    def includes_credits(amount)
+      @credits_included = amount.to_i
     end
 
-    def credit_inclusion_for(operation_key)
-      @credit_inclusions[operation_key.to_sym]
+    def credits_included(value = :__get__)
+      if value == :__get__
+        @credits_included
+      else
+        @credits_included = value.to_i
+      end
     end
 
     # Plan selection sugar

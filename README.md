@@ -872,7 +872,7 @@ Message customization:
 
 These gems are related but not overlapping. They're complementary. The boundaries are clear: billing is handled in Pay; metering (ledger-like) in usage_credits.
 
-The integration with `pay` should be seamless and is documented throughout this entire README; however, here's a brief note about using `usage_creadits` alongside `pricing_plans`.
+The integration with `pay` should be seamless and is documented throughout this entire README; however, here's a brief note about using `usage_credits` alongside `pricing_plans`.
 
 ### Using `pricing_plans` with the `usage_credits` gem
 
@@ -923,7 +923,48 @@ PricingPlans.configure do |config|
 end
 ```
 
-TODO: include here the details of the actual seamless `usage_credits` + `pricing_plans` integration.
+`pricing_plans` ships some ergonomics to declare and render included credits, and guardrails to keep your configuration coherent when `usage_credits` is present.
+
+##### Declare included credits in your plans (single currency)
+
+Plans can advertise the total credits included. This is cosmetic for pricing UI; `usage_credits` remains the source of truth for fulfillment and spending:
+
+```ruby
+PricingPlans.configure do |config|
+  config.plan :free do
+    price 0
+    includes_credits 100
+  end
+
+  config.plan :pro do
+    price 29
+    includes_credits 5_000
+  end
+end
+```
+
+When you’re composing your UI, you can read credits via `plan.credits_included`.
+
+> [!IMPORTANT]
+> You need to keep defining operations and subscription fulfillment in your `usage_credits` initializer, declaring it in pricing_plans is purely cosmetic and for ergonomics to render pricing tables.
+
+##### Guardrails when `usage_credits` is installed
+
+When the `usage_credits` gem is present, we lint your configuration at boot to prevent ambiguous setups:
+
+Collisions between credits and per‑period plan limits are disallowed: you cannot define a per‑period limit for a key that is also a `usage_credits` operation (e.g., `limits :api_calls, to: 50, per: :month`). If a dimension is metered, use credits only.
+
+This enforces a clean separation:
+
+- Use `usage_credits` for metered workloads you may wish to top‑up or charge PAYG for.
+- Use `pricing_plans` limits for discrete allowances and feature flags (things that don’t behave like a currency).
+
+##### No runtime coupling; single source of truth
+
+`pricing_plans` does not spend or refill credits — that’s owned by `usage_credits`.
+
+- Keep using `@user.spend_credits_on(:operation, ...)`, subscription fulfillment, and credit packs in `usage_credits`.
+- Treat `includes_credits` here as pricing UI copy only. The single source of truth for operations, costs, fulfillment cadence, rollover/expire, and balances lives in `usage_credits`.
 
 
 ## Why the models?

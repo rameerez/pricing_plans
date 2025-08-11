@@ -117,6 +117,28 @@ class ViewHelpersTest < ActiveSupport::TestCase
     assert_respond_to instance, :plan_limit_percent_used
   end
 
+  def test_render_plan_credits_lists_total_credits
+    # Minimal stubs for ActionView helpers used inside render_plan_credits
+    self.define_singleton_method(:content_tag) do |name, *args, **kwargs, &block|
+      inner = block ? block.call : args.first
+      "<#{name}>#{inner}</#{name}>"
+    end
+    self.define_singleton_method(:number_with_delimiter) do |num|
+      num.to_s.reverse.gsub(/\d{3}(?=\d)/, '\\0,').reverse
+    end
+    String.class_eval do
+      def html_safe; self; end
+    end
+
+    plan = PricingPlans::Plan.new(:pro)
+    plan.includes_credits 5_000
+
+    html = render_plan_credits(plan)
+    assert html.is_a?(String)
+    assert_match(/5,000/i, html)
+    assert_match(/credits/i, html)
+  end
+
   def test_aggregate_helpers
     org = @org
     # No grace initially

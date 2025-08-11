@@ -182,7 +182,7 @@ module TestConfigurationHelper
         allows :api_access
         limits :projects, to: 10
         limits :custom_models, to: 3, per: :month, after_limit: :grace_then_block, grace: 7.days
-        includes_credits 1000, for: :api_calls
+        includes_credits 1000
       end
 
       config.plan :enterprise do
@@ -228,7 +228,7 @@ class ActiveSupport::TestCase
 
     registry = Class.new do
       def self.operations
-        { api_calls: double(name: :api_calls) }
+        { api_calls: :api_calls }
       end
     end
 

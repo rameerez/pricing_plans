@@ -144,35 +144,12 @@ class RegistryTest < ActiveSupport::TestCase
 
         config.plan :free do
           price 0
-          includes_credits 100, for: :api_calls
-          limits :api_calls, to: 50, per: :month  # Collision!
+          limits :api_calls, to: 50, per: :month  # Collision with usage_credits operation name
         end
       end
     end
 
-    # With stricter linting, unknown ops or collisions should still be caught; accept either error
-    assert_match(/(defines both includes_credits and a per-period limit|includes_credits for unknown)/, error.message)
-
-  ensure
-    unstub_usage_credits
-  end
-
-  def test_usage_credits_operation_validation_warning
-    stub_usage_credits_available
-
-    # Now should error when usage_credits is present and operation is unknown
-    error = assert_raises(PricingPlans::ConfigurationError) do
-      PricingPlans.configure do |config|
-        config.default_plan = :free
-
-        config.plan :free do
-          price 0
-          includes_credits 100, for: :unknown_operation
-        end
-      end
-    end
-
-    assert_match(/includes_credits for unknown usage_credits operation 'unknown_operation'/, error.message)
+    assert_match(/Use credits \(usage_credits\) OR a per-period limit/, error.message)
 
   ensure
     unstub_usage_credits

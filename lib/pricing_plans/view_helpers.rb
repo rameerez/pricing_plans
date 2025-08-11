@@ -296,15 +296,13 @@ module PricingPlans
     end
 
     def render_plan_credits(plan)
-      return unless plan.credit_inclusions.any?
+      return unless plan.respond_to?(:credits_included) && plan.credits_included.to_i.positive?
 
       content_tag :div, class: "pricing-plans-card__credits" do
-        content_tag :h4, "Included Credits:", class: "pricing-plans-card__credits-title" do
-          plan.credit_inclusions.map do |operation_key, inclusion|
-            content_tag :div, class: "pricing-plans-card__credit-item" do
-              "#{number_with_delimiter(inclusion[:amount])} #{operation_key.to_s.humanize.downcase}"
-            end
-          end.join.html_safe
+        content_tag :div, class: "pricing-plans-card__credit-item" do
+          amount = number_with_delimiter(plan.credits_included)
+          label  = PricingPlans.configuration.try(:credits_label) || "credits"
+          "#{amount} #{label} included"
         end
       end
     end
