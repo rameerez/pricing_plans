@@ -2,7 +2,7 @@
 
 [![Gem Version](https://badge.fury.io/rb/pricing_plans.svg)](https://badge.fury.io/rb/pricing_plans)
 
-Use `pricing_plans` as the single source of truth for pricing plans and plan limits in your Rails apps. It provides methods you can use across your app to consistently check whether users can perform an action based on the plan they're currently subscribed to.
+`pricing_plans` is the single source of truth for pricing plans and plan limits in your Rails apps. It provides methods you can use across your app to consistently check whether users can perform an action based on the plan they're currently subscribed to.
 
 Define plans and their limits:
 ```ruby
@@ -93,15 +93,269 @@ This code is brittle, tends to be full of magical numbers and nested convoluted 
 
 ## Define pricing plans
 
-High level: you essentially need to do only two things:
+You define plans and their limits and features in the `pricing_plans.rb` initializer. To define a free plan, for example, you would just do:
 
-- feature gating
-- Check limits
-two limits: count and feature gate
+```ruby
+PricingPlans.configure do |config|
+  plan :free do
+    price 0
+  end
+end
+```
 
-credits not included (require a ledger-like system)
+That's the basics! Let's dive in.
 
-connect with stripe ids monthly and yearly
+### Define plan limits and features
+
+At a high level, a plan needs to do **two** things:
+  1) Gate features
+  2) Enforce limits
+
+#### 1) Gate features in a plan
+
+Let's start by giving access to certain features. For example, our free plan could give users API access:
+
+```ruby
+PricingPlans.configure do |config|
+  plan :free do
+    price 0
+
+    allows :api_access
+  end
+end
+```
+
+We're just **defining** what the plan does now. Later, we'll see [all the methods we can use to enforce these limits and gate these features](#gate-features-in-controllers) very easily.
+
+
+All features are disabled by default unless explicitly made available with the `available` keyword. However, for clarity we can explicitly say what the plan disallows:
+
+```ruby
+PricingPlans.configure do |config|
+  plan :free do
+    price 0
+
+    allows :api_access
+    disallows :premium_features
+  end
+end
+```
+
+This wouldn't do anything, though, because all features are disabled by default; but it makes it obvious what the plan does and doesn't.
+
+#### 2) Enforce limits in a plan
+
+The other thing plans can do is enforce a limit. We can define limits like this:
+
+```ruby
+PricingPlans.configure do |config|
+  plan :free do
+    price 0
+
+    allows :api_access
+
+    limits :projects, to: 3
+  end
+end
+```
+
+The `limits :projects, to: 3` does exactly that: whoever has this plan can only have three projects at most. We'll see later [how to tie this limit to the actual model relationship](#models), but for now, we're just **defining** the limit.
+
+##### `after_limit`: Define what happens after a limit is reached
+
+We can define what happens after the limit is reached with `after_limit`. By default, we just warn so users can keep creating resources even after the limit is reached. The default behavior is this:
+
+```ruby
+PricingPlans.configure do |config|
+  plan :free do
+    price 0
+
+    allows :api_access
+
+    limits :projects, to: 3, after_limit: :just_warn
+  end
+end
+```
+
+If we want to prevent more resources being created after the limit has been reached, we can `:block_usage`:
+
+```ruby
+PricingPlans.configure do |config|
+  plan :free do
+    price 0
+
+    allows :api_access
+
+    limits :projects, to: 3, after_limit: :block_usage
+  end
+end
+```
+
+However, we can be nicer and give users a bit of a grace period after the limit has been reached. To do that, we use `:grace_then_block`:
+
+```ruby
+PricingPlans.configure do |config|
+  plan :free do
+    price 0
+
+    allows :api_access
+
+    limits :projects, to: 3, after_limit: :grace_then_block
+  end
+end
+```
+
+We can also specify how long the grace period is:
+
+```ruby
+PricingPlans.configure do |config|
+  plan :free do
+    price 0
+
+    allows :api_access
+
+    limits :projects, to: 3, after_limit: :grace_then_block, grace: 7.days
+  end
+end
+```
+
+In summary: persistent caps count live rows (per billable model). When over the cap:
+  - `:just_warn` → validation passes; use controller guard to warn.
+  - `:block_usage` → validation fails immediately (uses `error_after_limit` if set).
+  - `:grace_then_block` → validation fails once grace is considered “blocked” (we track and switch from grace to blocked).
+
+##### Warn users when they cross a limit threshold
+
+We can also set thresholds to warn our users when they're halfway through their limit, approaching the limit, etc. To do that, we first set up trigger thresholds with `warn_at:`
+
+```ruby
+PricingPlans.configure do |config|
+  plan :free do
+    price 0
+
+    allows :api_access
+
+    limits :projects, to: 3, after_limit: :grace_then_block, grace: 7.days, warn_at: [0.5, 0.8, 0.95]
+  end
+end
+```
+
+And then, for each threshold and for each limit, an event gets triggered, and we can configure its callback in the `pricing_plans.rb` initializer:
+
+```ruby
+config.on_warning(:projects) { |org, threshold|
+  # send a mail or a notification
+  # this would get sent when :projects reaches 50%, 80% and 95% of its limit, as defined above
+}
+```
+
+If you only want a scope, like active projects, to count towards plan limits, you can do:
+
+```ruby
+PricingPlans.configure do |config|
+  plan :free do
+    price 0
+
+    allows :api_access
+
+    limits :projects, to: 3.max, count_scope: :active
+  end
+end
+```
+
+(Assuming, of course, that your `Project` model has an `active` scope)
+
+You can also make something unlimited (again, just syntactic sugar to be explicit, everything is unlimited unless there's an actual limit):
+
+```ruby
+PricingPlans.configure do |config|
+  plan :free do
+    price 0
+
+    allows :api_access
+
+    unlimited :projects
+  end
+end
+```
+
+##### Limit API reference
+
+To summarize, here's what persistent caps (plan limits) are:
+  - Counting is live: `SELECT COUNT(*)` scoped to the billable association, no counter caches.
+  - Validation on create: blocks immediately on `:block_usage`, or blocks when grace is considered “blocked” on `:grace_then_block`. `:just_warn` passes.
+  - Deletes automatically lower the count. Backfills simply reflect current rows.
+
+  - Filtered counting via count_scope: scope persistent caps to active-only rows.
+    - Idiomatic options:
+      - Plan DSL with AR Hash: `limits :licenses, to: 25, count_scope: { status: 'active' }`
+      - Plan DSL with named scope: `limits :activations, to: 50, count_scope: :active`
+      - Plan DSL with multiple: `limits :seats, to: 10, count_scope: [:active, { kind: 'paid' }]`
+      - Macro form: `has_many :licenses, limited_by_pricing_plans: { limit_key: :licenses, count_scope: :active }`
+      - Full freedom: `->(rel) { rel.where(status: 'active') }` or `->(rel, org) { rel.where(organization_id: user.id) }`
+    - Accepted types: Symbol (named scope), Hash (where), Proc (arity 1 or 2), or Array of these (applied left-to-right).
+    - Precedence: plan-level `count_scope` overrides macro-level `count_scope`.
+    - Restriction: `count_scope` only applies to persistent caps (not allowed on per-period limits).
+    - Performance: add indexes for your filters (e.g., `status`, `deactivated_at`).
+
+
+### Define user-facing plan attributes
+
+Since this is our single source of truth for plans, we can define plan information we can later use to show pricing tables, like plan name, description, and bullet points. We can also override the price for a string, and we can set a CTA button text and URL to link to:
+
+```ruby
+PricingPlans.configure do |config|
+  plan :free do
+    price_string "Free!"
+
+    name "Free Plan" # optional, would default to "Free" as inferred from the :free key
+    description "A plan to get you started"
+    bullets "Basic features", "Community support"
+
+    cta_text "Subscribe"
+    cta_url  root_path
+
+    allows :api_access
+
+    limits :projects, to: 3
+  end
+end
+```
+
+You can also make a plan `default!`; and you can make a plan `highlighted!` to help you when building a pricing table.
+
+### Link plans to Stripe prices
+
+If we're defining a paid plan, it's better to omit the explicit price, and just let the gem read the actual price from Stripe (assuming the `pay` gem is set up correctly):
+
+```ruby
+PricingPlans.configure do |config|
+  plan :pro do
+    stripe_price "price_123abc"
+
+    description "For growing teams and businesses"
+    bullets "Advanced features", "Priority support", "API access"
+
+    allows :api_access, :premium_features
+    limits :projects
+    unlimited :team_members
+    highlighted!
+  end
+end
+```
+
+If you have monthly and yearly prices for the same plan, you can define them like:
+
+```ruby
+PricingPlans.configure do |config|
+  plan :pro do
+    stripe_price { month: "price_123abc", yearly: "price_456def" }
+  end
+end
+```
+
+###
+
 
 ## Usage: available methods & full API reference
 
@@ -178,16 +432,16 @@ The `Billable` class (the class to which you add the `include PricingPlans::Bill
 
 ```ruby
 # Check limits for a relationship
-user.plan_limit_remaining(:projects)              # => integer or :unlimited
-user.plan_limit_percent_used(:projects)           # => Float percent
-user.within_plan_limits?(:projects, by: 1)        # => true/false
+user.plan_limit_remaining(:projects)         # => integer or :unlimited
+user.plan_limit_percent_used(:projects)      # => Float percent
+user.within_plan_limits?(:projects, by: 1)   # => true/false
 
 # Grace helpers
-user.grace_active_for?(:projects)                 # => true/false
-user.grace_ends_at_for(:projects)                 # => Time or nil
-user.grace_remaining_seconds_for(:projects)       # => Integer seconds
-user.grace_remaining_days_for(:projects)          # => Integer days (ceil)
-user.plan_blocked_for?(:projects)                 # => true/false (considering after_limit policy)
+user.grace_active_for?(:projects)            # => true/false
+user.grace_ends_at_for(:projects)            # => Time or nil
+user.grace_remaining_seconds_for(:projects)  # => Integer seconds
+user.grace_remaining_days_for(:projects)     # => Integer days (ceil)
+user.plan_blocked_for?(:projects)            # => true/false (considering after_limit policy)
 ```
 
 We also add syntactic sugar methods. For example, if your plan defines a limit for `:projects` and you have a `has_many :projects` relationship, you also get these methods:
@@ -213,7 +467,7 @@ These methods are dynamically generated for every `has_many :<limit_key>`, like 
 
 You can also check for feature flags like this:
 ```ruby
-user.plan_allows?(:api_access)                    # => true/false
+user.plan_allows?(:api_access)               # => true/false
 ```
 
 And, if you want to get aggregates across all keys instead of checking them individually:
@@ -225,9 +479,9 @@ user.earliest_grace_ends_at_for(:products, :activations)
 
 You can also check and override the current pricing plan for any user:
 ```ruby
-user.current_pricing_plan                         # => PricingPlans::Plan
-user.assign_pricing_plan!(:pro)                   # manual assignment override
-user.remove_pricing_plan!                         # remove manual override (fallback to default)
+user.current_pricing_plan                    # => PricingPlans::Plan
+user.assign_pricing_plan!(:pro)              # manual assignment override
+user.remove_pricing_plan!                    # remove manual override (fallback to default)
 ```
 
 And finally, you get very thin convenient wrappers if you're using `pay`:
@@ -235,9 +489,9 @@ And finally, you get very thin convenient wrappers if you're using `pay`:
 # Pay (Stripe) convenience (returns false/nil when Pay is absent)
 # Note: this is billing-facing state, distinct from our in-app
 # enforcement grace which is tracked per-limit.
-user.pay_subscription_active?                     # => true/false
-user.pay_on_trial?                                # => true/false
-user.pay_on_grace_period?                         # => true/false
+user.pay_subscription_active?                # => true/false
+user.pay_on_trial?                           # => true/false
+user.pay_on_grace_period?                    # => true/false
 ```
 
 ### Controllers
@@ -450,66 +704,12 @@ def webhook_create
 end
 ```
 
-### Defining plans & available configuration options in `pricing_plans.rb`
+Note: model validations will still block creation even with `allow_system_override` -- it's just intended to bypass the block on controllers.
 
-```ruby
-# Enable DSL sugar like `1.max` in this initializer (generator includes this line)
-using PricingPlans::IntegerRefinements
-
-PricingPlans.configure do |config|
-  # Optional: hint controller inference of billable (we also infer via common conventions)
-  # config.billable_class   = "Organization"
-  # Optional defaults; can also be set via DSL sugar within plans
-  # config.default_plan     = :free
-  # config.highlighted_plan = :pro
-  # config.period_cycle     = :billing_cycle
-
-  plan :free do
-    name        "Free"
-    description "Enough to launch and get your first real users!"
-    price       0
-    bullets     "25 end users", "1 product", "Community support"
-
-    limits  :products, to: 1.max, after_limit: :block_usage
-    disallows :api_access, :flux_hd_access
-    default!
-  end
-
-  plan :pro do
-    stripe_price "price_pro_29"
-    bullets "Flux HD", "3 custom models/month", "1,000 image credits/month"
-    # Optional CTA overrides for pricing UI (defaults provided)
-    cta_text "Subscribe"
-    # If using Pay, prefer using their helpers/routes for checkout. See the Pay docs link below.
-    # cta_url  checkout_path # or a full URL if you’re handling checkout yourself
-
-    includes_credits 1_000, for: :generate_image
-    limits :custom_models, to: 3, per: :month, after_limit: :grace_then_block, grace: 7.days, warn_at: [0.6, 0.8, 0.95]
-    allows :api_access, :flux_hd_access
-    highlighted!
-  end
-
-  plan :enterprise do
-    price_string "Contact"
-    description  "Get in touch and we'll fit your needs."
-    bullets      "Custom limits", "Dedicated SLAs", "Dedicated support"
-    cta_text "Contact sales"
-    cta_url  "mailto:sales@example.com"
-
-    unlimited :products
-    allows    :api_access, :flux_hd_access
-    meta      support_tier: "dedicated"
-  end
-
-  # Optional events: you decide the side effects (parentheses required)
-  config.on_warning(:products)     { |org, threshold| PlanMailer.quota_warning(org, :products, threshold).deliver_later }
-  config.on_grace_start(:products) { |org, ends_at|   PlanMailer.grace_started(org, :products, ends_at).deliver_later  }
-  config.on_block(:products)       { |org|            PlanMailer.blocked(org, :products).deliver_later                 }
-end
-```
-
-### Build a pricing plan table
+### Views: build a pricing plan table
 TODO
+
+### Views: build plan warning messages
 
 ## Using with `pay` and/or `usage_credits`
 

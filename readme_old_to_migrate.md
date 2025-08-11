@@ -1,51 +1,80 @@
-Don’t recommend inline enforce_plan_limit! inside action bodies
-README shows calling enforce_plan_limit! directly in an action method. If blocked, this method throws :abort intended for before_action chains, which will raise an uncaught throw in an action.
-Recommend either:
-Use before_action, or
-Use require_plan_limit! inside actions and branch on the result, or
-Use PricingPlans::JobGuards.with_plan_limit in non-controller contexts.
 
-You can also use all these methods inline within any controller action, instead of a callback:
+-----------------------------
+-----------------------------
+-----------------------------
+-----------------------------
+-----------------------------
+-----------------------------
+
+
+
+
+### Defining plans & available configuration options in `pricing_plans.rb`
+
 ```ruby
-def create
-  enforce_plan_limit!(:products, on: :current_organization, redirect_to: pricing_path)
-  Product.create!(...)
-  redirect_to products_path
+# Enable DSL sugar like `1.max` in this initializer (generator includes this line)
+using PricingPlans::IntegerRefinements
+
+PricingPlans.configure do |config|
+  # Optional: hint controller inference of billable (we also infer via common conventions)
+  # config.billable_class   = "Organization"
+  # Optional defaults; can also be set via DSL sugar within plans
+  # config.default_plan     = :free
+  # config.highlighted_plan = :pro
+  # config.period_cycle     = :billing_cycle
+
+  plan :free do
+    name        "Free"
+    description "Enough to launch and get your first real users!"
+    price       0
+    bullets     "25 end users", "1 product", "Community support"
+
+    limits  :products, to: 1.max, after_limit: :block_usage
+    disallows :api_access, :flux_hd_access
+    default!
+  end
+
+  plan :pro do
+    stripe_price "price_pro_29"
+    bullets "Flux HD", "3 custom models/month", "1,000 image credits/month"
+    # Optional CTA overrides for pricing UI (defaults provided)
+    cta_text "Subscribe"
+    # If using Pay, prefer using their helpers/routes for checkout. See the Pay docs link below.
+    # cta_url  checkout_path # or a full URL if you’re handling checkout yourself
+
+    includes_credits 1_000, for: :generate_image
+    limits :custom_models, to: 3, per: :month, after_limit: :grace_then_block, grace: 7.days, warn_at: [0.6, 0.8, 0.95]
+    allows :api_access, :flux_hd_access
+    highlighted!
+  end
+
+  plan :enterprise do
+    price_string "Contact"
+    description  "Get in touch and we'll fit your needs."
+    bullets      "Custom limits", "Dedicated SLAs", "Dedicated support"
+    cta_text "Contact sales"
+    cta_url  "mailto:sales@example.com"
+
+    unlimited :products
+    allows    :api_access, :flux_hd_access
+    meta      support_tier: "dedicated"
+  end
+
+
 end
 ```
 
-Another example:
-```ruby
-def import
-  enforce_products_limit!(on: :current_organization, by: 5)
-  ProductImporter.import!(current_organization, rows)
-  redirect_to products_path
-end
-```
-
------------------------------
------------------------------
------------------------------
------------------------------
------------------------------
------------------------------
 
 
 ## Models — limit with English (billable-centric)
 
-Two kinds of limits:
 
-- Persistent caps (max concurrent items): live DB count, no counters.
-- Discrete per-period allowances: increments a usage row per billing window.
 
 
 
 Behavior:
 
-- Persistent caps count live rows (per billable). When over the cap:
-  - `:just_warn` → validation passes; use controller guard to warn.
-  - `:block_usage` → validation fails immediately (uses `error_after_limit` if set).
-  - `:grace_then_block` → validation fails once grace is considered “blocked” (we track and switch from grace to blocked).
+
 - Per-period allowances increment a usage record for the window; when over, behavior follows the same `after_limit` policy.
 - Prefer declaring limits on the billable model. The child model wiring is injected automatically.
 
@@ -55,36 +84,8 @@ Advanced associations (fully supported):
 - Namespaced child models (e.g., `class_name: "Deeply::NestedResource"`).
 - Explicit `limit_key:` if you want a different key than the association name.
 
-Child-side macro (optional):
-
-```ruby
-class Project < ApplicationRecord
-  belongs_to :organization
-  include PricingPlans::Limitable
-  limited_by_pricing_plans :projects, on: :organization, error_after_limit: "Too many projects!"
-end
-```
-We recommend the billable-centric style for the cleanest DX.
-
 
 ## Persistent vs Per-period (how the mixin behaves)
-
-- Persistent caps
-  - Counting is live: `SELECT COUNT(*)` scoped to the billable association, no counter caches.
-  - Validation on create: blocks immediately on `:block_usage`, or blocks when grace is considered “blocked” on `:grace_then_block`. `:just_warn` passes.
-  - Deletes automatically lower the count. Backfills simply reflect current rows.
-
-  - Filtered counting via count_scope: scope persistent caps to active-only rows.
-    - Idiomatic options:
-      - Plan DSL with AR Hash: `limits :licenses, to: 25, count_scope: { status: 'active' }`
-      - Plan DSL with named scope: `limits :activations, to: 50, count_scope: :active`
-      - Plan DSL with multiple: `limits :seats, to: 10, count_scope: [:active, { kind: 'paid' }]`
-      - Macro form: `has_many :licenses, limited_by_pricing_plans: { limit_key: :licenses, count_scope: :active }`
-      - Full freedom: `->(rel) { rel.where(status: 'active') }` or `->(rel, org) { rel.where(organization_id: user.id) }`
-    - Accepted types: Symbol (named scope), Hash (where), Proc (arity 1 or 2), or Array of these (applied left-to-right).
-    - Precedence: plan-level `count_scope` overrides macro-level `count_scope`.
-    - Restriction: `count_scope` only applies to persistent caps (not allowed on per-period limits).
-    - Performance: add indexes for your filters (e.g., `status`, `deactivated_at`).
 
 - Per-period allowances
   - Increments a usage row on create for the current window (no decrement on delete).

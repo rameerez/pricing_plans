@@ -7,25 +7,38 @@ PricingPlans.configure do |config|
   # Example plans
   plan :free do
     price 0
-    description "Perfect for getting started"
-    bullets "Basic features", "Community support"
 
-    limits :projects, to: 1.max, after_limit: :block_usage
-    limits :team_members, to: 3.max
+    description   "Perfect for getting started"
+    bullets       "Basic features", "Community support"
+
+    limits :projects, to: 3.max, after_limit: :block_usage
     # Example scoped persistent cap (active-only rows)
-    # limits :licenses, to: 5.max, count_scope: { status: "active" }
+    # limits :projects, to: 3.max, count_scope: { status: "active" }
     default!
   end
 
   plan :pro do
-    description "For growing teams and businesses"
-    bullets "Advanced features", "Priority support", "API access"
+    description   "For growing teams and businesses"
+    bullets       "Advanced features", "Priority support", "API access"
 
     allows :api_access, :premium_features
     limits :projects, to: 25.max, after_limit: :grace_then_block, grace: 7.days
-    unlimited :team_members
+
     highlighted!
   end
+
+  plan :enterprise do
+    price_string  "Contact us"
+
+    description   "Get in touch and we'll fit your needs."
+    bullets       "Custom limits", "Dedicated SLAs", "Dedicated support"
+    cta_text      "Contact sales"
+    cta_url       "mailto:sales@example.com"
+
+    unlimited :projects
+    allows    :api_access, :premium_features
+  end
+
 
   # Optional settings
 
@@ -77,4 +90,9 @@ PricingPlans.configure do |config|
   # config.redirect_on_blocked_limit = "/pricing"
   # config.redirect_on_blocked_limit = ->(result) { pricing_path }
 
+
+  # Optional event callbacks -- send notifications or emails when certain events happen
+  # config.on_warning(:products)     { |org, threshold| PlanMailer.quota_warning(org, :products, threshold).deliver_later }
+  # config.on_grace_start(:products) { |org, ends_at|   PlanMailer.grace_started(org, :products, ends_at).deliver_later  }
+  # config.on_block(:products)       { |org|            PlanMailer.blocked(org, :products).deliver_later                 }
 end
