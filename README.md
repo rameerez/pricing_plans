@@ -255,12 +255,62 @@ end
 ```
 
 Accepted `per:` values:
-- :billing_cycle (default globally; respects Pay subscription anchors if available, else falls back to calendar month)
-- :calendar_month, :calendar_week, :calendar_day
+- `:billing_cycle` (default globally; respects Pay subscription anchors if available, else falls back to calendar month)
+- `:calendar_month`, `:calendar_week`, `:calendar_day`
 - A callable: `->(billable) { [start_time, end_time] }`
 - An ActiveSupport duration: `2.weeks` (window starts at beginning of day)
 
-Per‑period usage is tracked in `pricing_plans_usages` and read live. Persistent caps do not use this table.
+Per‑period usage is tracked in [the `PricingPlans::Usage` model (`pricing_plans_usages` table)](#why-the-models) and read live. Persistent caps do not use this table.
+
+###### How period windows are calculated
+
+- **Default period**: Controlled by `config.period_cycle` (defaults to `:billing_cycle`). You can override per limit with `per:`.
+- **Billing cycle**: When `pay` is available, we use the subscription’s anchors (`current_period_start`/`current_period_end`). If not available, we fall back to a monthly window anchored at the subscription’s `created_at`. If there is no subscription, we fall back to calendar month.
+- **Calendar windows**: `:calendar_month`, `:calendar_week`, `:calendar_day` map to `beginning_of_* … end_of_*` for the current time.
+- **Duration windows**: For `ActiveSupport::Duration` (e.g., `2.weeks`), the window starts at `beginning_of_day` and ends at `start + duration`.
+- **Custom callable**: You can pass `->(billable) { [start_time, end_time] }`. We validate that both are present and `end > start`.
+
+###### Automatic usage tracking (race‑safe)
+
+- Include `limited_by_pricing_plans` on the model that represents the metered object. On `after_create`, we atomically upsert/increment the current period’s usage row for that `billable` and `limit_key`.
+- Concurrency: we de‑duplicate with a uniqueness constraint and retry on `RecordNotUnique` to increment safely.
+- Reads are live: `LimitChecker.current_usage_for(billable, :key)` returns the current window’s `used` (or 0 if none).
+
+Callback timing:
+- We increment usage in an `after_create` callback (not `after_commit`). This runs inside the same database transaction as the record creation, so if the outer transaction rolls back, the usage increment rolls back as well.
+
+###### Grace/warnings and period rollover (explicit semantics)
+
+- State lives in `pricing_plans_enforcement_states` per billable+limit.
+- Per‑period limits:
+  - We stamp the active window on the state; when the window changes, stale state is discarded automatically (warnings re‑arm and grace resets at each new window).
+  - Warnings: thresholds re‑arm every window; the same threshold can emit again in the next window.
+  - Grace: if `:grace_then_block`, grace is per window. A new window clears prior grace/blocked state.
+- Persistent caps:
+  - Warnings are monotonic: once a higher `warn_at` threshold has been emitted, we do not re‑emit lower or equal thresholds again unless you clear state via `PricingPlans::GraceManager.reset_state!(billable, :limit_key)`.
+  - Grace is absolute: if `:grace_then_block`, we start grace once the limit is exceeded. It expires after the configured duration. There is no automatic reset tied to time windows. Enforcement for creates is still driven by “would this action exceed the cap now?”. If usage drops below the cap, create checks will pass again even if a prior state exists.
+  - You may clear any existing warning/grace/blocked state manually with `reset_state!`.
+
+###### Example: usage resets next period
+
+```ruby
+# pro allows 3 custom models per month
+PricingPlans::Assignment.assign_plan_to(org, :pro)
+
+travel_to(Time.parse("2025-01-15 12:00:00 UTC")) do
+  3.times { org.custom_models.create!(name: "Model") }
+  PricingPlans::LimitChecker.plan_limit_remaining(org, :custom_models)
+  # => 0
+  result = PricingPlans::ControllerGuards.require_plan_limit!(:custom_models, billable: org)
+  result.grace? # => true when after_limit: :grace_then_block
+end
+
+travel_to(Time.parse("2025-02-01 12:00:00 UTC")) do
+  # New window — counters reset automatically
+  PricingPlans::LimitChecker.plan_limit_remaining(org, :custom_models)
+  # => 3
+end
+```
 
 ##### Warn users when they cross a limit threshold
 
@@ -325,7 +375,7 @@ PricingPlans.configure do |config|
 end
 ```
 
-##### Limit API reference
+##### Limits API reference
 
 To summarize, here's what persistent caps (plan limits) are:
   - Counting is live: `SELECT COUNT(*)` scoped to the billable association, no counter caches.
@@ -734,6 +784,30 @@ before_action :enforce_projects_limit!, only: :create
 before_action :enforce_api_access!
 ```
 
+### Downgrades and overages
+
+When a customer moves to a lower plan (via Stripe/Pay or manual assignment), the new plan’s limits start applying immediately. Existing resources are never auto‑deleted by the gem; instead:
+
+- **Persistent caps** (e.g., `:projects, to: 3`): We count live rows. If the account is now over the new cap, creations will be blocked (or put into grace/warn depending on `after_limit`). Users must remediate by deleting/archiving until under cap.
+- **Per‑period allowances** (e.g., `:custom_models, to: 3, per: :month`): The current window’s usage remains as is. Further creations in the same window respect the downgraded allowance and `after_limit` policy. At the next window, the allowance resets.
+
+Use `OverageReporter` to present a clear remediation UX before or after applying a downgrade:
+
+```ruby
+report = PricingPlans::OverageReporter.report_with_message(org, :free)
+if report.items.any?
+  flash[:alert] = report.message
+  # report.items -> [#<OverageItem limit_key:, kind: :persistent|:per_period, current_usage:, allowed:, overage:, grace_active:, grace_ends_at:>]
+end
+```
+
+Example human message:
+- "Over target plan on: projects: 12 > 3 (reduce by 9), custom_models: 5 > 0 (reduce by 5). Grace active — projects grace ends at 2025-01-06T12:00:00Z."
+
+Notes:
+- If you provide a `config.message_builder`, it’s used to customize copy for the `:overage_report` context.
+- This reporter works regardless of whether any controller/model action has been hit; it reads live counts and current period usage.
+
 #### Override checks
 
 Some times you'll want to override plan limits / feature gating checks. A common use case is if you're responding to a webhook (like Stripe), you'll want to process the webhook correctly (bypassing the check) and maybe later handle the limit manually.
@@ -795,6 +869,8 @@ Message customization:
 ## Using with `pay` and/or `usage_credits`
 
 `pricing_plans` is designed to work seamlessly with other complementary popular gems like `pay` (to handle actual subscriptions and payments), and `usage_credits` (to handle credit-like spending and refills)
+
+These gems are related but not overlapping. They're complementary. The boundaries are clear: billing is handled in Pay; metering (ledger-like) in usage_credits.
 
 ### Using `pricing_plans` with the `pay` gem
 TODO
