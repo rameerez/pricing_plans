@@ -260,12 +260,25 @@ class ApplicationController < ActionController::Base
 end
 ```
 
-You can also specify which controller helper `pricing_plans` should use globally in the `pricing_plans.rb` initializer:
+You can explicitly configure the billable resolution per controller:
 ```ruby
-  config. ## TODO: do we have this? we should
-  # from old docs: You can globally configure a resolver via `self.pricing_plans_billable_method = :current_organization` or `pricing_plans_billable { current_account }`.
-  # Per-controller default `self.pricing_plans_redirect_on_blocked_limit = :pricing_path` (Symbol | String | Proc)
-  #  but we need a global default too??
+class ApplicationController < ActionController::Base
+  pricing_plans_billable :current_organization
+
+  # Or pass a block:
+  # pricing_plans_billable { current_user&.organization }
+end
+```
+
+Optionally, you can set a global resolver in the initializer (per-controller still wins):
+```ruby
+# config/initializers/pricing_plans.rb
+PricingPlans.configure do |config|
+  # Either:
+  config.controller_billable :current_organization
+  # Or:
+  # config.controller_billable { current_account }
+end
 ```
 
 You can also override the `current_<billable_class>` per helper (with `on: :current_organization` or `on: -> { find_org }`), as we'll see in the next sections.

@@ -68,14 +68,28 @@ module PricingPlans
           return send(self.class.pricing_plans_billable_method)
         end
 
-        # 2) Infer from configured billable class (current_organization, etc.)
+        # 2) Global controller resolver if configured
+        begin
+          cfg = PricingPlans.configuration
+          if cfg
+            if cfg.controller_billable_proc
+              return instance_exec(&cfg.controller_billable_proc)
+            elsif cfg.controller_billable_method
+              meth = cfg.controller_billable_method
+              return send(meth) if respond_to?(meth)
+            end
+          end
+        rescue StandardError
+        end
+
+        # 3) Infer from configured billable class (current_organization, etc.)
         billable_klass = PricingPlans::Registry.billable_class rescue nil
         if billable_klass
           inferred = "current_#{billable_klass.name.underscore}"
           return send(inferred) if respond_to?(inferred)
         end
 
-        # 3) Common conventions
+        # 4) Common conventions
         %i[current_organization current_account current_user current_team current_company current_workspace current_tenant].each do |meth|
           return send(meth) if respond_to?(meth)
         end

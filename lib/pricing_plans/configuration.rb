@@ -10,6 +10,11 @@ module PricingPlans
     # Optional ergonomics
     attr_accessor :default_cta_text, :default_cta_url, :auto_cta_with_pay
     # Global controller ergonomics
+      # Optional global resolver for controller billable. Per-controller settings still win.
+      # Accepts:
+      # - Symbol: a controller helper to call (e.g., :current_organization)
+      # - Proc: instance-exec'd in the controller (self is the controller)
+      attr_reader :controller_billable_method, :controller_billable_proc
     # When a limit check blocks, controllers can redirect to a global default target.
     # Accepts:
     # - Symbol: a controller helper to call (e.g., :pricing_path)
@@ -34,6 +39,8 @@ module PricingPlans
       @default_cta_url = nil
       @auto_cta_with_pay = false
       @message_builder = nil
+      @controller_billable_method = nil
+      @controller_billable_proc = nil
       @redirect_on_blocked_limit = nil
       @plans = {}
       @event_handlers = {
@@ -62,6 +69,24 @@ module PricingPlans
       plan_instance.instance_eval(&block)
       @plans[key] = plan_instance
     end
+
+
+      # Global controller billable resolver API
+      # Usage:
+      #   config.controller_billable :current_organization
+      #   # or
+      #   config.controller_billable { current_account }
+      def controller_billable(method_name = nil, &block)
+        if method_name
+          @controller_billable_method = method_name.to_sym
+          @controller_billable_proc = nil
+        elsif block_given?
+          @controller_billable_proc = block
+          @controller_billable_method = nil
+        else
+          @controller_billable_method
+        end
+      end
 
     def on_warning(limit_key, &block)
       raise PricingPlans::ConfigurationError, "Block required for on_warning" unless block_given?

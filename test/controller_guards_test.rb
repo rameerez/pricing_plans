@@ -601,4 +601,70 @@ class ControllerGuardsTest < ActiveSupport::TestCase
     PricingPlans::Assignment.assign_plan_to(org, :pro)
     assert_equal true, controller.enforce_api_access!(on: :current_organization)
   end
+
+  def test_global_controller_billable_proc_is_used_when_no_per_controller
+    org = @org
+    controller = Class.new do
+      include PricingPlans::ControllerGuards
+      def current_account; @acc; end
+    end.new
+    controller.instance_variable_set(:@acc, org)
+
+    original_cfg = PricingPlans.configuration
+    begin
+      PricingPlans.reset_configuration!
+      PricingPlans.configure do |config|
+        config.default_plan = :free
+        config.controller_billable { current_account }
+        config.plan :free do
+          disallows :api_access
+        end
+        config.plan :pro do
+          allows :api_access
+        end
+      end
+
+      assert_raises(PricingPlans::FeatureDenied) do
+        controller.enforce_api_access!
+      end
+
+      PricingPlans::Assignment.assign_plan_to(org, :pro)
+      assert_equal true, controller.enforce_api_access!
+    ensure
+      PricingPlans.instance_variable_set(:@configuration, original_cfg)
+    end
+  end
+
+  def test_global_controller_billable_symbol_is_used_when_no_per_controller
+    org = @org
+    controller = Class.new do
+      include PricingPlans::ControllerGuards
+      def current_organization; @org; end
+    end.new
+    controller.instance_variable_set(:@org, org)
+
+    original_cfg = PricingPlans.configuration
+    begin
+      PricingPlans.reset_configuration!
+      PricingPlans.configure do |config|
+        config.default_plan = :free
+        config.controller_billable :current_organization
+        config.plan :free do
+          disallows :api_access
+        end
+        config.plan :pro do
+          allows :api_access
+        end
+      end
+
+      assert_raises(PricingPlans::FeatureDenied) do
+        controller.enforce_api_access!
+      end
+
+      PricingPlans::Assignment.assign_plan_to(org, :pro)
+      assert_equal true, controller.enforce_api_access!
+    ensure
+      PricingPlans.instance_variable_set(:@configuration, original_cfg)
+    end
+  end
 end

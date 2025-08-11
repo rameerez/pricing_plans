@@ -29,6 +29,12 @@ PricingPlans.configure do |config|
 
   # Optional settings
 
+  # Optional: global controller billable resolver (per-controller still wins)
+  # Either a symbol helper name or a block evaluated in the controller
+  # config.controller_billable :current_organization
+  # or
+  # config.controller_billable { current_account }
+
   # You can specify your billable class if you want controller inference to prefer it (e.g., "User", "Organization").
   # Otherwise it will try common conventions like current_organization, current_user, etc.
   # config.billable_class = "Organization"
