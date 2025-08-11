@@ -101,7 +101,7 @@ Enforcing pricing plans is one of those boring plumbing problems that look easy 
 
 - Safe under load: we use row locks and retries when setting grace/blocked/warning state, and we avoid firing the same event twice. See [grace_manager.rb](lib/pricing_plans/grace_manager.rb).
 
-- Accurate counting: persistent limits count current rows; per‑period limits record usage for the current window only. You can filter what counts with `count_scope` (Symbol/Hash/Proc/Array), and plan settings override model defaults. See [limitable.rb](lib/pricing_plans/limitable.rb) and [limit_checker.rb](lib/pricing_plans/limit_checker.rb).
+- Accurate counting: persistent limits count live current rows (using `COUNT(*)`, make sure to index your foreign keys to make it fast at scale); per‑period limits record usage for the current window only. You can filter what counts with `count_scope` (Symbol/Hash/Proc/Array), and plan settings override model defaults. See [limitable.rb](lib/pricing_plans/limitable.rb) and [limit_checker.rb](lib/pricing_plans/limit_checker.rb).
 
 - Clear rules: default is to block when you hit the cap; grace periods are opt‑in. In status/UI, 0 of 0 isn’t shown as blocked. See [plan.rb](lib/pricing_plans/plan.rb), [grace_manager.rb](lib/pricing_plans/grace_manager.rb), and [view_helpers.rb](lib/pricing_plans/view_helpers.rb).
 
@@ -800,7 +800,35 @@ Message customization:
 TODO
 
 ### Using `pricing_plans` with the `usage_credits` gem
-TODO
+
+    Some per-period limits are not a currency and shouldn’t be purchasable: e.g., “Create up to 3 custom AI models per month”, “1 domain change per week”, “2 exports/day”. Those are discrete allowances, not metered workloads. Credits are a bad fit (you don’t want to sell “custom-model tokens”).
+
+    For classic metered workloads (API calls, image generations, tokenized compute), use credits.
+
+So the clean separation:
+
+Golden rule
+
+    pricing_plans handles:
+
+        Booleans (feature flags).
+
+        Persistent caps (max concurrent resources: products, seats, projects).
+
+        Discrete per-period allowances (rare; e.g., “3 custom models / month”), with no overage purchasing by default (you can still choose to allow overage via credits—see below).
+
+    usage_credits handles:
+
+        Metered consumption (API calls, generations, storage GB*hrs, etc.).
+
+        Included monthly credits via subscription plans.
+
+        Top-ups and pay-as-you-go.
+
+        Rollover/expire semantics and the entire ledger.
+
+If a dimension is metered and you want to sell overage/top-ups → credits only. Don’t also define a periodic limit for the same dimension in pricing_plans. We’ll actively lint and refuse dual definitions at boot.
+
 
 Credits vs Limits — decision table
 
