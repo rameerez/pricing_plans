@@ -91,7 +91,10 @@ PricingPlans.configure do |config|
   # config.redirect_on_blocked_limit = ->(result) { pricing_path }
 
 
-  # Optional event callbacks -- send notifications or emails when certain events happen
+  #`config.message_builder` lets apps override human copy for `:over_limit`, `:grace`, `:feature_denied`, and overage report; used broadly across guards/UX.
+
+
+  # Optional event callbacks -- enqueue jobs here to send notifications or emails when certain events happen
   # config.on_warning(:products)     { |org, threshold| PlanMailer.quota_warning(org, :products, threshold).deliver_later }
   # config.on_grace_start(:products) { |org, ends_at|   PlanMailer.grace_started(org, :products, ends_at).deliver_later  }
   # config.on_block(:products)       { |org|            PlanMailer.blocked(org, :products).deliver_later                 }

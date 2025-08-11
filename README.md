@@ -4,7 +4,7 @@
 
 `pricing_plans` is the single source of truth for pricing plans and plan limits in your Rails apps. It provides methods you can use across your app to consistently check whether users can perform an action based on the plan they're currently subscribed to.
 
-Define plans and their limits:
+Define plans and their limits / quotas:
 ```ruby
 plan :pro do
   limits :projects, to: 5.max
@@ -105,11 +105,11 @@ end
 
 That's the basics! Let's dive in.
 
-### Define plan limits and features
+### Define plan limits (quotas) and features
 
 At a high level, a plan needs to do **two** things:
   1) Gate features
-  2) Enforce limits
+  2) Enforce limits (quotas)
 
 #### 1) Gate features in a plan
 
@@ -143,7 +143,7 @@ end
 
 This wouldn't do anything, though, because all features are disabled by default; but it makes it obvious what the plan does and doesn't.
 
-#### 2) Enforce limits in a plan
+#### 2) Enforce limits (quotas) in a plan
 
 The other thing plans can do is enforce a limit. We can define limits like this:
 
@@ -349,23 +349,22 @@ If you have monthly and yearly prices for the same plan, you can define them lik
 ```ruby
 PricingPlans.configure do |config|
   plan :pro do
-    stripe_price { month: "price_123abc", yearly: "price_456def" }
+    stripe_price { month: "price_123abc", year: "price_456def" }
   end
 end
 ```
 
-###
-
+`stripe_price` accepts String or Hash (e.g., `{month:, year:, id:}`) and the `pricing_plans` PlanResolver maps against Pay's `subscription.processor_plan`
 
 ## Usage: available methods & full API reference
 
-Assuming you've correctly installed the gem and configured your pricing plans in `pricing_plans.rb` and your "billable" model (`User`, `Organization`, etc.) has the model mixin `include PricingPlans::Billable`, here's everything you can do:
+Assuming you've correctly installed the gem and configured your pricing plans in `pricing_plans.rb`, here's everything you can do:
 
 ### Models
 
 #### Define your `Billable` class and add limits to your model
 
-Your `Billable` class is the class on which limits are enforced. It's usually the same class that gets charged for a subscription, the class which "owns" the plan, etc. It's usually `User`, `Organization`, `Team`, etc.
+Your `Billable` class is the class on which limits are enforced. It's usually the same class that gets charged for a subscription, the class which "owns" the plan, the class with the `pay_customer` if you're using Pay, etc. It's usually `User`, `Organization`, `Team`, etc.
 
 To define your `Billable` class, just add the model mixin:
 
@@ -706,10 +705,41 @@ end
 
 Note: model validations will still block creation even with `allow_system_override` -- it's just intended to bypass the block on controllers.
 
-### Views: build a pricing plan table
-TODO
+### Views
 
-### Views: build plan warning messages
+TODO: improve actual names / syntactic sugar and docs
+
+We provide some helpers that may come in handy when building views.
+
+- Per‑limit status and bulk:
+  - `plan_limit_status(limit_key, billable:)`, `plan_limit_statuses(*keys, billable:)`
+  - `pricing_plans_status(billable, limits: [...])`
+
+- Banners/meters:
+  - `plan_limit_banner(limit_key, billable:)`
+  - `plan_usage_meter(limit_key, billable:)`
+
+- Aggregates:
+  - `highest_severity_for(billable, *keys)` and `combine_messages_for(billable, *keys)`
+
+- Pricing UI:
+  - `plan_pricing_table(highlight: false)`
+  - `plan_label(plan)` → ["Name", "Free" | "$29/mo" | "Contact"]
+  - CTA helpers: `pricing_plans_cta_url(plan, billable:, view:)`, `pricing_plans_cta_button(...)`, `pricing_plans_auto_cta_url(...)`
+
+- Current plan/limits for views:
+  - `current_plan_name(billable)`, `plan_allows?(billable, feature)`, `plan_limit_remaining(billable, key)`, `plan_limit_percent_used(billable, key)`
+
+#### Views: build a pricing plan table
+
+- `PricingPlans.plans` (sorted sensible order)
+- `PricingPlans.for_dashboard(billable)` / `PricingPlans.for_marketing`
+- `PricingPlans.suggest_next_plan_for(billable, keys: ...)`
+- `PricingPlans.decorate_for_view(plan, ...)`
+
+#### Views: build plan warning messages
+
+- `PricingPlans::OverageReporter.report_with_message(billable, target_plan_key)` -- Overage reporting for downgrade UX
 
 ## Using with `pay` and/or `usage_credits`
 
