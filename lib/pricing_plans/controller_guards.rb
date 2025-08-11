@@ -130,6 +130,28 @@ module PricingPlans
       end if base.respond_to?(:define_method)
     end
 
+    # Checks if a given billable object is within the plan limit for a specific key.
+    #
+    # Usage:
+    #   result = require_plan_limit!(:projects, billable: current_organization)
+    #   if result.blocked?
+    #     # Handle blocked case (e.g., show upgrade prompt)
+    #     redirect_to upgrade_path, alert: result.message
+    #   elsif result.warning?
+    #     flash[:warning] = result.message
+    #   end
+    #
+    # Options:
+    #   - limit_key:        The symbol for the limit (e.g., :projects)
+    #   - billable:         The billable object (e.g., current_organization)
+    #   - by:               The number of units to check for (default: 1)
+    #   - allow_system_override: If true, returns a blocked result but does not enforce the block (default: false)
+    #
+    # Returns a PricingPlans::Result with state:
+    #   - :within   (allowed)
+    #   - :warning  (allowed, but near limit)
+    #   - :grace    (allowed, but in grace period)
+    #   - :blocked  (not allowed)
     def require_plan_limit!(limit_key, billable:, by: 1, allow_system_override: false)
       plan = PlanResolver.effective_plan_for(billable)
       limit_config = plan&.limit_for(limit_key)

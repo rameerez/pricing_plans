@@ -1,3 +1,28 @@
+Don’t recommend inline enforce_plan_limit! inside action bodies
+README shows calling enforce_plan_limit! directly in an action method. If blocked, this method throws :abort intended for before_action chains, which will raise an uncaught throw in an action.
+Recommend either:
+Use before_action, or
+Use require_plan_limit! inside actions and branch on the result, or
+Use PricingPlans::JobGuards.with_plan_limit in non-controller contexts.
+
+You can also use all these methods inline within any controller action, instead of a callback:
+```ruby
+def create
+  enforce_plan_limit!(:products, on: :current_organization, redirect_to: pricing_path)
+  Product.create!(...)
+  redirect_to products_path
+end
+```
+
+Another example:
+```ruby
+def import
+  enforce_products_limit!(on: :current_organization, by: 5)
+  ProductImporter.import!(current_organization, rows)
+  redirect_to products_path
+end
+```
+
 -----------------------------
 -----------------------------
 -----------------------------

@@ -20,13 +20,13 @@ before_action :enforce_api_access!, only: [:create]
 Enforce limits in your models too:
 ```ruby
 class User < ApplicationRecord
-  has_many :projects, :limited_by_pricing_plans
+  has_many :projects, limited_by_pricing_plans: true
 end
 ```
 
 Or anywhere in your app:
 ```ruby
-@user.remaining_projects
+@user.projects_remaining
 # => 2
 ```
 
@@ -137,7 +137,7 @@ then you can link `:projects` to any `has_many` relationship on the `Billable` m
 class User < ApplicationRecord
   include PricingPlans::Billable
 
-  has_many :projects, :limited_by_pricing_plans
+  has_many :projects, limited_by_pricing_plans: true
 end
 ```
 
@@ -158,7 +158,7 @@ In general, you can omit the limit key when it can be inferred from the model (e
 class User < ApplicationRecord
   include PricingPlans::Billable
 
-  has_many :projects, :limited_by_pricing_plans, dependent: :destroy
+  has_many :projects, limited_by_pricing_plans: true, dependent: :destroy
 end
 ```
 
@@ -307,7 +307,7 @@ before_action { enforce_api_access!(on: -> { find_org }) }
 
 Of course, this is all syntactic sugar for the primitive method, which you can also use:
 ```ruby
-before_action { require_feature!(:api_access, on: current_organization) }
+before_action { require_feature!(:api_access, on: :current_organization) }
 ```
 
 #### Enforce plan limits in controllers
@@ -324,9 +324,9 @@ before_action { enforce_plan_limit!(:projects) }
 
 And you can also pass a custom billable:
 ```ruby
-before_action { enforce_projects_limit!(on: current_organization) }
+before_action { enforce_projects_limit!(on: :current_organization) }
 # or
-before_action { enforce_plan_limit!(:projects, on: current_organization) }
+before_action { enforce_plan_limit!(:projects, on: :current_organization) }
 ```
 
 You can also specify a custom redirect path that will override the global config:
@@ -339,20 +339,18 @@ In the example aboves, the gem assumes the action to call will only create one e
 before_action { enforce_projects_limit!(by: 10) }
 ```
 
-You can also use all these methods inline within any controller action, instead of a callback:
+You can also check limits inside a controller action by using `require_plan_limit!` and reading its `result`:
 ```ruby
 def create
-  enforce_plan_limit!(:products, on: :current_organization, redirect_to: pricing_path)
-  Product.create!(...)
-  redirect_to products_path
-end
-```
+  result = require_plan_limit!(:products, billable: current_organization, by: 1)
 
-Another example:
-```ruby
-def import
-  enforce_products_limit!(on: :current_organization, by: 5)
-  ProductImporter.import!(current_organization, rows)
+  if result.blocked? # ok?, warning?, grace?, blocked?, success?
+    # result.message is available:
+    redirect_to pricing_path, alert: result.message, status: :see_other and return
+  end
+
+  # ...
+  Product.create!(...)
   redirect_to products_path
 end
 ```
@@ -379,9 +377,9 @@ end
   4. `pricing_path` helper if available
 
 
-#### Set up a redirect when a feature is blocked or fails
-
-Global default redirect (optional):
+#### Set up a redirect when a feature is blocked or a limit is reached
+g
+You can configure a global default redirect (optional):
 
 ```ruby
 # config/initializers/pricing_plans.rb
@@ -390,7 +388,7 @@ PricingPlans.configure do |config|
 end
 ```
 
-Per-controller default (optional):
+Or a per-controller default (optional):
 
 ```ruby
 class ApplicationController < ActionController::Base
