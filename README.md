@@ -4,7 +4,7 @@
 
 `pricing_plans` is the single source of truth for pricing plans and plan limits in your Rails apps. It provides methods you can use across your app to consistently check whether users can perform an action based on the plan they're currently subscribed to.
 
-Define plans and their limits / quotas:
+Define plans and their quotas and limits:
 ```ruby
 plan :pro do
   limits :projects, to: 5.max
@@ -49,7 +49,11 @@ rails g pricing_plans:install
 rails db:migrate
 ```
 
-This will generate and migrate [the necessary models](#why-the-models) to make the gem work. It will also create a `config/initializers/pricing_plans.rb` file where you need to define your pricing plans, as defined in TODO: link to section.
+This will generate and migrate [the necessary models](#why-the-models) to make the gem work. It will also create a `config/initializers/pricing_plans.rb` file where you need to define your pricing plans.
+
+Important:
+- You must set a default plan (either mark one with `default!` in the plan DSL or set `config.default_plan = :your_plan_key`).
+- In the initializer, we enable integer DSL sugar like `5.max` via `using PricingPlans::IntegerRefinements`.
 
 Once installed, just add the model mixin to the actual `billable` model on which limits should be enforced (like: `User`, `Organization`, etc.):
 
@@ -93,12 +97,16 @@ This code is brittle, tends to be full of magical numbers and nested convoluted 
 
 ## Define pricing plans
 
-You define plans and their limits and features in the `pricing_plans.rb` initializer. To define a free plan, for example, you would just do:
+You define plans and their limits and features in the `pricing_plans.rb` initializer. To define a free plan, for example, you would do:
 
 ```ruby
 PricingPlans.configure do |config|
+  # Enable integer sugar like 5.max (the installer adds this for you):
+  # using PricingPlans::IntegerRefinements
+
   plan :free do
     price 0
+    default!
   end
 end
 ```
@@ -128,7 +136,7 @@ end
 We're just **defining** what the plan does now. Later, we'll see [all the methods we can use to enforce these limits and gate these features](#gate-features-in-controllers) very easily.
 
 
-All features are disabled by default unless explicitly made available with the `available` keyword. However, for clarity we can explicitly say what the plan disallows:
+All features are disabled by default unless explicitly made available with the `allows` keyword. However, for clarity we can explicitly say what the plan disallows:
 
 ```ruby
 PricingPlans.configure do |config|
@@ -163,15 +171,14 @@ The `limits :projects, to: 3` does exactly that: whoever has this plan can only 
 
 ##### `after_limit`: Define what happens after a limit is reached
 
-We can define what happens after the limit is reached with `after_limit`. By default, we just warn so users can keep creating resources even after the limit is reached. The default behavior is this:
+What happens after a limit is reached is controlled by `after_limit`. The default is `:block_usage`. You can customize per limit. Examples:
 
 ```ruby
+# Just warn (never block):
 PricingPlans.configure do |config|
   plan :free do
     price 0
-
     allows :api_access
-
     limits :projects, to: 3, after_limit: :just_warn
   end
 end
@@ -180,12 +187,11 @@ end
 If we want to prevent more resources being created after the limit has been reached, we can `:block_usage`:
 
 ```ruby
+# Block immediately:
 PricingPlans.configure do |config|
   plan :free do
     price 0
-
     allows :api_access
-
     limits :projects, to: 3, after_limit: :block_usage
   end
 end
@@ -194,12 +200,11 @@ end
 However, we can be nicer and give users a bit of a grace period after the limit has been reached. To do that, we use `:grace_then_block`:
 
 ```ruby
+# Opt into grace, then block:
 PricingPlans.configure do |config|
   plan :free do
     price 0
-
     allows :api_access
-
     limits :projects, to: 3, after_limit: :grace_then_block
   end
 end
@@ -211,9 +216,7 @@ We can also specify how long the grace period is:
 PricingPlans.configure do |config|
   plan :free do
     price 0
-
     allows :api_access
-
     limits :projects, to: 3, after_limit: :grace_then_block, grace: 7.days
   end
 end
@@ -223,6 +226,27 @@ In summary: persistent caps count live rows (per billable model). When over the 
   - `:just_warn` → validation passes; use controller guard to warn.
   - `:block_usage` → validation fails immediately (uses `error_after_limit` if set).
   - `:grace_then_block` → validation fails once grace is considered “blocked” (we track and switch from grace to blocked).
+
+Note: `grace` is only valid with blocking behaviors. We’ll raise at boot if you set `grace` with `:just_warn`.
+
+##### Per‑period allowances
+
+Besides persistent caps, a limit can be defined as a per‑period allowance that resets each window. Example:
+
+```ruby
+plan :pro do
+  # Allow up to 3 custom models per calendar month
+  limits :custom_models, to: 3, per: :calendar_month
+end
+```
+
+Accepted `per:` values:
+- :billing_cycle (default globally; respects Pay subscription anchors if available, else falls back to calendar month)
+- :calendar_month, :calendar_week, :calendar_day
+- A callable: `->(billable) { [start_time, end_time] }`
+- An ActiveSupport duration: `2.weeks` (window starts at beginning of day)
+
+Per‑period usage is tracked in `pricing_plans_usages` and read live. Persistent caps do not use this table.
 
 ##### Warn users when they cross a limit threshold
 
@@ -243,10 +267,18 @@ end
 And then, for each threshold and for each limit, an event gets triggered, and we can configure its callback in the `pricing_plans.rb` initializer:
 
 ```ruby
-config.on_warning(:projects) { |org, threshold|
+config.on_warning(:projects) do |billable, threshold|
   # send a mail or a notification
-  # this would get sent when :projects reaches 50%, 80% and 95% of its limit, as defined above
-}
+  # this fires when :projects crosses 50%, 80% and 95% of its limit
+end
+
+# Also available:
+config.on_grace_start(:projects) do |billable, grace_ends_at|
+  # notify grace started; ends at `grace_ends_at`
+end
+config.on_block(:projects) do |billable|
+  # notify usage is now blocked for :projects
+end
 ```
 
 If you only want a scope, like active projects, to count towards plan limits, you can do:
@@ -291,8 +323,9 @@ To summarize, here's what persistent caps (plan limits) are:
       - Plan DSL with AR Hash: `limits :licenses, to: 25, count_scope: { status: 'active' }`
       - Plan DSL with named scope: `limits :activations, to: 50, count_scope: :active`
       - Plan DSL with multiple: `limits :seats, to: 10, count_scope: [:active, { kind: 'paid' }]`
-      - Macro form: `has_many :licenses, limited_by_pricing_plans: { limit_key: :licenses, count_scope: :active }`
-      - Full freedom: `->(rel) { rel.where(status: 'active') }` or `->(rel, org) { rel.where(organization_id: user.id) }`
+  - Macro form on the child model: `limited_by_pricing_plans :licenses, billable: :organization, count_scope: :active`
+  - Billable‑side convenience: `has_many :licenses, limited_by_pricing_plans: { limit_key: :licenses, count_scope: :active }`
+  - Full freedom: `->(rel) { rel.where(status: 'active') }` or `->(rel, billable) { rel.where(organization_id: billable.id) }`
     - Accepted types: Symbol (named scope), Hash (where), Proc (arity 1 or 2), or Array of these (applied left-to-right).
     - Precedence: plan-level `count_scope` overrides macro-level `count_scope`.
     - Restriction: `count_scope` only applies to persistent caps (not allowed on per-period limits).
@@ -313,7 +346,9 @@ PricingPlans.configure do |config|
     bullets "Basic features", "Community support"
 
     cta_text "Subscribe"
-    cta_url  root_path
+    # In initializers, prefer a string path/URL or set a global default CTA in config.
+    # Route helpers are not available here.
+    cta_url  "/pricing"
 
     allows :api_access
 
@@ -337,7 +372,7 @@ PricingPlans.configure do |config|
     bullets "Advanced features", "Priority support", "API access"
 
     allows :api_access, :premium_features
-    limits :projects
+    limits :projects, to: 10
     unlimited :team_members
     highlighted!
   end
@@ -349,12 +384,12 @@ If you have monthly and yearly prices for the same plan, you can define them lik
 ```ruby
 PricingPlans.configure do |config|
   plan :pro do
-    stripe_price { month: "price_123abc", year: "price_456def" }
+    stripe_price month: "price_123abc", year: "price_456def"
   end
 end
 ```
 
-`stripe_price` accepts String or Hash (e.g., `{month:, year:, id:}`) and the `pricing_plans` PlanResolver maps against Pay's `subscription.processor_plan`
+`stripe_price` accepts String or Hash (e.g., `{ month:, year:, id: }`) and the `pricing_plans` PlanResolver maps against Pay's `subscription.processor_plan`.
 
 ## Usage: available methods & full API reference
 
@@ -707,8 +742,6 @@ Note: model validations will still block creation even with `allow_system_overri
 
 ### Views
 
-TODO: improve actual names / syntactic sugar and docs
-
 We provide some helpers that may come in handy when building views.
 
 - Per‑limit status and bulk:
@@ -726,6 +759,10 @@ We provide some helpers that may come in handy when building views.
   - `plan_pricing_table(highlight: false)`
   - `plan_label(plan)` → ["Name", "Free" | "$29/mo" | "Contact"]
   - CTA helpers: `pricing_plans_cta_url(plan, billable:, view:)`, `pricing_plans_cta_button(...)`, `pricing_plans_auto_cta_url(...)`
+
+Message customization:
+
+- You can override copy globally via `config.message_builder`, which is used across limit checks and features. Suggested signature: `(context:, **kwargs) -> string` with contexts `:over_limit`, `:grace`, `:feature_denied`, and `:overage_report`.
 
 - Current plan/limits for views:
   - `current_plan_name(billable)`, `plan_allows?(billable, feature)`, `plan_limit_remaining(billable, key)`, `plan_limit_percent_used(billable, key)`
