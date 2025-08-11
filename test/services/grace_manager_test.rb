@@ -73,6 +73,9 @@ class GraceManagerTest < ActiveSupport::TestCase
 
     # Test :block_usage - should block immediately
     plan.limits[:projects][:after_limit] = :block_usage
+    # Should block once usage has reached the limit
+    assert PricingPlans::LimitChecker.within_limit?(org, :projects)
+    org.projects.create!(name: "Hit Limit")
     assert PricingPlans::GraceManager.should_block?(org, :projects)
 
     # Reset for grace_then_block test
@@ -208,6 +211,10 @@ class GraceManagerTest < ActiveSupport::TestCase
     # Use per-period limit key from test config: :custom_models (per: :month)
     org = create_organization
 
+    # Ensure per-period limit uses grace semantics for this test
+    free = PricingPlans::Registry.plan(:free)
+    free.limits[:custom_models][:after_limit] = :grace_then_block
+
     travel_to_time(Time.parse("2025-01-15 12:00:00 UTC")) do
       # Exceed per-period limit and start grace
       state = PricingPlans::GraceManager.mark_exceeded!(org, :custom_models, grace_period: 3.days)
@@ -217,9 +224,10 @@ class GraceManagerTest < ActiveSupport::TestCase
 
     # Cross into next calendar month; state should be considered stale and reset
     travel_to_time(Time.parse("2025-02-01 00:01:00 UTC")) do
+      # With default :block_usage policy for limits, grace checks should be false (no grace semantics unless opted-in)
       refute PricingPlans::GraceManager.grace_active?(org, :custom_models), "grace should reset on new window"
 
-      # Should not be blocked either after window rollover
+      # Should not be blocked either after window rollover (no state carried over)
       refute PricingPlans::GraceManager.should_block?(org, :custom_models)
     end
   end

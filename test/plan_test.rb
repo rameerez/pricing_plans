@@ -253,8 +253,8 @@ class PlanTest < ActiveSupport::TestCase
     plan.limits :projects, to: 5  # Use all defaults
 
     limit = plan.limit_for(:projects)
-    assert_equal :grace_then_block, limit[:after_limit]
-    assert_equal 7.days, limit[:grace]
+    assert_equal :block_usage, limit[:after_limit]
+    assert_equal 7.days, limit[:grace]  # grace ignored for block_usage
     assert_equal [0.6, 0.8, 0.95], limit[:warn_at]
   end
 

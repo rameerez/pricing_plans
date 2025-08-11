@@ -147,10 +147,14 @@ class ViewHelpersTest < ActiveSupport::TestCase
 
     # Exceed projects to enter grace
     PricingPlans::Assignment.assign_plan_to(org, :free)
-    org.projects.create!(name: "P1")
-    result = PricingPlans::ControllerGuards.require_plan_limit!(:projects, billable: org)
-    assert result.grace?
-    assert_equal :grace, highest_severity_for(org, :projects, :custom_models)
+    # Use a temporary plan that opts into grace semantics for this test
+    plan = PricingPlans::Plan.new(:tmp)
+    plan.limits :projects, to: 0, after_limit: :grace_then_block, grace: 2.days
+    PricingPlans::PlanResolver.stub(:effective_plan_for, plan) do
+      result = PricingPlans::ControllerGuards.require_plan_limit!(:projects, billable: org)
+      assert result.grace?
+      assert_equal :grace, highest_severity_for(org, :projects, :custom_models)
+    end
   end
 
   def test_combine_messages_for
@@ -189,17 +193,17 @@ class ViewHelpersTest < ActiveSupport::TestCase
 
       config.plan :free do
         price 0
-        limits :projects, to: 1
+        limits :projects, to: 1, after_limit: :grace_then_block, grace: 7.days
       end
 
       config.plan :basic do
         price 10
-        limits :projects, to: 3
+        limits :projects, to: 3, after_limit: :grace_then_block, grace: 7.days
       end
 
       config.plan :pro do
         price 20
-        limits :projects, to: 10
+        limits :projects, to: 10, after_limit: :grace_then_block, grace: 7.days
       end
     end
 

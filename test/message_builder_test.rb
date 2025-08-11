@@ -9,7 +9,7 @@ class MessageBuilderTest < ActiveSupport::TestCase
     PricingPlans.configure do |config|
       config.plan :free do
         price 0
-        limits :projects, to: 1
+        limits :projects, to: 1, after_limit: :grace_then_block, grace: 7.days
         default!
       end
       config.plan :pro do

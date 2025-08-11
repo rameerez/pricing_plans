@@ -20,8 +20,13 @@ class CompleteWorkflowTest < ActiveSupport::TestCase
     org.projects.create!(name: "Project 1")
     assert_equal 0, PricingPlans::LimitChecker.plan_limit_remaining(org, :projects)
 
-    # Try to create another project - should trigger grace period
-    result = PricingPlans::ControllerGuards.require_plan_limit!(:projects, billable: org)
+    # Try to create another project - default now blocks immediately unless plan opts into grace
+    plan = PricingPlans::Plan.new(:tmp)
+    plan.limits :projects, to: 1, after_limit: :grace_then_block, grace: 7.days
+    result = nil
+    PricingPlans::PlanResolver.stub(:effective_plan_for, plan) do
+      result = PricingPlans::ControllerGuards.require_plan_limit!(:projects, billable: org)
+    end
     assert result.grace?
     assert_match(/grace period/, result.message)
 
@@ -31,15 +36,22 @@ class CompleteWorkflowTest < ActiveSupport::TestCase
     refute state.blocked?
 
     # During grace period, can still create (but get warnings)
-    project2 = org.projects.create!(name: "Project 2")
+    project2 = nil
+    PricingPlans::PlanResolver.stub(:effective_plan_for, plan) do
+      project2 = org.projects.create!(name: "Project 2")
+    end
     assert project2.persisted?
 
     # Advance past grace period
     travel_to(8.days.from_now) do
       # Now should be blocked
-      result = PricingPlans::ControllerGuards.require_plan_limit!(:projects, billable: org)
-      assert result.blocked?
-      assert_match(/limit/, result.message)
+      plan = PricingPlans::Plan.new(:tmp)
+      plan.limits :projects, to: 1, after_limit: :grace_then_block, grace: 7.days
+      PricingPlans::PlanResolver.stub(:effective_plan_for, plan) do
+        result = PricingPlans::ControllerGuards.require_plan_limit!(:projects, billable: org)
+        assert result.blocked?
+        assert_match(/limit/, result.message)
+      end
 
       # State should be updated to blocked
       state.reload
@@ -75,7 +87,7 @@ class CompleteWorkflowTest < ActiveSupport::TestCase
   end
 
   def test_per_period_limit_workflow_across_period_boundary
-    # Assign to pro plan which has custom_models limit
+    # Assign to pro plan which has custom_models limit and grace_then_block
     PricingPlans::Assignment.assign_plan_to(create_organization, :pro)
     org = Organization.first
 
@@ -146,14 +158,24 @@ class CompleteWorkflowTest < ActiveSupport::TestCase
 
     # Test the logic works correctly without threading issues
     # Sequential test to verify the grace behavior works
-    result1 = PricingPlans::ControllerGuards.require_plan_limit!(:projects, billable: org)
+    plan = PricingPlans::Plan.new(:tmp)
+    plan.limits :projects, to: 1, after_limit: :grace_then_block, grace: 7.days
+    result1 = nil
+    PricingPlans::PlanResolver.stub(:effective_plan_for, plan) do
+      result1 = PricingPlans::ControllerGuards.require_plan_limit!(:projects, billable: org)
+    end
     assert result1.grace?, "First limit check should be in grace period"
 
     # Create the project (allowed during grace)
-    org.projects.create!(name: "Grace Project")
+    PricingPlans::PlanResolver.stub(:effective_plan_for, plan) do
+      org.projects.create!(name: "Grace Project")
+    end
 
     # Check again - should still be in grace
-    result2 = PricingPlans::ControllerGuards.require_plan_limit!(:projects, billable: org)
+    result2 = nil
+    PricingPlans::PlanResolver.stub(:effective_plan_for, plan) do
+      result2 = PricingPlans::ControllerGuards.require_plan_limit!(:projects, billable: org)
+    end
     assert result2.grace?, "Second limit check should still be in grace period"
 
     # Skip the threading test for now as SQLite in-memory databases
@@ -228,11 +250,16 @@ class CompleteWorkflowTest < ActiveSupport::TestCase
     PricingPlans::Registry.stub(:emit_event, ->(type, key, *args) {
       events << { type: type, key: key, args: args }
     }) do
+      plan = PricingPlans::Plan.new(:tmp)
+      plan.limits :projects, to: 1, after_limit: :grace_then_block, grace: 7.days
       # Step 1: Exceed limit at start time
       travel_to(Time.parse("2025-01-01 12:00:00 UTC")) do
         org.projects.create!(name: "Project 1")
 
-        result = PricingPlans::ControllerGuards.require_plan_limit!(:projects, billable: org)
+        result = nil
+        PricingPlans::PlanResolver.stub(:effective_plan_for, plan) do
+          result = PricingPlans::ControllerGuards.require_plan_limit!(:projects, billable: org)
+        end
         assert result.grace?
 
         # Should have emitted grace_start event
@@ -242,13 +269,19 @@ class CompleteWorkflowTest < ActiveSupport::TestCase
 
       # Step 2: During grace period
       travel_to(Time.parse("2025-01-05 12:00:00 UTC")) do
-        result = PricingPlans::ControllerGuards.require_plan_limit!(:projects, billable: org)
+        result = nil
+        PricingPlans::PlanResolver.stub(:effective_plan_for, plan) do
+          result = PricingPlans::ControllerGuards.require_plan_limit!(:projects, billable: org)
+        end
         assert result.grace?
       end
 
       # Step 3: After grace expires
       travel_to(Time.parse("2025-01-08 12:00:01 UTC")) do
-        result = PricingPlans::ControllerGuards.require_plan_limit!(:projects, billable: org)
+        result = nil
+        PricingPlans::PlanResolver.stub(:effective_plan_for, plan) do
+          result = PricingPlans::ControllerGuards.require_plan_limit!(:projects, billable: org)
+        end
         assert result.blocked?
 
         # Should have emitted block event

@@ -93,8 +93,8 @@ class LimitCheckerTest < ActiveSupport::TestCase
 
   def test_after_limit_action_resolution
     org = create_organization
-
-    assert_equal :grace_then_block, PricingPlans::LimitChecker.after_limit_action(org, :projects)
+    # Default in test config is now :block_usage
+    assert_equal :block_usage, PricingPlans::LimitChecker.after_limit_action(org, :projects)
   end
 
   def test_limit_amount_resolution

@@ -169,7 +169,7 @@ module TestConfigurationHelper
         price 0
         bullets "Limited features"
 
-        limits :projects, to: 1, after_limit: :grace_then_block, grace: 7.days
+        limits :projects, to: 1, after_limit: :block_usage
         limits :custom_models, to: 0, per: :month
         disallows :api_access
       end
@@ -180,8 +180,8 @@ module TestConfigurationHelper
         bullets "Advanced features", "API access"
 
         allows :api_access
-        limits :projects, to: 10, grace: 3.days
-        limits :custom_models, to: 3, per: :month
+        limits :projects, to: 10
+        limits :custom_models, to: 3, per: :month, after_limit: :grace_then_block, grace: 7.days
         includes_credits 1000, for: :api_calls
       end
 

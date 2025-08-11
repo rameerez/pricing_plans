@@ -243,7 +243,12 @@ module PricingPlans
       severities = keys.map do |key|
         status = plan_limit_status(key, billable: billable)
         next :ok unless status[:configured]
-        return :blocked if status[:blocked]
+        # Consider blocked only when usage has actually met/exceeded a positive limit
+        if status[:blocked]
+          lim = status[:limit_amount]
+          cur = status[:current_usage]
+          return :blocked if lim != :unlimited && lim.to_i > 0 && cur.to_i >= lim.to_i
+        end
         return :grace if status[:grace_active]
         percent = status[:percent_used].to_f
         warn_thresholds = LimitChecker.warning_thresholds(billable, key)

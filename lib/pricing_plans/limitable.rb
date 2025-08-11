@@ -15,7 +15,7 @@ module PricingPlans
       # when possible. These are no-ops if the model isn't the billable itself.
       define_method :within_plan_limits? do |limit_key, by: 1|
         billable = self
-        LimitChecker.within_limit?(billable, limit_key)
+        LimitChecker.within_limit?(billable, limit_key, by: by)
       end
 
       define_method :plan_limit_remaining do |limit_key|

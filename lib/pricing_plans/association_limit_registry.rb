@@ -27,7 +27,13 @@ module PricingPlans
             limit_key = (opts[:limit_key] || entry[:association_name]).to_sym
             # Define sugar methods on the billable when the association resolves
             PricingPlans::Billable.define_limit_sugar_methods(billable, limit_key)
-            child_klass.limited_by_pricing_plans(limit_key, billable: child_klass.reflections.values.find { |r| r.macro == :belongs_to && r.foreign_key.to_s == assoc.foreign_key.to_s }&.name || billable.name.underscore.to_sym, per: opts[:per], error_after_limit: opts[:error_after_limit])
+            child_klass.limited_by_pricing_plans(
+              limit_key,
+              billable: child_klass.reflections.values.find { |r| r.macro == :belongs_to && r.foreign_key.to_s == assoc.foreign_key.to_s }&.name || billable.name.underscore.to_sym,
+              per: opts[:per],
+              error_after_limit: opts[:error_after_limit],
+              count_scope: opts[:count_scope]
+            )
             true
           rescue StandardError
             false

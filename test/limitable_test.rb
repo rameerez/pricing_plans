@@ -36,6 +36,7 @@ class LimitableTest < ActiveSupport::TestCase
     assert counter, "Expected counter to be registered for :projects"
 
     org = create_organization
+    PricingPlans::Assignment.assign_plan_to(org, :enterprise)
     org.projects.create!(name: "Test 1")
     org.projects.create!(name: "Test 2")
 
@@ -51,11 +52,13 @@ class LimitableTest < ActiveSupport::TestCase
 
   def test_count_for_billable_counts_associated_records
     org = create_organization
+    PricingPlans::Assignment.assign_plan_to(org, :enterprise)
     Project.create!(name: "Project 1", organization: org)
     Project.create!(name: "Project 2", organization: org)
 
     # Create projects for different org to ensure isolation
     other_org = create_organization
+    PricingPlans::Assignment.assign_plan_to(other_org, :enterprise)
     Project.create!(name: "Other Project", organization: other_org)
 
     count = Project.count_for_billable(org, :organization)
@@ -195,6 +198,7 @@ class LimitableTest < ActiveSupport::TestCase
   def test_persistent_counter_does_not_decrement_on_destroy
     # This is by design - persistent counters are computed live
     org = create_organization
+    PricingPlans::Assignment.assign_plan_to(org, :enterprise)
 
     project1 = org.projects.create!(name: "Project 1")
     project2 = org.projects.create!(name: "Project 2")
@@ -356,6 +360,7 @@ class LimitableTest < ActiveSupport::TestCase
     end
 
     org = create_organization
+    PricingPlans::Assignment.assign_plan_to(org, :enterprise)
     # Use real Project records to exercise counter callable
     Project.create!(name: "P1", organization: org)
     Project.create!(name: "P2", organization: org)

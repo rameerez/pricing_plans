@@ -7,6 +7,7 @@ class OverageReporterTest < ActiveSupport::TestCase
     org = create_organization
 
     # Persistent cap: projects
+    PricingPlans::Assignment.assign_plan_to(org, :enterprise)
     org.projects.create!(name: "P1")
     org.projects.create!(name: "P2")
 

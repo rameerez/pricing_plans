@@ -46,7 +46,16 @@ module PricingPlans
 
         after_limit = limit_config[:after_limit]
         return false if after_limit == :just_warn
-        return true if after_limit == :block_usage
+
+        # Only block when usage has reached or exceeded the configured limit
+        limit_amount = limit_config[:to]
+        return false if limit_amount == :unlimited
+        current_usage = LimitChecker.current_usage_for(billable, limit_key, limit_config)
+        exceeded = current_usage >= limit_amount.to_i
+        # Treat 0-of-0 as not blocked for UX/severity/status purposes
+        exceeded = false if limit_amount.to_i.zero? && current_usage.to_i.zero?
+
+        return exceeded if after_limit == :block_usage
 
         # For :grace_then_block, check if grace period expired
         state = fresh_state_or_nil(billable, limit_key)

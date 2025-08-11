@@ -211,7 +211,7 @@ module PricingPlans
         key: limit_key,
         to: options[:to],
         per: options[:per],
-        after_limit: options.fetch(:after_limit, :grace_then_block),
+        after_limit: options.fetch(:after_limit, :block_usage),
         grace: options.fetch(:grace, 7.days),
         warn_at: options.fetch(:warn_at, [0.6, 0.8, 0.95]),
         count_scope: options[:count_scope]

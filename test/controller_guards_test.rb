@@ -133,16 +133,21 @@ class ControllerGuardsTest < ActiveSupport::TestCase
     # Create org with 1 project (at limit)
     @org.projects.create!(name: "Project 1")
 
-    result = require_plan_limit!(:projects, billable: @org, by: 1)
+    # Explicitly configure plan to use grace_then_block for this test
+    plan = PricingPlans::Plan.new(:tmp)
+    plan.limits :projects, to: 1, after_limit: :grace_then_block, grace: 7.days
+    PricingPlans::PlanResolver.stub(:effective_plan_for, plan) do
+      result = require_plan_limit!(:projects, billable: @org, by: 1)
 
-    # Should start grace period
-    assert result.grace?
-    assert_match(/exceeded.*grace period/i, result.message)
+      # Should start grace period
+      assert result.grace?
+      assert_match(/exceeded.*grace period/i, result.message)
 
-    # Verify grace state was created
-    state = PricingPlans::EnforcementState.find_by(billable: @org, limit_key: "projects")
-    assert state&.exceeded?
-    refute state&.blocked?
+      # Verify grace state was created
+      state = PricingPlans::EnforcementState.find_by(billable: @org, limit_key: "projects")
+      assert state&.exceeded?
+      refute state&.blocked?
+    end
   end
 
   def test_require_plan_limit_exceeded_with_grace_then_block_existing_grace
@@ -150,31 +155,43 @@ class ControllerGuardsTest < ActiveSupport::TestCase
     @org.projects.create!(name: "Project 1") # Now we have 1 project, at the limit of 1
 
     # Set up existing grace period
-    PricingPlans::GraceManager.mark_exceeded!(@org, :projects)
+    # Use grace_then_block semantics
+    plan = PricingPlans::Plan.new(:tmp)
+    plan.limits :projects, to: 1, after_limit: :grace_then_block, grace: 7.days
+    PricingPlans::PlanResolver.stub(:effective_plan_for, plan) do
+      PricingPlans::GraceManager.mark_exceeded!(@org, :projects)
+      result = require_plan_limit!(:projects, billable: @org, by: 1)
 
-    result = require_plan_limit!(:projects, billable: @org, by: 1)
-
-    assert result.grace?
-    assert_match(/exceeded.*grace period/i, result.message)
+      assert result.grace?
+      assert_match(/exceeded.*grace period/i, result.message)
+    end
   end
 
   def test_require_plan_limit_exceeded_with_grace_then_block_expired_grace
     # Create project to be at the limit first
     travel_to(Time.parse("2025-01-01 12:00:00 UTC")) do
-      @org.projects.create!(name: "Project 1") # Now we have 1 project, at the limit of 1
-      PricingPlans::GraceManager.mark_exceeded!(@org, :projects, grace_period: 7.days)
+      @org.projects.create!(name: "Project 1") # Now we have 1 project
+      plan = PricingPlans::Plan.new(:tmp)
+      plan.limits :projects, to: 1, after_limit: :grace_then_block, grace: 7.days
+      PricingPlans::PlanResolver.stub(:effective_plan_for, plan) do
+        PricingPlans::GraceManager.mark_exceeded!(@org, :projects, grace_period: 7.days)
+      end
     end
 
     # Travel past grace period
     travel_to(Time.parse("2025-01-09 12:00:00 UTC")) do
-      result = require_plan_limit!(:projects, billable: @org, by: 1)
+      plan = PricingPlans::Plan.new(:tmp)
+      plan.limits :projects, to: 1, after_limit: :grace_then_block, grace: 7.days
+      PricingPlans::PlanResolver.stub(:effective_plan_for, plan) do
+        result = require_plan_limit!(:projects, billable: @org, by: 1)
 
-      assert result.blocked?
-      assert_match(/reached your limit/i, result.message)
+        assert result.blocked?
+        assert_match(/reached your limit/i, result.message)
 
-      # Should have marked as blocked
-      state = PricingPlans::EnforcementState.find_by(billable: @org, limit_key: "projects")
-      assert state&.blocked?
+        # Should have marked as blocked
+        state = PricingPlans::EnforcementState.find_by(billable: @org, limit_key: "projects")
+        assert state&.blocked?
+      end
     end
   end
 

@@ -67,6 +67,7 @@ module PricingPlans
           limit_key = (config.delete(:limit_key) || name).to_sym
           per = config.delete(:per)
           error_after_limit = config.delete(:error_after_limit)
+          count_scope = config.delete(:count_scope)
 
           # Define English-y sugar methods on the billable immediately
           PricingPlans::Billable.define_limit_sugar_methods(self, limit_key)
@@ -87,13 +88,19 @@ module PricingPlans
             inferred_billable ||= billable_name_sym
 
             child_klass.include PricingPlans::Limitable unless child_klass.ancestors.include?(PricingPlans::Limitable)
-            child_klass.limited_by_pricing_plans(limit_key, billable: inferred_billable, per: per, error_after_limit: error_after_limit)
+            child_klass.limited_by_pricing_plans(
+              limit_key,
+              billable: inferred_billable,
+              per: per,
+              error_after_limit: error_after_limit,
+              count_scope: count_scope
+            )
           rescue StandardError
             # If child class cannot be resolved yet, register for later resolution
             PricingPlans::AssociationLimitRegistry.register(
               billable_class: self,
               association_name: name,
-              options: { limit_key: limit_key, per: per, error_after_limit: error_after_limit }
+              options: { limit_key: limit_key, per: per, error_after_limit: error_after_limit, count_scope: count_scope }
             )
           end
         end
