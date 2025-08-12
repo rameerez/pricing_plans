@@ -838,7 +838,17 @@ We provide a small, consolidated set of data helpers that make it dead simple to
   - `PricingPlans.suggest_next_plan_for(billable, keys: [:projects, ...])`
 
 - Usage/status for settings dashboards:
-  - `org.limit(:projects)` → one status hash for a limit
+  - `org.limit(:projects)` → one status struct for a limit (responds to `key`, `current`, `allowed`, `percent_used`, `grace_active`, `grace_ends_at`, `blocked`, `per`)
+    - Example:
+      ```erb
+      <% s = current_organization.limit(:projects) %>
+      <div><%= s.key.to_s.humanize %>: <%= s.current %> / <%= s.allowed %> (<%= s.percent_used.round(1) %>%)</div>
+      <% if s.blocked %>
+        <div class="notice notice--error">Creation blocked due to plan limits</div>
+      <% elsif s.grace_active %>
+        <div class="notice notice--warning">Over limit — grace active until <%= s.grace_ends_at %></div>
+      <% end %>
+      ```
   - `org.limits(:projects, :custom_models)` → Hash of statuses (with no args, defaults to all limits on the current plan)
   - `org.limits_summary(:projects, :custom_models)` → Array of simple structs (key/current/allowed/percent_used/grace/blocked)
   - `org.limits_severity(:projects, :custom_models)` → `:ok | :warning | :grace | :blocked`

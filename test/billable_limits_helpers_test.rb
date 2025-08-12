@@ -19,11 +19,13 @@ class BillableLimitsHelpersTest < ActiveSupport::TestCase
     CustomModel.send(:limited_by_pricing_plans, :custom_models, billable: :organization)
   end
 
-  def test_limit_returns_status_hash
+  def test_limit_returns_status_item
     st = @org.limit(:projects)
-    assert st.is_a?(Hash)
-    assert_equal :projects, st[:limit_key]
-    assert_equal true, st[:configured]
+    # It should be a StatusItem with method-style access
+    assert_respond_to st, :key
+    assert_respond_to st, :current
+    assert_respond_to st, :allowed
+    assert_equal :projects, st.key
   end
 
   def test_limits_returns_hash_of_statuses
@@ -63,5 +65,39 @@ class BillableLimitsHelpersTest < ActiveSupport::TestCase
 
     msg = @org.limits_message(:projects, :custom_models)
     assert msg.nil? || msg.is_a?(String)
+  end
+
+  def test_limit_status_item_values_when_configured
+    # projects limit is 3 by setup
+    2.times { |i| @org.projects.create!(name: "P#{i}") }
+    st = @org.limit(:projects)
+    assert_equal :projects, st.key
+    assert_equal 2, st.current
+    assert_equal 3, st.allowed
+    assert_in_delta 66.66, st.percent_used, 0.5
+    assert_includes [true, false], st.grace_active
+    assert_includes [true, false], st.blocked
+    assert_includes [true, false], st.per
+  end
+
+  def test_limit_status_item_when_unconfigured
+    st = @org.limit(:unknown_limit_key)
+    assert_equal :unknown_limit_key, st.key
+    assert_equal 0, st.current
+    assert_nil st.allowed
+    assert_equal 0.0, st.percent_used
+    refute st.grace_active
+    refute st.blocked
+    refute st.per
+  end
+
+  def test_limit_struct_reflects_grace_and_block
+    # Exceed projects to enter grace semantics
+    3.times { |i| @org.projects.create!(name: "P#{i}") }
+    # Trigger a check that may start grace depending on after_limit policy
+    PricingPlans::ControllerGuards.require_plan_limit!(:projects, billable: @org)
+    st = @org.limit(:projects)
+    assert_includes [true, false], st.grace_active
+    assert_includes [true, false], st.blocked
   end
 end

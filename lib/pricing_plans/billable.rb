@@ -193,7 +193,7 @@ module PricingPlans
 
     # Rails-y wrappers for usage/status (defaults to all configured limits)
     def limit(limit_key)
-      PricingPlans.limit_status(limit_key, billable: self)
+      PricingPlans.status(self, limits: [limit_key]).first
     end
 
     def limits(*limit_keys)
