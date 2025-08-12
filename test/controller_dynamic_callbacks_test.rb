@@ -275,3 +275,85 @@ class ControllerDynamicCallbacksTest < ActiveSupport::TestCase
     end
   end
 end
+
+class ControllerWithPlanLimitSugarTest < ActiveSupport::TestCase
+  def setup
+    @org = create_organization
+    @plan = PricingPlans::Plan.new(:tmp)
+  end
+
+  def build_controller(&block)
+    klass = Class.new do
+      include PricingPlans::ControllerGuards
+      attr_reader :redirected_to, :redirect_opts, :flashes, :yielded
+      def initialize
+        @flashes = {}
+      end
+      def flash; @flashes; end
+      def redirect_to(path, **opts)
+        @redirected_to = path
+        @redirect_opts = opts
+      end
+      def pricing_path; "/pricing"; end
+    end
+    controller = klass.new
+    controller
+  end
+
+  def test_with_plan_limit_yields_on_within
+    plan = PricingPlans::Plan.new(:tmp)
+    plan.limits :licenses, to: 10, after_limit: :grace_then_block, grace: 7.days
+    PricingPlans::PlanResolver.stub(:effective_plan_for, plan) do
+      ctrl = build_controller
+      yielded = nil
+      ctrl.with_plan_limit!(:licenses, billable: @org, by: 1) { |res| yielded = res }
+      assert yielded
+      assert yielded.within? || yielded.warning?
+    end
+  end
+
+  def test_with_plan_limit_sets_flash_on_warning_or_grace
+    plan = PricingPlans::Plan.new(:tmp)
+    plan.limits :licenses, to: 1, after_limit: :grace_then_block, grace: 7.days
+    PricingPlans::PlanResolver.stub(:effective_plan_for, plan) do
+      # Simulate near-limit usage that will cross a warning threshold when adding 1
+      PricingPlans::LimitChecker.stub(:current_usage_for, 0) do
+        PricingPlans::LimitChecker.stub(:warning_thresholds, [0.5]) do
+          ctrl = build_controller
+          res = ctrl.with_plan_limit!(:licenses, billable: @org, by: 1) { |_res| }
+          assert res.warning? || res.grace?
+          assert ctrl.flash[:warning]
+        end
+      end
+    end
+  end
+
+  def test_with_plan_limit_redirects_and_aborts_on_block
+    plan = PricingPlans::Plan.new(:tmp)
+    plan.limits :licenses, to: 0, after_limit: :block_usage
+    PricingPlans::PlanResolver.stub(:effective_plan_for, plan) do
+      ctrl = build_controller
+      caught = catch(:abort) do
+        ctrl.with_plan_limit!(:licenses, billable: @org, by: 1) { |_res| }
+        :no_abort
+      end
+      refute_equal :no_abort, caught
+      assert_equal "/pricing", ctrl.redirected_to
+      assert_equal :see_other, ctrl.redirect_opts[:status]
+    end
+  end
+
+  def test_dynamic_with_limit_helper_works
+    plan = PricingPlans::Plan.new(:tmp)
+    plan.limits :licenses, to: 0, after_limit: :block_usage
+    PricingPlans::PlanResolver.stub(:effective_plan_for, plan) do
+      ctrl = build_controller
+      caught = catch(:abort) do
+        ctrl.with_licenses_limit!(billable: @org, by: 1) { |_res| }
+        :no_abort
+      end
+      refute_equal :no_abort, caught
+      assert_equal "/pricing", ctrl.redirected_to
+    end
+  end
+end

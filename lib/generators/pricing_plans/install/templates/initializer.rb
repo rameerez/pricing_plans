@@ -48,14 +48,6 @@ PricingPlans.configure do |config|
   # or
   # config.controller_billable { current_account }
 
-  # You can specify your billable class if you want controller inference to prefer it (e.g., "User", "Organization").
-  # Otherwise it will try common conventions like current_organization, current_user, etc.
-  # config.billable_class = "Organization"
-
-  # Optional (can also be set via plan DSL sugar: `default!` / `highlighted!`)
-  # config.default_plan = :free
-  # config.highlighted_plan = :pro
-
   # Period cycle for per-period limits
   # :billing_cycle, :calendar_month, :calendar_week, :calendar_day
   # Global default period for per-period limits (can be overridden per limit via `per:`)
@@ -98,4 +90,25 @@ PricingPlans.configure do |config|
   # config.on_warning(:products)     { |org, threshold| PlanMailer.quota_warning(org, :products, threshold).deliver_later }
   # config.on_grace_start(:products) { |org, ends_at|   PlanMailer.grace_started(org, :products, ends_at).deliver_later  }
   # config.on_block(:products)       { |org|            PlanMailer.blocked(org, :products).deliver_later                 }
+
+  # --- Pricing semantics (UI-agnostic) ---
+  # Currency symbol to use when Stripe is absent
+  # config.default_currency_symbol = "$"
+
+  # Cache for Stripe Price lookups (defaults to Rails.cache when available)
+  # config.price_cache = Rails.cache
+  # TTL for Stripe price cache (seconds)
+  # config.price_cache_ttl = 10.minutes
+
+  # Build semantic price parts yourself (optional). Return a PricingPlans::PriceComponents or nil to fallback
+  # config.price_components_resolver = ->(plan, interval) { nil }
+
+  # Free copy helper (used by some view-models)
+  # config.free_price_caption = "Forever free"
+
+  # Default UI interval for toggles
+  # config.interval_default_for_ui = :month # or :year
+
+  # Downgrade policy hook used by CTA ergonomics helpers
+  # config.downgrade_policy = ->(from:, to:, billable:) { [true, nil] }
 end

@@ -129,13 +129,8 @@ module PricingPlans
     end
 
     def on_free_plan?
-      plan = current_pricing_plan
-      return true unless plan
-      default_key = PricingPlans::Registry.default_plan&.key
-      return true if plan.key == default_key
-      p = plan.price
-      ps = plan.price_string
-      (p.respond_to?(:to_i) && p.to_i.zero?) || (ps && ps.to_s.strip.casecmp("Free").zero?)
+      plan = current_pricing_plan || PricingPlans::Registry.default_plan
+      plan&.free? || false
     end
 
     def assign_pricing_plan!(plan_key, source: "manual")

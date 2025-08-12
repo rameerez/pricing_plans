@@ -37,6 +37,8 @@ module PricingPlans
   autoload :AssociationLimitRegistry, "pricing_plans/association_limit_registry"
   autoload :Result, "pricing_plans/result"
   autoload :OverageReporter, "pricing_plans/overage_reporter"
+  autoload :PriceComponents, "pricing_plans/price_components"
+  autoload :ViewHelpers, "pricing_plans/view_helpers"
 
   # Models
   autoload :EnforcementState, "pricing_plans/models/enforcement_state"
@@ -95,6 +97,12 @@ module PricingPlans
     # :is_current, :is_popular, :button_text, :button_url
     def for_pricing(billable: nil, view: nil)
       plans.map { |plan| decorate_for_view(plan, billable: billable, view: view) }
+    end
+
+    # View model for modern UIs (Stimulus/Hotwire/JSON). Pure data.
+    # Uses the new semantic pricing API on Plan (price_components and Stripe accessors).
+    def view_models
+      plans.map { |p| p.to_view_model }
     end
 
     # Opinionated next-plan suggestion: pick the smallest plan that satisfies current usage

@@ -97,9 +97,27 @@ module PricingPlans
         raise PricingPlans::ConfigurationError, "Unable to infer billable for controller. Set `self.pricing_plans_billable_method = :current_organization` or provide a block via `pricing_plans_billable { ... }`."
       end if base.respond_to?(:define_method)
 
-      # Dynamic enforce_*! feature guards for before_action ergonomics
+      # Dynamic enforce_*! and with_*! helpers for before_action ergonomics
       base.define_method(:method_missing) do |method_name, *args, &block|
-        if method_name.to_s =~ /^enforce_(.+)_limit!$/
+        if method_name.to_s =~ /^with_(.+)_limit!$/
+          limit_key = Regexp.last_match(1).to_sym
+          options = args.first.is_a?(Hash) ? args.first : {}
+          billable = if options[:billable]
+            options[:billable]
+          elsif options[:on]
+            resolver = options[:on]
+            resolver.is_a?(Symbol) ? send(resolver) : instance_exec(&resolver)
+          elsif options[:for]
+            resolver = options[:for]
+            resolver.is_a?(Symbol) ? send(resolver) : instance_exec(&resolver)
+          else
+            respond_to?(:pricing_plans_billable) ? pricing_plans_billable : nil
+          end
+          by = options.key?(:by) ? options[:by] : 1
+          allow_system_override = !!options[:allow_system_override]
+          redirect_path = options[:redirect_to]
+          return with_plan_limit!(limit_key, billable: billable, by: by, allow_system_override: allow_system_override, redirect_to: redirect_path, &block)
+        elsif method_name.to_s =~ /^enforce_(.+)_limit!$/
           limit_key = Regexp.last_match(1).to_sym
           options = args.first.is_a?(Hash) ? args.first : {}
           billable = if options[:billable]
@@ -140,7 +158,7 @@ module PricingPlans
       end if base.respond_to?(:define_method)
 
       base.define_method(:respond_to_missing?) do |method_name, include_private = false|
-        (method_name.to_s.start_with?("enforce_") && method_name.to_s.end_with?("!")) || super(method_name, include_private)
+        ((method_name.to_s.start_with?("enforce_") || method_name.to_s.start_with?("with_")) && method_name.to_s.end_with?("!")) || super(method_name, include_private)
       end if base.respond_to?(:define_method)
     end
 
@@ -254,6 +272,53 @@ module PricingPlans
       end
 
       true
+    end
+
+    # Controller-focused sugar: run a block within the plan limit context.
+    # - If blocked: performs the same redirect/render semantics as enforce_plan_limit! and aborts the callback chain.
+    # - If warning/grace: sets flash[:warning] and yields the result.
+    # - If within: simply yields the result.
+    # Returns the PricingPlans::Result in all cases where execution continues.
+    #
+    # Usage:
+    #   with_plan_limit!(:licenses, billable: current_organization, by: 1) do |result|
+    #     # proceed with side-effects, can inspect result.warning?/grace?
+    #   end
+    def with_plan_limit!(limit_key, billable:, by: 1, allow_system_override: false, redirect_to: nil, &block)
+      result = require_plan_limit!(limit_key, billable: billable, by: by, allow_system_override: allow_system_override)
+
+      if result.blocked?
+        # If caller opted into system override, let them proceed (exposes blocked state to the block)
+        if allow_system_override && result.metadata && result.metadata[:system_override]
+          yield(result) if block_given?
+          return result
+        end
+
+        # Resolve redirect target and delegate to centralized handler if available
+        resolved_target = resolve_redirect_target_for_blocked_limit(result, redirect_to)
+        if respond_to?(:handle_pricing_plans_limit_blocked)
+          enriched_result = PricingPlans::Result.blocked(
+            result.message,
+            limit_key: result.limit_key,
+            billable: result.billable,
+            metadata: (result.metadata || {}).merge(redirect_to: resolved_target)
+          )
+          handle_pricing_plans_limit_blocked(enriched_result)
+        else
+          if resolved_target && respond_to?(:redirect_to)
+            redirect_to(resolved_target, alert: result.message, status: :see_other)
+          elsif respond_to?(:render)
+            respond_to?(:request) && request&.format&.json? ? render(json: { error: result.message }, status: :forbidden) : render(plain: result.message, status: :forbidden)
+          end
+        end
+        throw :abort
+      else
+        if (result.warning? || result.grace?) && respond_to?(:flash) && flash.respond_to?(:[]=)
+          flash[:warning] ||= result.message
+        end
+        yield(result) if block_given?
+        return result
+      end
     end
 
     private

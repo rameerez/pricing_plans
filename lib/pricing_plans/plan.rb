@@ -91,6 +91,7 @@ module PricingPlans
 
     # Ergonomic predicate for UI/logic (free means explicit 0 price or explicit "Free" label)
     def free?
+      return false if @stripe_price
       return true if @price.respond_to?(:to_i) && @price.to_i.zero?
       return true if @price_string && @price_string.to_s.strip.casecmp("Free").zero?
       false
@@ -283,7 +284,14 @@ module PricingPlans
     end
 
     def highlighted?
-      !!@highlighted
+      return true if @highlighted
+      # Treat configuration.highlighted_plan as highlighted without consulting Registry to avoid recursion
+      begin
+        cfg = PricingPlans.configuration
+        return true if cfg && cfg.highlighted_plan && cfg.highlighted_plan.to_sym == @key
+      rescue StandardError
+      end
+      false
     end
 
     # Syntactic sugar for popular/highlighted
@@ -331,6 +339,169 @@ module PricingPlans
       return "$#{price}/mo" if price
       return "Contact" if stripe_price || price.nil?
       nil
+    end
+
+    # --- New semantic pricing API ---
+
+    # Compute semantic price parts for the given interval (:month or :year).
+    # Falls back to price_string when no numeric price exists.
+    def price_components(interval: :month)
+      # 1) Allow app override
+      if (resolver = PricingPlans.configuration.price_components_resolver)
+        begin
+          resolved = resolver.call(self, interval)
+          return resolved if resolved
+        rescue StandardError
+        end
+      end
+
+      # 2) String-only prices
+      if price_string
+        return PricingPlans::PriceComponents.new(
+          present?: false,
+          currency: nil,
+          amount: nil,
+          amount_cents: nil,
+          interval: interval,
+          label: price_string,
+          monthly_equivalent_cents: nil
+        )
+      end
+
+      # 3) Explicit numeric price (single interval, assume monthly semantics)
+      if price
+        cents = price_cents
+        cur = PricingPlans.configuration.default_currency_symbol
+        label = if interval == :month
+          "#{cur}#{price}/mo"
+        else
+          # Treat yearly as 12x when only a single numeric price is declared
+          "#{cur}#{(price.to_f * 12).round}/yr"
+        end
+        return PricingPlans::PriceComponents.new(
+          present?: true,
+          currency: cur,
+          amount: (interval == :month ? price.to_i : (price.to_f * 12).round).to_s,
+          amount_cents: (interval == :month ? cents : (cents.to_i * 12)),
+          interval: interval,
+          label: label,
+          monthly_equivalent_cents: cents
+        )
+      end
+
+      # 4) Stripe price(s)
+      if stripe_price
+        comp = stripe_price_components(interval)
+        return comp if comp
+      end
+
+      # 5) No price info at all → Contact
+      PricingPlans::PriceComponents.new(
+        present?: false,
+        currency: nil,
+        amount: nil,
+        amount_cents: nil,
+        interval: interval,
+        label: "Contact",
+        monthly_equivalent_cents: nil
+      )
+    end
+
+    def monthly_price_components
+      price_components(interval: :month)
+    end
+
+    def yearly_price_components
+      price_components(interval: :year)
+    end
+
+    def has_interval_prices?
+      sp = stripe_price
+      return true if sp.is_a?(Hash) && (sp[:month] || sp[:year])
+      return !price.nil? || !price_string.nil?
+    end
+
+    def has_numeric_price?
+      !!price || !!stripe_price
+    end
+
+    def price_label_for(interval)
+      pc = price_components(interval: interval)
+      pc.label
+    end
+
+    # Stripe convenience accessors (nil when interval not present)
+    def monthly_price_cents
+      pc = monthly_price_components
+      pc.present? ? pc.amount_cents : nil
+    end
+
+    def yearly_price_cents
+      pc = yearly_price_components
+      pc.present? ? pc.amount_cents : nil
+    end
+
+    def monthly_price_id
+      stripe_price_id_for(:month)
+    end
+
+    def yearly_price_id
+      stripe_price_id_for(:year)
+    end
+
+    def currency_symbol
+      if stripe_price
+        # Try to derive from Stripe API/cache; fall back to default
+        pr = fetch_stripe_price_record(preferred_price_id(:month) || preferred_price_id(:year))
+        if pr
+          return currency_symbol_from(pr)
+        end
+      end
+      PricingPlans.configuration.default_currency_symbol
+    end
+
+    # Plan comparison helpers for CTA ergonomics
+    def current_for?(current_plan)
+      return false unless current_plan
+      current_plan.key.to_sym == key.to_sym
+    end
+
+    def upgrade_from?(current_plan)
+      return false unless current_plan
+      comparable_price_cents(self) > comparable_price_cents(current_plan)
+    end
+
+    def downgrade_from?(current_plan)
+      return false unless current_plan
+      comparable_price_cents(self) < comparable_price_cents(current_plan)
+    end
+
+    def downgrade_blocked_reason(from: nil, billable: nil)
+      return nil unless from
+      allowed, reason = PricingPlans.configuration.downgrade_policy.call(from: from, to: self, billable: billable)
+      allowed ? nil : (reason || "Downgrade not allowed")
+    end
+
+    # Pure-data view model for JS/Hotwire
+    def to_view_model
+      {
+        id: key.to_s,
+        key: key.to_s,
+        name: name,
+        description: description,
+        features: bullets, # alias in this gem
+        highlighted: highlighted?,
+        default: default?,
+        free: free?,
+        currency: currency_symbol,
+        monthly_price_cents: monthly_price_cents,
+        yearly_price_cents: yearly_price_cents,
+        monthly_price_id: monthly_price_id,
+        yearly_price_id: yearly_price_id,
+        price_label: price_label,
+        price_string: price_string,
+        limits: limits.transform_values { |v| v.dup }
+      }
     end
 
     def validate!
@@ -397,6 +568,105 @@ module PricingPlans
     def default_cta_url_derived
       # If Stripe price present and Pay is used, UIs commonly route to checkout; we leave URL blank for app to decide.
       nil
+    end
+
+    # --- Internal helpers for Stripe fetching and caching ---
+
+    def stripe_price_id_for(interval)
+      sp = stripe_price
+      case sp
+      when Hash
+        case interval
+        when :month then sp[:month] || sp[:id]
+        when :year  then sp[:year]
+        else sp[:id]
+        end
+      when String
+        sp
+      else
+        nil
+      end
+    end
+
+    def preferred_price_id(interval)
+      stripe_price_id_for(interval)
+    end
+
+    def stripe_price_components(interval)
+      return nil unless defined?(::Stripe)
+      price_id = preferred_price_id(interval)
+      return nil unless price_id
+      pr = fetch_stripe_price_record(price_id)
+      return nil unless pr
+      amount_cents = (pr.unit_amount || pr.unit_amount_decimal || 0).to_i
+      interval_sym = (pr.recurring&.interval == "year" ? :year : :month)
+      cur = currency_symbol_from(pr)
+      label = "#{cur}#{(amount_cents / 100.0).round}/#{interval_sym == :year ? 'yr' : 'mo'}"
+      monthly_equiv = interval_sym == :month ? amount_cents : (amount_cents / 12.0).round
+      PricingPlans::PriceComponents.new(
+        present?: true,
+        currency: cur,
+        amount: ((amount_cents / 100.0).round).to_i.to_s,
+        amount_cents: amount_cents,
+        interval: interval_sym,
+        label: label,
+        monthly_equivalent_cents: monthly_equiv
+      )
+    rescue StandardError
+      nil
+    end
+
+    # Normalize a plan into a comparable monthly price in cents for upgrades/downgrades
+    def comparable_price_cents(plan)
+      return 0 if plan.free?
+      pcm = plan.monthly_price_cents
+      return pcm if pcm
+      pcy = plan.yearly_price_cents
+      return (pcy.to_f / 12.0).round if pcy
+      0
+    end
+
+    def currency_symbol_from(price_record)
+      code = price_record.try(:currency).to_s.upcase
+      case code
+      when "USD" then "$"
+      when "EUR" then "€"
+      when "GBP" then "£"
+      else PricingPlans.configuration.default_currency_symbol
+      end
+    end
+
+    def fetch_stripe_price_record(price_id)
+      cfg = PricingPlans.configuration
+      cache = cfg.price_cache
+      cache_key = ["pricing_plans", "stripe_price", price_id].join(":")
+      if cache
+        cached = safe_cache_read(cache, cache_key)
+        return cached if cached
+      end
+      pr = ::Stripe::Price.retrieve(price_id)
+      if cache
+        safe_cache_write(cache, cache_key, pr, expires_in: cfg.price_cache_ttl)
+      end
+      pr
+    end
+
+    def safe_cache_read(cache, key)
+      cache.respond_to?(:read) ? cache.read(key) : nil
+    rescue StandardError
+      nil
+    end
+
+    def safe_cache_write(cache, key, value, expires_in: nil)
+      if cache.respond_to?(:write)
+        if expires_in
+          cache.write(key, value, expires_in: expires_in)
+        else
+          cache.write(key, value)
+        end
+      end
+    rescue StandardError
+      # ignore cache errors
     end
   end
 end

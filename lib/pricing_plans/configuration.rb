@@ -36,6 +36,21 @@ module PricingPlans
     attr_accessor :price_label_resolver
     # Auto-fetch price labels from processor when possible (Stripe via stripe-ruby)
     attr_accessor :auto_price_labels_from_processor
+    # Semantic pricing components resolver hook: ->(plan, interval) { PriceComponents | nil }
+    attr_accessor :price_components_resolver
+    # Default currency symbol when Stripe isn't available
+    attr_accessor :default_currency_symbol
+    # Cache for Stripe prices. Defaults to in-memory store if nil. Should respond to read/write with ttl.
+    attr_accessor :price_cache
+    # Seconds for cache TTL for Stripe lookups
+    attr_accessor :price_cache_ttl
+    # Optional free caption copy (UI copy holder)
+    attr_accessor :free_price_caption
+    # Optional default interval for UI toggles
+    attr_accessor :interval_default_for_ui
+    # Optional downgrade policy hook for CTA ergonomics
+    # Signature: ->(from:, to:, billable:) { [allowed_boolean, reason_string_or_nil] }
+    attr_accessor :downgrade_policy
     attr_reader :plans, :event_handlers
 
     def initialize
@@ -53,6 +68,13 @@ module PricingPlans
       @redirect_on_blocked_limit = nil
       @price_label_resolver = nil
       @auto_price_labels_from_processor = true
+      @price_components_resolver = nil
+      @default_currency_symbol = "$"
+      @price_cache = (defined?(Rails) && Rails.respond_to?(:cache)) ? Rails.cache : nil
+      @price_cache_ttl = 600 # 10 minutes
+      @free_price_caption = "Forever free"
+      @interval_default_for_ui = :month
+      @downgrade_policy = ->(from:, to:, billable:) { [true, nil] }
       @plans = {}
       @event_handlers = {
         warning: {},

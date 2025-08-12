@@ -31,7 +31,12 @@ module PricingPlans
       end
     end
 
-    # No ActionView helpers are included. UI is fully host-controlled.
+    # Include view helpers (pure-data, no HTML opinions)
+    initializer "pricing_plans.action_view" do
+      ActiveSupport.on_load(:action_view) do
+        include PricingPlans::ViewHelpers if defined?(PricingPlans::ViewHelpers)
+      end
+    end
 
     # Ensure the configured billable class (e.g., Organization) gains the
     # billable-centric helpers even if the model is not loaded during
