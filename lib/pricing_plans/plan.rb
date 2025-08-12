@@ -89,6 +89,13 @@ module PricingPlans
       )
     end
 
+    # Ergonomic predicate for UI/logic (free means explicit 0 price or explicit "Free" label)
+    def free?
+      return true if @price.respond_to?(:to_i) && @price.to_i.zero?
+      return true if @price_string && @price_string.to_s.strip.casecmp("Free").zero?
+      false
+    end
+
     def set_price_string(value)
       @price_string = value.to_s
     end
@@ -279,10 +286,13 @@ module PricingPlans
       !!@highlighted
     end
 
-    # Convenience booleans used by views/hosts
-    def free?
-      @price.respond_to?(:to_i) && @price.to_i.zero?
+    # Syntactic sugar for popular/highlighted
+    def popular?
+      highlighted?
     end
+
+    # Convenience booleans used by views/hosts
+    # (keep single definition above)
 
     def purchasable?
       !!@stripe_price || (!free? && !!@price)
@@ -380,7 +390,7 @@ module PricingPlans
     def default_cta_text_derived
       return "Subscribe" if @stripe_price
       return "Choose #{@name || @key.to_s.titleize}" if price || price_string
-      return "Contact sales" if @stripe_price.nil? && !price && !price_string
+      return "Choose plan" if @stripe_price.nil? && !price && !price_string
       "Choose #{@name || @key.to_s.titleize}"
     end
 

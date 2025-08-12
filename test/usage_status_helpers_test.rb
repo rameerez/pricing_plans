@@ -57,4 +57,32 @@ class UsageStatusHelpersTest < ActiveSupport::TestCase
     PricingPlans.configuration.default_cta_text = nil
     PricingPlans.configuration.default_cta_url = nil
   end
+
+  def test_cta_for_fallback_to_redirect_on_blocked_limit
+    org = @org
+    # Ensure no defaults
+    PricingPlans.configuration.default_cta_text = nil
+    PricingPlans.configuration.default_cta_url = nil
+    PricingPlans.configuration.redirect_on_blocked_limit = "/pricing"
+
+    data = PricingPlans.cta_for(org)
+    assert_equal "/pricing", data[:url]
+  ensure
+    PricingPlans.configuration.redirect_on_blocked_limit = nil
+  end
+
+  def test_alert_for_view_model
+    org = @org
+    vm = PricingPlans.alert_for(org, :projects)
+    assert_equal false, vm[:visible?]
+
+    PricingPlans::LimitChecker.stub(:current_usage_for, 2) do
+      vm = PricingPlans.alert_for(org, :projects)
+      assert_equal true, vm[:visible?]
+      assert_includes [:warning, :grace, :blocked, :at_limit], vm[:severity]
+      assert_kind_of String, vm[:title]
+      assert_includes vm.keys, :cta_text
+      assert_includes vm.keys, :cta_url
+    end
+  end
 end

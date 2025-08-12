@@ -26,6 +26,38 @@ class PlanTest < ActiveSupport::TestCase
     assert_equal 29, plan.price
   end
 
+  def test_plan_free_predicate
+    p1 = PricingPlans::Plan.new(:free)
+    p1.price 0
+    assert p1.free?
+
+    p2 = PricingPlans::Plan.new(:free_string)
+    p2.price_string "Free"
+    assert p2.free?
+
+    p3 = PricingPlans::Plan.new(:paid)
+    p3.price 10
+    refute p3.free?
+  end
+
+  def test_billable_on_free_plan
+    org = create_organization
+
+    free_plan = PricingPlans::Registry.plan(:free)
+    pro_plan  = PricingPlans::Registry.plan(:pro)
+
+    assert free_plan.free?
+    refute pro_plan.free?
+
+    PricingPlans::PlanResolver.stub(:effective_plan_for, free_plan) do
+      assert org.on_free_plan?
+    end
+
+    PricingPlans::PlanResolver.stub(:effective_plan_for, pro_plan) do
+      refute org.on_free_plan?
+    end
+  end
+
   def test_plan_cta_defaults_and_overrides
     # Configure defaults
     PricingPlans.reset_configuration!
@@ -34,11 +66,12 @@ class PlanTest < ActiveSupport::TestCase
       config.plan :free do
         price 0
       end
+      config.plan :pro do
+        price 10
+      end
     end
 
-    plan = PricingPlans::Plan.new(:pro)
-    plan.name "Pro"
-    plan.price 10
+    plan = PricingPlans::Registry.plan(:pro)
 
     # Without overrides, derives a sensible default text, url nil
     assert_match(/Choose Pro/i, plan.cta_text)
@@ -258,6 +291,16 @@ class PlanTest < ActiveSupport::TestCase
     plan = PricingPlans::Plan.new(:pro)
 
     assert_nil plan.limit_for(:nonexistent)
+  end
+
+  def test_highlighted_and_popular_sugar
+    plan = PricingPlans.highlighted_plan
+    assert_equal :pro, plan.key
+    assert plan.highlighted?
+    assert plan.popular?
+    assert_equal :pro, PricingPlans.highlighted_plan_key
+    assert_equal plan, PricingPlans.popular_plan
+    assert_equal :pro, PricingPlans.popular_plan_key
   end
 
   # No per-operation credit inclusions anymore; single currency credits only

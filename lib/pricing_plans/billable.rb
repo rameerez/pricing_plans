@@ -128,6 +128,16 @@ module PricingPlans
       PlanResolver.effective_plan_for(self)
     end
 
+    def on_free_plan?
+      plan = current_pricing_plan
+      return true unless plan
+      default_key = PricingPlans::Registry.default_plan&.key
+      return true if plan.key == default_key
+      p = plan.price
+      ps = plan.price_string
+      (p.respond_to?(:to_i) && p.to_i.zero?) || (ps && ps.to_s.strip.casecmp("Free").zero?)
+    end
+
     def assign_pricing_plan!(plan_key, source: "manual")
       Assignment.assign_plan_to(self, plan_key, source: source)
     end
@@ -240,6 +250,11 @@ module PricingPlans
     # Returns { text:, url: }
     def plan_cta
       PricingPlans.cta_for(self)
+    end
+
+    # Returns the pure-data alert view model for a single limit key
+    def limit_alert(limit_key)
+      PricingPlans.alert_for(self, limit_key)
     end
 
     private

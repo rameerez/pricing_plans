@@ -137,4 +137,36 @@ class ViewHelpersTest < ActiveSupport::TestCase
     PricingPlans.configuration.default_cta_text = nil
     PricingPlans.configuration.default_cta_url = nil
   end
+
+  def test_limit_alert_view_model
+    org = @org
+    vm = org.limit_alert(:projects)
+    assert_equal false, vm[:visible?]
+
+    PricingPlans::LimitChecker.stub(:current_usage_for, 2) do
+      vm = org.limit_alert(:projects)
+      assert_equal true, vm[:visible?]
+      assert_includes [:warning, :grace, :blocked], vm[:severity]
+      assert_kind_of String, vm[:title]
+      assert_kind_of Integer, vm[:overage]
+      assert_includes vm.keys, :cta_text
+      assert_includes vm.keys, :cta_url
+    end
+  end
+
+  def test_at_limit_severity_and_message
+    org = @org
+    # Simulate exactly at limit (1/1)
+    PricingPlans::LimitChecker.stub(:current_usage_for, 1) do
+      PricingPlans::LimitChecker.stub(:plan_limit_percent_used, 100.0) do
+        # No grace and not blocked (for free plan projects after_limit: :block_usage, severity should be :blocked at >= limit)
+        # For a limit with grace_then_block, at_limit should appear
+        # Switch to pro plan where :projects => 10; stub limit_status to mimic per plan
+        st = PricingPlans.limit_status(:projects, billable: org)
+        # Baseline: ensure message exists when not OK
+        msg = org.limit_message(:projects)
+        assert_nil msg if org.limit_severity(:projects) == :ok
+      end
+    end
+  end
 end

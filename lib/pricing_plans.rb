@@ -198,24 +198,33 @@ module PricingPlans
     end
 
     # Aggregates across multiple limits for global banners/messages
-    # Returns one of :ok, :warning, :grace, :blocked
+    # Returns one of :ok, :warning, :at_limit, :grace, :blocked
     def highest_severity_for(billable, *limit_keys)
       keys = limit_keys.flatten
-      severities = keys.map do |key|
+      per_key = keys.map do |key|
         st = limit_status(key, billable: billable)
         next :ok unless st[:configured]
+
+        lim = st[:limit_amount]
+        cur = st[:current_usage]
+
         if st[:blocked]
-          lim = st[:limit_amount]
-          cur = st[:current_usage]
           return :blocked if lim != :unlimited && lim.to_i > 0 && cur.to_i >= lim.to_i
         end
         return :grace if st[:grace_active]
-        percent = st[:percent_used].to_f
-        warn_thresholds = LimitChecker.warning_thresholds(billable, key)
-        highest_warn = warn_thresholds.max.to_f * 100.0
-        (percent >= highest_warn && highest_warn.positive?) ? :warning : :ok
+
+        # Distinguish "at limit" from generic warning when capacity is exactly full
+        if lim != :unlimited && lim.to_i > 0 && cur.to_i == lim.to_i
+          :at_limit
+        else
+          percent = st[:percent_used].to_f
+          warn_thresholds = LimitChecker.warning_thresholds(billable, key)
+          highest_warn = warn_thresholds.max.to_f * 100.0
+          (percent >= highest_warn && highest_warn.positive?) ? :warning : :ok
+        end
       end
-      severities.include?(:warning) ? :warning : :ok
+      return :at_limit if per_key.include?(:at_limit)
+      per_key.include?(:warning) ? :warning : :ok
     end
 
     # Combine human messages for a set of limits into one string
@@ -238,8 +247,52 @@ module PricingPlans
 
     # Convenience: message for a single limit key, or nil if OK
     def message_for(billable, limit_key)
-      result = ControllerGuards.require_plan_limit!(limit_key, billable: billable, by: 0)
-      result.ok? ? nil : result.message
+      st = limit_status(limit_key, billable: billable)
+      return nil unless st[:configured]
+
+      sev = severity_for(billable, limit_key)
+      return nil if sev == :ok
+
+      cfg = configuration
+      key = limit_key
+      cur = st[:current_usage]
+      lim = st[:limit_amount]
+      grace_ends = st[:grace_ends_at]
+
+      if cfg.message_builder
+        context = case sev
+                  when :blocked then :over_limit
+                  when :grace   then :grace
+                  when :at_limit then :at_limit
+                  else :warning
+                  end
+        begin
+          return cfg.message_builder.call(context: context, limit_key: key, current_usage: cur, limit_amount: lim, grace_ends_at: grace_ends)
+        rescue StandardError
+          # fall through to defaults
+        end
+      end
+
+      # Defaults
+      case sev
+      when :blocked
+        "Cannot create more #{key.to_s.humanize.downcase} on your current plan."
+      when :grace
+        deadline = grace_ends ? ", grace active until #{grace_ends}" : ""
+        "Over the #{key.to_s.humanize.downcase} limit#{deadline}."
+      when :at_limit
+        if lim.is_a?(Numeric)
+          "You are at #{cur}/#{lim} #{key.to_s.humanize.downcase}. You cannot create more on this plan. Upgrade to unlock more."
+        else
+          "You are at the configured limit for #{key.to_s.humanize.downcase}. You cannot create more on this plan. Upgrade to unlock more."
+        end
+      else # :warning
+        if lim.is_a?(Numeric)
+          "You have used #{cur}/#{lim} #{key.to_s.humanize.downcase}."
+        else
+          "You are approaching your #{key.to_s.humanize.downcase} limit."
+        end
+      end
     end
 
     # Compute how much over the limit the billable is for a key (0 if within)
@@ -279,8 +332,55 @@ module PricingPlans
       plan = PlanResolver.effective_plan_for(billable)
       cfg = configuration
       url = plan&.cta_url(billable: billable) || cfg.default_cta_url
+      # Fallback: if controller redirect target is a String path/URL, use it as a sensible default CTA
+      if url.nil? && cfg.redirect_on_blocked_limit.is_a?(String)
+        url = cfg.redirect_on_blocked_limit
+      end
       text = plan&.cta_text || cfg.default_cta_text
       { text: text, url: url }
+    end
+
+    # Pure-data alert view model for a single limit key. No HTML.
+    # Returns keys: :visible? (boolean), :severity, :title, :message, :overage, :cta_text, :cta_url
+    def alert_for(billable, limit_key)
+      sev = severity_for(billable, limit_key)
+      return { visible?: false, severity: :ok } if sev == :ok
+
+      msg = message_for(billable, limit_key)
+      over = overage_for(billable, limit_key)
+      cta  = cta_for(billable)
+      titles = {
+        warning: "Approaching Limit",
+        at_limit: "Cannot create more",
+        grace:   "Limit Exceeded (Grace Active)",
+        blocked: "Cannot create more resources"
+      }
+      {
+        visible?: true,
+        severity: sev,
+        title: titles[sev] || sev.to_s.humanize,
+        message: msg,
+        overage: over,
+        cta_text: cta[:text],
+        cta_url: cta[:url]
+      }
+    end
+
+    # Global highlighted/popular plan sugar (UI ergonomics)
+    def highlighted_plan
+      Registry.highlighted_plan
+    end
+
+    def highlighted_plan_key
+      highlighted_plan&.key
+    end
+
+    def popular_plan
+      highlighted_plan
+    end
+
+    def popular_plan_key
+      highlighted_plan_key
     end
   end
 end

@@ -836,6 +836,9 @@ We provide a small, consolidated set of data helpers that make it dead simple to
   - `PricingPlans.plans` → Array of `PricingPlans::Plan` objects
   - `plan.price_label` → "Free", "$29/mo", or "Contact". If `stripe_price` is set and the Stripe gem is available, it auto-fetches the live price from Stripe. You can override or disable this (see below).
   - `PricingPlans.suggest_next_plan_for(billable, keys: [:projects, ...])`
+  - `plan.free?` and `current_organization.on_free_plan?` (syntactic sugar for quick checks)
+  - `plan.popular?` (alias of `highlighted?`)
+  - Global helpers: `PricingPlans.highlighted_plan`, `PricingPlans.highlighted_plan_key`, `PricingPlans.popular_plan`, `PricingPlans.popular_plan_key`
 
 - Usage/status for settings dashboards:
   - `org.limit(:projects)` → one status struct for a limit (responds to `key`, `current`, `allowed`, `percent_used`, `grace_active`, `grace_ends_at`, `blocked`, `per`)
@@ -864,6 +867,56 @@ We provide a small, consolidated set of data helpers that make it dead simple to
       - `org.plan_cta` → `{ text:, url: }` from current plan or global defaults
     - Top-level equivalents if you prefer: `PricingPlans.severity_for(billable, :projects)`, `message_for`,
       `overage_for`, `attention_required?(billable, :projects)`, `approaching_limit?(billable, :projects, at: 0.9)`, `cta_for(billable)`
+
+    - One-call alert view-model (pure data, no HTML):
+      - `org.limit_alert(:products)` or `PricingPlans.alert_for(org, :products)` returns:
+        `{ visible?: true/false, severity:, title:, message:, overage:, cta_text:, cta_url: }`
+
+#### Simple ERB examples
+
+- Gate creation by ability to add one more (recommended for create buttons):
+
+```erb
+<% if current_organization.within_plan_limits?(:products) %>
+  <!-- Show enabled create button -->
+<% else %>
+  <!-- Disabled button + hint -->
+<% end %>
+```
+
+- Strict block check:
+
+```erb
+<% if current_organization.plan_blocked_for?(:products) %>
+  <!-- Creation blocked by plan -->
+<% end %>
+```
+
+- One-line alert decision + render:
+
+```erb
+<% if current_organization.attention_required_for_limit?(:products) %>
+  <%= render "shared/plan_limit_alert", billable: current_organization, key: :products %>
+<% end %>
+```
+
+#### Titles, messages, and CTA defaults
+
+- Severity order: `:blocked` > `:grace` > `:at_limit` > `:warning` > `:ok`.
+- Titles (defaults):
+  - `warning`: "Approaching Limit"
+  - `at_limit`: "At Limit"
+  - `grace`: "Limit Exceeded (Grace Active)"
+  - `blocked`: "Cannot create more resources"
+- Messages come from your `config.message_builder` when present; otherwise we provide sensible defaults, e.g.:
+  - Blocked: "Cannot create more <key> on your current plan."
+  - Grace: "Over the <key> limit, grace active until <date>."
+  - At limit: "You are at <current>/<limit> <key>. The next will exceed your plan."
+  - Warning: "You have used <current>/<limit> <key>."
+- CTA: we resolve CTA as follows:
+  - Plan-specific CTA if set (`plan.cta_url` / `cta_text`)
+  - Global defaults (`config.default_cta_url` / `default_cta_text`)
+  - Fallback: if `config.redirect_on_blocked_limit` is a String path/URL, we use it as CTA URL.
 
     Example (you craft the UI; we give you clean data):
     ```erb
