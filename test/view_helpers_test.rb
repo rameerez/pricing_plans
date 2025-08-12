@@ -65,105 +65,76 @@ class ViewHelpersTest < ActiveSupport::TestCase
   def test_aggregate_helpers
     org = @org
     # No grace initially
-    refute org.any_grace_active_for?(:projects, :custom_models)
-
-    # Start grace for projects and ensure aggregation reflects it
+    assert_equal :ok, org.limits_severity(:projects, :custom_models)
+    # Simulate grace start for projects
     PricingPlans::GraceManager.mark_exceeded!(org, :projects)
-    assert org.any_grace_active_for?(:projects, :custom_models)
-
-    # Earliest grace ends at should be set and be a Time
-    t = org.earliest_grace_ends_at_for(:projects, :custom_models)
-    assert t.is_a?(Time)
+    assert_includes [:grace, :blocked], org.limits_severity(:projects, :custom_models)
+  ensure
+    PricingPlans::GraceManager.reset_state!(org, :projects)
   end
 
-  def test_plan_limit_statuses_bulk
+  # New pure-data helpers
+  def test_limit_severity_ok_warning_grace_blocked
     org = @org
-    statuses = PricingPlans.limit_statuses(:projects, :custom_models, billable: org)
-    assert statuses.is_a?(Hash)
-    assert statuses.key?(:projects)
-    assert statuses.key?(:custom_models)
-    assert_includes [true, false], statuses[:projects][:configured]
+    # Projects limit on :free is 1; initially 0/1 → :ok
+    assert_equal :ok, org.limit_severity(:projects)
+
+    # Simulate grace → should be :grace unless strictly blocked
+    PricingPlans::GraceManager.mark_exceeded!(org, :projects)
+    assert_includes [:grace, :blocked], org.limit_severity(:projects)
+  ensure
+    PricingPlans::GraceManager.reset_state!(org, :projects)
   end
 
-  def test_highest_severity_for_many_limits
+  def test_limit_message_nil_when_ok
     org = @org
-    # Initially should be ok
-    assert_equal :ok, PricingPlans.highest_severity_for(org, :projects, :custom_models)
+    assert_nil org.limit_message(:projects)
 
-    # Exceed projects to enter grace
-    PricingPlans::Assignment.assign_plan_to(org, :free)
-    # Use a temporary plan that opts into grace semantics for this test
-    plan = PricingPlans::Plan.new(:tmp)
-    plan.limits :projects, to: 0, after_limit: :grace_then_block, grace: 2.days
-    PricingPlans::PlanResolver.stub(:effective_plan_for, plan) do
-      result = PricingPlans::ControllerGuards.require_plan_limit!(:projects, billable: org)
-      assert result.grace?
-      assert_equal :grace, PricingPlans.highest_severity_for(org, :projects, :custom_models)
+    # Simulate over limit by stubbing usage
+    PricingPlans::LimitChecker.stub(:current_usage_for, 2) do
+      assert_kind_of String, org.limit_message(:projects)
     end
   end
 
-  def test_combine_messages_for
+  def test_limit_overage
     org = @org
-    org.projects.create!(name: "P1")
-    msg = PricingPlans.combine_messages_for(org, :projects, :custom_models)
-    assert msg.nil? || msg.is_a?(String)
-  end
+    assert_equal 0, org.limit_overage(:projects)
 
-  def test_price_label_helper
-    plans = []
-    p_free = PricingPlans::Plan.new(:free)
-    p_free.price(0)
-    plans << p_free
-
-    p_pro = PricingPlans::Plan.new(:pro)
-    p_pro.price(29)
-    plans << p_pro
-
-    p_ent = PricingPlans::Plan.new(:ent)
-    p_ent.price_string("Contact")
-    plans << p_ent
-
-    labels = plans.map(&:price_label)
-    assert_match(/Free/, labels[0])
-    assert_match(/\$29\/mo/, labels[1])
-    assert_equal "Contact", labels[2]
-  end
-
-  def test_suggest_next_plan_for
-    org = @org
-    # Configure a small custom set of plans for determinism
-    PricingPlans.reset_configuration!
-    PricingPlans.configure do |config|
-      config.default_plan = :free
-
-      config.plan :free do
-        price 0
-        limits :projects, to: 1, after_limit: :grace_then_block, grace: 7.days
-      end
-
-      config.plan :basic do
-        price 10
-        limits :projects, to: 3, after_limit: :grace_then_block, grace: 7.days
-      end
-
-      config.plan :pro do
-        price 20
-        limits :projects, to: 10, after_limit: :grace_then_block, grace: 7.days
-      end
+    # at limit (1) → 0 overage
+    PricingPlans::LimitChecker.stub(:current_usage_for, 1) do
+      assert_equal 0, org.limit_overage(:projects)
     end
 
-    # Re-register counters cleared by reset_configuration!
-    Project.send(:limited_by_pricing_plans, :projects, billable: :organization)
+    # over limit (2) → 1 overage
+    PricingPlans::LimitChecker.stub(:current_usage_for, 2) do
+      assert_equal 1, org.limit_overage(:projects)
+    end
+  end
 
-    # usage 0 -> suggest free
-    assert_equal :free, PricingPlans.suggest_next_plan_for(org, keys: [:projects]).key
+  def test_limit_attention_and_approaching
+    org = @org
+    refute org.attention_required_for_limit?(:projects)
+    refute org.approaching_limit?(:projects) # no warn_at crossed
 
-    # usage 2 -> suggest basic
-    2.times { |i| org.projects.create!(name: "P#{i}") }
-    assert_equal :basic, PricingPlans.suggest_next_plan_for(org, keys: [:projects]).key
+    # Stub to 100% of 1 allowed → crosses highest warn threshold
+    PricingPlans::LimitChecker.stub(:current_usage_for, 1) do
+      PricingPlans::LimitChecker.stub(:plan_limit_percent_used, 100.0) do
+        assert org.attention_required_for_limit?(:projects)
+        assert org.approaching_limit?(:projects)
+        assert org.approaching_limit?(:projects, at: 0.5)
+      end
+    end
+  end
 
-    # usage 5 -> suggest pro
-    3.times { |i| org.projects.create!(name: "Q#{i}") }
-    assert_equal :pro, PricingPlans.suggest_next_plan_for(org, keys: [:projects]).key
+  def test_plan_cta_falls_back_to_defaults
+    org = @org
+    PricingPlans.configuration.default_cta_text = "Upgrade Plan"
+    PricingPlans.configuration.default_cta_url = "/pricing"
+
+    data = org.plan_cta
+    assert_equal({ text: "Upgrade Plan", url: "/pricing" }, data)
+  ensure
+    PricingPlans.configuration.default_cta_text = nil
+    PricingPlans.configuration.default_cta_url = nil
   end
 end

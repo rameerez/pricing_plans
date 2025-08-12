@@ -216,6 +216,32 @@ module PricingPlans
       PricingPlans.combine_messages_for(self, *keys)
     end
 
+    # View-friendly, English-like convenience helpers (pure data decisions)
+    def limit_severity(limit_key)
+      PricingPlans.severity_for(self, limit_key)
+    end
+
+    def limit_message(limit_key)
+      PricingPlans.message_for(self, limit_key)
+    end
+
+    def limit_overage(limit_key)
+      PricingPlans.overage_for(self, limit_key)
+    end
+
+    def attention_required_for_limit?(limit_key)
+      PricingPlans.attention_required?(self, limit_key)
+    end
+
+    def approaching_limit?(limit_key, at: nil)
+      PricingPlans.approaching_limit?(self, limit_key, at: at)
+    end
+
+    # Returns { text:, url: }
+    def plan_cta
+      PricingPlans.cta_for(self)
+    end
+
     private
 
     def normalize_limit_keys(limit_keys)

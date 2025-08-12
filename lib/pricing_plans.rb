@@ -229,5 +229,58 @@ module PricingPlans
       return nil if parts.empty?
       parts.join(" · ")
     end
+
+    # Convenience: severity for a single limit key
+    # Returns :ok | :warning | :grace | :blocked
+    def severity_for(billable, limit_key)
+      highest_severity_for(billable, limit_key)
+    end
+
+    # Convenience: message for a single limit key, or nil if OK
+    def message_for(billable, limit_key)
+      result = ControllerGuards.require_plan_limit!(limit_key, billable: billable, by: 0)
+      result.ok? ? nil : result.message
+    end
+
+    # Compute how much over the limit the billable is for a key (0 if within)
+    def overage_for(billable, limit_key)
+      st = limit_status(limit_key, billable: billable)
+      return 0 unless st[:configured]
+      allowed = st[:limit_amount]
+      current = st[:current_usage].to_i
+      return 0 unless allowed.is_a?(Numeric)
+      [current - allowed.to_i, 0].max
+    end
+
+    # Boolean: any attention required (warning/grace/blocked) for provided keys
+    def attention_required?(billable, *limit_keys)
+      highest_severity_for(billable, *limit_keys) != :ok
+    end
+
+    # Boolean: approaching a limit. If `at:` given, uses that numeric threshold (0..1);
+    # otherwise uses the highest configured warn_at threshold for the limit.
+    def approaching_limit?(billable, limit_key, at: nil)
+      st = limit_status(limit_key, billable: billable)
+      return false unless st[:configured]
+      percent = st[:percent_used].to_f
+      threshold = if at
+        (at.to_f * 100.0)
+      else
+        thresholds = LimitChecker.warning_thresholds(billable, limit_key)
+        thresholds.max.to_f * 100.0
+      end
+      return false if threshold <= 0.0
+      percent >= threshold
+    end
+
+    # Recommend CTA data (pure data, no UI): { text:, url: }
+    # Resolves plan-level CTA first, then global defaults; returns nil fields when unknown
+    def cta_for(billable)
+      plan = PlanResolver.effective_plan_for(billable)
+      cfg = configuration
+      url = plan&.cta_url(billable: billable) || cfg.default_cta_url
+      text = plan&.cta_text || cfg.default_cta_text
+      { text: text, url: url }
+    end
   end
 end

@@ -854,6 +854,55 @@ We provide a small, consolidated set of data helpers that make it dead simple to
   - `org.limits_severity(:projects, :custom_models)` → `:ok | :warning | :grace | :blocked`
   - `org.limits_message(:projects, :custom_models)` → combined human message string (or `nil`)
 
+  - Pure-data, English-like helpers for views (no UI components):
+    - Single-limit intents on the billable:
+      - `org.limit_severity(:projects)` → `:ok | :warning | :grace | :blocked`
+      - `org.limit_message(:projects)` → `String | nil`
+      - `org.limit_overage(:projects)` → `Integer` (0 if within)
+      - `org.attention_required_for_limit?(:projects)` → `true | false` (alias for any of warning/grace/blocked)
+      - `org.approaching_limit?(:projects, at: 0.9)` → `true | false` (uses highest `warn_at` if `at` omitted)
+      - `org.plan_cta` → `{ text:, url: }` from current plan or global defaults
+    - Top-level equivalents if you prefer: `PricingPlans.severity_for(billable, :projects)`, `message_for`,
+      `overage_for`, `attention_required?(billable, :projects)`, `approaching_limit?(billable, :projects, at: 0.9)`, `cta_for(billable)`
+
+    Example (you craft the UI; we give you clean data):
+    ```erb
+    <% if current_organization.attention_required_for_limit?(:products) %>
+      <% sev = current_organization.limit_severity(:products) %>
+      <% msg = current_organization.limit_message(:products) %>
+      <% cta = current_organization.plan_cta %>
+      <!-- Render your own banner/button using sev/msg/cta -->
+    <% end %>
+    ```
+
+    Recommended ERB usage patterns:
+
+    - Gate create actions by ability to add one more (most ergonomic for buttons):
+      ```erb
+      <% if current_organization.within_plan_limits?(:products) %>
+        <!-- Show enabled create button -->
+      <% else %>
+        <!-- Disabled button + hint -->
+      <% end %>
+      ```
+
+    - Check whether creation is blocked (strict block semantics):
+      ```erb
+      <% if current_organization.plan_blocked_for?(:products) %>
+        <!-- disabled UI; creation is blocked by the plan -->
+      <% end %>
+      ```
+
+    - Show an attention banner (warning/grace/blocked):
+      ```erb
+      <% if current_organization.attention_required_for_limit?(:products) %>
+        <% sev = current_organization.limit_severity(:products) %>
+        <% msg = current_organization.limit_message(:products) %>
+        <% cta = current_organization.plan_cta %>
+        <!-- Your banner markup here, using sev/msg/cta -->
+      <% end %>
+      ```
+
 - Feature toggles (billable-centric):
   - `current_user.plan_allows?(:api_access)`
   - `current_user.plan_limit_remaining(:projects)` and `current_user.plan_limit_percent_used(:projects)`
