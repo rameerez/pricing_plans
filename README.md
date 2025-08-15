@@ -844,7 +844,7 @@ We provide a small, consolidated set of data helpers that make it dead simple to
   - Global helpers: `PricingPlans.highlighted_plan`, `PricingPlans.highlighted_plan_key`, `PricingPlans.popular_plan`, `PricingPlans.popular_plan_key`
 
 - Usage/status for settings dashboards:
-  - `org.limit(:projects)` → one status item for a limit (responds to `key`, `current`, `allowed`, `percent_used`, `grace_active`, `grace_ends_at`, `blocked`, `per`, `severity`, `message`, `overage`)
+  - `org.limit(:projects)` → one status item for a limit (responds to `key`, `current`, `allowed`, `percent_used`, `grace_active`, `grace_ends_at`, `blocked`, `per`, `severity`, `severity_level`, `message`, `overage`, `configured`, `unlimited`, `remaining`, `after_limit`, `attention?`, `next_creation_blocked?`, `warn_thresholds`, `next_warn_percent`, `period_start`, `period_end`, `period_seconds_remaining`)
     - Example:
       ```erb
       <% s = current_organization.limit(:projects) %>
@@ -855,9 +855,9 @@ We provide a small, consolidated set of data helpers that make it dead simple to
         <div class="notice notice--warning">Over limit — grace active until <%= s.grace_ends_at %></div>
       <% end %>
       ```
-  - `org.limits(:projects, :custom_models)` → Array of status items (with no args, defaults to all limits on the current plan). Each item includes `severity`, optional `message`, and `overage` for UX.
+  - `org.limits(:projects, :custom_models)` → Array of status items (with no args, defaults to all limits on the current plan). Each item includes severity, severity_level, message, overage, remaining, next_creation_blocked?, warn info, and period window (for per-period limits).
   - `org.limits_summary(:projects, :custom_models)` → Alias of `org.limits`.
-  - `org.limits_overview(:projects, :custom_models)` → Combined banner data: `{ severity:, message:, attention?:, keys:, cta_text:, cta_url: }`.
+  - `org.limits_overview(:projects, :custom_models)` → Combined banner data: `{ severity:, severity_level:, message:, attention?:, keys:, cta_text:, cta_url: }`.
   - `org.limits_severity(:projects, :custom_models)` → `:ok | :warning | :at_limit | :grace | :blocked`.
   - `org.limits_message(:projects, :custom_models)` → Combined human message string (or `nil`).
 
@@ -1035,7 +1035,13 @@ Notes:
 <% org = current_organization %>
 <% org.limits(:projects, :custom_models).each do |s| %>
   <div><%= s.key.to_s.humanize %>: <%= s.current %> / <%= s.allowed %> (<%= s.percent_used.round(1) %>%)
-    <% if s.severity != :ok %> — <%= s.severity %><%= ": #{s.message}" if s.message.present? %><% end %>
+    <% if s.severity != :ok %>
+      — <%= s.severity %><%= ": #{s.message}" if s.message.present? %>
+      <%# gate create buttons %>
+      <% if s.next_creation_blocked? %>
+        <span class="badge">Blocked</span>
+      <% end %>
+    <% end %>
   </div>
 <% end %>
 

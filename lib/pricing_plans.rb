@@ -195,8 +195,20 @@ module PricingPlans
       :blocked,
       :per,
       :severity,
+      :severity_level,
       :message,
       :overage,
+      :configured,
+      :unlimited,
+      :remaining,
+      :after_limit,
+      :attention?,
+      :next_creation_blocked?,
+      :warn_thresholds,
+      :next_warn_percent,
+      :period_start,
+      :period_end,
+      :period_seconds_remaining,
       keyword_init: true
     )
 
@@ -214,23 +226,89 @@ module PricingPlans
             blocked: false,
             per: false,
             severity: :ok,
+            severity_level: 0,
             message: nil,
-            overage: 0
+            overage: 0,
+            configured: false,
+            unlimited: false,
+            remaining: nil,
+            after_limit: nil,
+            attention?: false,
+            next_creation_blocked?: false,
+            warn_thresholds: [],
+            next_warn_percent: nil,
+            period_start: nil,
+            period_end: nil,
+            period_seconds_remaining: nil
           )
         else
           sev = severity_for(billable, limit_key)
+          allowed = st[:limit_amount]
+          current = st[:current_usage].to_i
+          unlimited = (allowed == :unlimited)
+          remaining = if allowed.is_a?(Numeric)
+            [allowed.to_i - current, 0].max
+          else
+            nil
+          end
+          warn_thresholds = LimitChecker.warning_thresholds(billable, limit_key)
+          percent = st[:percent_used].to_f
+          next_warn = begin
+            thresholds = warn_thresholds.map { |t| t.to_f * 100.0 }.uniq.sort
+            thresholds.find { |t| t > percent }
+          end
+          period_start = nil
+          period_end = nil
+          period_seconds_remaining = nil
+          if st[:per]
+            begin
+              period_start, period_end = PeriodCalculator.window_for(billable, limit_key)
+              if period_end
+                period_seconds_remaining = [0, (period_end - Time.current).to_i].max
+              end
+            rescue StandardError
+              # ignore period window resolution errors in status
+            end
+          end
+          next_creation_blocked = case sev
+          when :blocked
+            true
+          when :at_limit
+            st[:after_limit] == :block_usage
+          else
+            false
+          end
           StatusItem.new(
             key: limit_key,
-            current: st[:current_usage],
-            allowed: st[:limit_amount],
+            current: current,
+            allowed: allowed,
             percent_used: st[:percent_used],
             grace_active: st[:grace_active],
             grace_ends_at: st[:grace_ends_at],
             blocked: st[:blocked],
             per: st[:per],
             severity: sev,
+            severity_level: case sev
+                             when :ok then 0
+                             when :warning then 1
+                             when :at_limit then 2
+                             when :grace then 3
+                             when :blocked then 4
+                             else 0
+                             end,
             message: (sev == :ok ? nil : message_for(billable, limit_key)),
-            overage: overage_for(billable, limit_key)
+            overage: overage_for(billable, limit_key),
+            configured: true,
+            unlimited: unlimited,
+            remaining: remaining,
+            after_limit: st[:after_limit],
+            attention?: sev != :ok,
+            next_creation_blocked?: next_creation_blocked,
+            warn_thresholds: warn_thresholds,
+            next_warn_percent: next_warn,
+            period_start: period_start,
+            period_end: period_end,
+            period_seconds_remaining: period_seconds_remaining
           )
         end
       end
@@ -247,27 +325,27 @@ module PricingPlans
         lim = st[:limit_amount]
         cur = st[:current_usage]
 
-        if st[:blocked]
-          return :blocked if lim != :unlimited && lim.to_i > 0 && cur.to_i >= lim.to_i
-        end
+        # Grace has priority over other non-blocked statuses
         return :grace if st[:grace_active]
 
-        # Distinguish "at limit" from generic warning when capacity is exactly full
-        if lim != :unlimited && lim.to_i > 0 && cur.to_i == lim.to_i
-          :at_limit
-        else
-          percent = st[:percent_used].to_f
-          warn_thresholds = LimitChecker.warning_thresholds(billable, key)
-          highest_warn = warn_thresholds.max.to_f * 100.0
-          (percent >= highest_warn && highest_warn.positive?) ? :warning : :ok
+        # Numeric limit semantics
+        if lim != :unlimited && lim.to_i > 0
+          return :blocked if cur.to_i > lim.to_i
+          return :at_limit if cur.to_i == lim.to_i
         end
+
+        # Otherwise, warning based on thresholds
+        percent = st[:percent_used].to_f
+        warn_thresholds = LimitChecker.warning_thresholds(billable, key)
+        highest_warn = warn_thresholds.max.to_f * 100.0
+        (percent >= highest_warn && highest_warn.positive?) ? :warning : :ok
       end
       return :at_limit if per_key.include?(:at_limit)
       per_key.include?(:warning) ? :warning : :ok
     end
 
     # Global overview for multiple keys for easy banner building.
-    # Returns: { severity:, message:, attention?:, keys:, cta_text:, cta_url: }
+    # Returns: { severity:, severity_level:, message:, attention?:, keys:, cta_text:, cta_url: }
     def overview_for(billable, *limit_keys)
       keys = limit_keys.flatten
       sev = highest_severity_for(billable, *keys)
@@ -275,6 +353,7 @@ module PricingPlans
       cta = cta_for(billable)
       {
         severity: sev,
+        severity_level: (sev == :ok ? 0 : (sev == :warning ? 1 : (sev == :at_limit ? 2 : (sev == :grace ? 3 : 4)))) ,
         message: msg,
         attention?: sev != :ok,
         keys: keys,
@@ -338,9 +417,9 @@ module PricingPlans
         "Over the #{key.to_s.humanize.downcase} limit#{deadline}."
       when :at_limit
         if lim.is_a?(Numeric)
-          "You are at #{cur}/#{lim} #{key.to_s.humanize.downcase}. You cannot create more on this plan. Upgrade to unlock more."
+          "You are at #{cur}/#{lim} #{key.to_s.humanize.downcase}. Upgrade to unlock more."
         else
-          "You are at the configured limit for #{key.to_s.humanize.downcase}. You cannot create more on this plan. Upgrade to unlock more."
+          "You are at the configured limit for #{key.to_s.humanize.downcase}. Upgrade to unlock more."
         end
       else # :warning
         if lim.is_a?(Numeric)

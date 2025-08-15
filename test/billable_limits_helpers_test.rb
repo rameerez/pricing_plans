@@ -59,6 +59,7 @@ class BillableLimitsHelpersTest < ActiveSupport::TestCase
     items = @org.limits(:projects, :custom_models)
     items.each do |it|
       assert_includes [:ok, :warning, :at_limit, :grace, :blocked], it.severity
+      assert_includes [0,1,2,3,4], it.severity_level
       # message may be nil when :ok
       if it.severity == :ok
         assert_nil it.message
@@ -67,6 +68,21 @@ class BillableLimitsHelpersTest < ActiveSupport::TestCase
       end
       assert_kind_of Integer, it.overage
       assert it.overage >= 0
+      assert_includes [true,false], it.configured
+      assert_includes [true,false], it.unlimited
+      if it.allowed.is_a?(Numeric)
+        assert_kind_of Integer, it.remaining
+        assert it.remaining >= 0
+      end
+      assert_includes [true,false], it.attention?
+      assert_includes [true,false], it.next_creation_blocked?
+      assert_kind_of Array, it.warn_thresholds
+      assert (it.next_warn_percent.nil? || it.next_warn_percent.is_a?(Numeric))
+      if it.per
+        assert it.period_start.nil? || it.period_start.is_a?(Time)
+        assert it.period_end.nil? || it.period_end.is_a?(Time)
+        assert (it.period_seconds_remaining.nil? || it.period_seconds_remaining.is_a?(Integer))
+      end
     end
 
     # Push projects to at least warning/grace territory
@@ -74,11 +90,13 @@ class BillableLimitsHelpersTest < ActiveSupport::TestCase
     _ = PricingPlans::ControllerGuards.require_plan_limit!(:projects, billable: @org)
     item = @org.limits(:projects).find { |x| x.key == :projects }
     assert_includes [:warning, :at_limit, :grace, :blocked], item.severity
+    assert_includes [0,1,2,3,4], item.severity_level
   end
 
   def test_limits_overview_basic
     ov = @org.limits_overview(:projects, :custom_models)
     assert_includes [:ok, :warning, :at_limit, :grace, :blocked], ov[:severity]
+    assert_includes [0,1,2,3,4], ov[:severity_level]
     assert_equal [:projects, :custom_models].sort, ov[:keys].sort
     assert_includes [true, false], ov[:attention?]
     assert ov.key?(:message)
@@ -135,5 +153,43 @@ class BillableLimitsHelpersTest < ActiveSupport::TestCase
     st = @org.limit(:projects)
     assert_includes [true, false], st.grace_active
     assert_includes [true, false], st.blocked
+  end
+
+  def test_next_creation_blocked_semantics
+    # For :block_usage at limit, next_creation_blocked? should be true
+    PricingPlans.reset_configuration!
+    PricingPlans.configure do |config|
+      config.default_plan = :free
+      config.plan :free do
+        limits :products, to: 1, after_limit: :block_usage
+      end
+    end
+    org = create_organization
+    Project.send(:limited_by_pricing_plans, :projects, billable: :organization)
+    PricingPlans::LimitChecker.stub(:current_usage_for, 1) do
+      PricingPlans::LimitChecker.stub(:plan_limit_percent_used, 100.0) do
+        item = org.limits(:products).first
+        assert_equal :at_limit, item.severity
+        assert_equal true, item.next_creation_blocked?
+      end
+    end
+  end
+
+  def test_period_window_fields_for_per_period
+    PricingPlans.reset_configuration!
+    PricingPlans.configure do |config|
+      config.default_plan = :pro
+      config.plan :pro do
+        limits :custom_models, to: 2, per: :calendar_month
+      end
+    end
+    org = create_organization
+    CustomModel.send(:limited_by_pricing_plans, :custom_models, billable: :organization)
+    item = org.limits(:custom_models).first
+    assert_equal true, item.per
+    assert item.period_start.is_a?(Time)
+    assert item.period_end.is_a?(Time)
+    assert item.period_seconds_remaining.is_a?(Integer)
+    assert item.period_seconds_remaining >= 0
   end
 end
