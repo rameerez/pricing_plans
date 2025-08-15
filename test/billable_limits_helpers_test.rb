@@ -28,17 +28,21 @@ class BillableLimitsHelpersTest < ActiveSupport::TestCase
     assert_equal :projects, st.key
   end
 
-  def test_limits_returns_hash_of_statuses
+  def test_limits_returns_array_of_status_items
     sts = @org.limits(:projects, :custom_models)
-    assert sts.is_a?(Hash)
-    assert sts.key?(:projects)
-    assert sts.key?(:custom_models)
+    assert sts.is_a?(Array)
+    assert_equal [:projects, :custom_models].sort, sts.map(&:key).sort
+    item = sts.first
+    assert_respond_to item, :severity
+    assert_respond_to item, :message
+    assert_respond_to item, :overage
   end
 
   def test_limits_defaults_to_all_configured
     sts = @org.limits
-    assert sts.key?(:projects)
-    assert sts.key?(:custom_models)
+    keys = sts.map(&:key)
+    assert_includes keys, :projects
+    assert_includes keys, :custom_models
   end
 
   def test_limits_summary_returns_structs
@@ -48,6 +52,38 @@ class BillableLimitsHelpersTest < ActiveSupport::TestCase
     assert_respond_to item, :key
     assert_respond_to item, :current
     assert_respond_to item, :allowed
+  end
+
+  def test_limits_items_include_severity_message_overage
+    # Initially OK state
+    items = @org.limits(:projects, :custom_models)
+    items.each do |it|
+      assert_includes [:ok, :warning, :at_limit, :grace, :blocked], it.severity
+      # message may be nil when :ok
+      if it.severity == :ok
+        assert_nil it.message
+      else
+        assert it.message.nil? || it.message.is_a?(String)
+      end
+      assert_kind_of Integer, it.overage
+      assert it.overage >= 0
+    end
+
+    # Push projects to at least warning/grace territory
+    3.times { |i| @org.projects.create!(name: "P#{i}") }
+    _ = PricingPlans::ControllerGuards.require_plan_limit!(:projects, billable: @org)
+    item = @org.limits(:projects).find { |x| x.key == :projects }
+    assert_includes [:warning, :at_limit, :grace, :blocked], item.severity
+  end
+
+  def test_limits_overview_basic
+    ov = @org.limits_overview(:projects, :custom_models)
+    assert_includes [:ok, :warning, :at_limit, :grace, :blocked], ov[:severity]
+    assert_equal [:projects, :custom_models].sort, ov[:keys].sort
+    assert_includes [true, false], ov[:attention?]
+    assert ov.key?(:message)
+    assert ov.key?(:cta_text)
+    assert ov.key?(:cta_url)
   end
 
   def test_limits_severity_and_message

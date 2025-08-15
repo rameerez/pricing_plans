@@ -183,14 +183,42 @@ module PricingPlans
       keys.index_with { |k| limit_status(k, billable: billable) }
     end
 
-    StatusItem = Struct.new(:key, :current, :allowed, :percent_used, :grace_active, :grace_ends_at, :blocked, :per, keyword_init: true)
+    # Unified, pure-data status item for a single limit key
+    # Includes raw usage, gating flags, and view-friendly severity/message
+    StatusItem = Struct.new(
+      :key,
+      :current,
+      :allowed,
+      :percent_used,
+      :grace_active,
+      :grace_ends_at,
+      :blocked,
+      :per,
+      :severity,
+      :message,
+      :overage,
+      keyword_init: true
+    )
 
     def status(billable, limits: [])
       Array(limits).map do |limit_key|
         st = limit_status(limit_key, billable: billable)
-        unless st[:configured]
-          StatusItem.new(key: limit_key, current: 0, allowed: nil, percent_used: 0.0, grace_active: false, grace_ends_at: nil, blocked: false, per: false)
+        if !st[:configured]
+          StatusItem.new(
+            key: limit_key,
+            current: 0,
+            allowed: nil,
+            percent_used: 0.0,
+            grace_active: false,
+            grace_ends_at: nil,
+            blocked: false,
+            per: false,
+            severity: :ok,
+            message: nil,
+            overage: 0
+          )
         else
+          sev = severity_for(billable, limit_key)
           StatusItem.new(
             key: limit_key,
             current: st[:current_usage],
@@ -199,7 +227,10 @@ module PricingPlans
             grace_active: st[:grace_active],
             grace_ends_at: st[:grace_ends_at],
             blocked: st[:blocked],
-            per: st[:per]
+            per: st[:per],
+            severity: sev,
+            message: (sev == :ok ? nil : message_for(billable, limit_key)),
+            overage: overage_for(billable, limit_key)
           )
         end
       end
@@ -233,6 +264,23 @@ module PricingPlans
       end
       return :at_limit if per_key.include?(:at_limit)
       per_key.include?(:warning) ? :warning : :ok
+    end
+
+    # Global overview for multiple keys for easy banner building.
+    # Returns: { severity:, message:, attention?:, keys:, cta_text:, cta_url: }
+    def overview_for(billable, *limit_keys)
+      keys = limit_keys.flatten
+      sev = highest_severity_for(billable, *keys)
+      msg = combine_messages_for(billable, *keys)
+      cta = cta_for(billable)
+      {
+        severity: sev,
+        message: msg,
+        attention?: sev != :ok,
+        keys: keys,
+        cta_text: cta[:text],
+        cta_url: cta[:url]
+      }
     end
 
     # Combine human messages for a set of limits into one string

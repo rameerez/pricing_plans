@@ -203,12 +203,11 @@ module PricingPlans
 
     def limits(*limit_keys)
       keys = normalize_limit_keys(limit_keys)
-      PricingPlans.limit_statuses(*keys, billable: self)
+      PricingPlans.status(self, limits: keys)
     end
 
     def limits_summary(*limit_keys)
-      keys = normalize_limit_keys(limit_keys)
-      PricingPlans.status(self, limits: keys)
+      limits(*limit_keys)
     end
 
     def limits_severity(*limit_keys)
@@ -219,6 +218,12 @@ module PricingPlans
     def limits_message(*limit_keys)
       keys = normalize_limit_keys(limit_keys)
       PricingPlans.combine_messages_for(self, *keys)
+    end
+
+    # Global overview for banner building
+    def limits_overview(*limit_keys)
+      keys = normalize_limit_keys(limit_keys)
+      PricingPlans.overview_for(self, *keys)
     end
 
     # View-friendly, English-like convenience helpers (pure data decisions)

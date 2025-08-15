@@ -844,7 +844,7 @@ We provide a small, consolidated set of data helpers that make it dead simple to
   - Global helpers: `PricingPlans.highlighted_plan`, `PricingPlans.highlighted_plan_key`, `PricingPlans.popular_plan`, `PricingPlans.popular_plan_key`
 
 - Usage/status for settings dashboards:
-  - `org.limit(:projects)` → one status struct for a limit (responds to `key`, `current`, `allowed`, `percent_used`, `grace_active`, `grace_ends_at`, `blocked`, `per`)
+  - `org.limit(:projects)` → one status item for a limit (responds to `key`, `current`, `allowed`, `percent_used`, `grace_active`, `grace_ends_at`, `blocked`, `per`, `severity`, `message`, `overage`)
     - Example:
       ```erb
       <% s = current_organization.limit(:projects) %>
@@ -855,14 +855,15 @@ We provide a small, consolidated set of data helpers that make it dead simple to
         <div class="notice notice--warning">Over limit — grace active until <%= s.grace_ends_at %></div>
       <% end %>
       ```
-  - `org.limits(:projects, :custom_models)` → Hash of statuses (with no args, defaults to all limits on the current plan)
-  - `org.limits_summary(:projects, :custom_models)` → Array of simple structs (key/current/allowed/percent_used/grace/blocked)
-  - `org.limits_severity(:projects, :custom_models)` → `:ok | :warning | :grace | :blocked`
-  - `org.limits_message(:projects, :custom_models)` → combined human message string (or `nil`)
+  - `org.limits(:projects, :custom_models)` → Array of status items (with no args, defaults to all limits on the current plan). Each item includes `severity`, optional `message`, and `overage` for UX.
+  - `org.limits_summary(:projects, :custom_models)` → Alias of `org.limits`.
+  - `org.limits_overview(:projects, :custom_models)` → Combined banner data: `{ severity:, message:, attention?:, keys:, cta_text:, cta_url: }`.
+  - `org.limits_severity(:projects, :custom_models)` → `:ok | :warning | :at_limit | :grace | :blocked`.
+  - `org.limits_message(:projects, :custom_models)` → Combined human message string (or `nil`).
 
   - Pure-data, English-like helpers for views (no UI components):
     - Single-limit intents on the billable:
-      - `org.limit_severity(:projects)` → `:ok | :warning | :grace | :blocked`
+      - `org.limit_severity(:projects)` → `:ok | :warning | :at_limit | :grace | :blocked`
       - `org.limit_message(:projects)` → `String | nil`
       - `org.limit_overage(:projects)` → `Integer` (0 if within)
       - `org.attention_required_for_limit?(:projects)` → `true | false` (alias for any of warning/grace/blocked)
@@ -874,6 +875,9 @@ We provide a small, consolidated set of data helpers that make it dead simple to
     - One-call alert view-model (pure data, no HTML):
       - `org.limit_alert(:products)` or `PricingPlans.alert_for(org, :products)` returns:
         `{ visible?: true/false, severity:, title:, message:, overage:, cta_text:, cta_url: }`
+    - One-call banner overview across keys (pure data):
+      - `org.limits_overview(:products, :licenses)` returns:
+        `{ severity:, message:, attention?:, keys:, cta_text:, cta_url: }`
 
 #### Simple ERB examples
 
@@ -1029,13 +1033,15 @@ Notes:
 
 ```erb
 <% org = current_organization %>
-<% org.limits_summary(:projects, :custom_models).each do |s| %>
-  <div><%= s.key.to_s.humanize %>: <%= s.current %> / <%= s.allowed %> (<%= s.percent_used.round(1) %>%)</div>
+<% org.limits(:projects, :custom_models).each do |s| %>
+  <div><%= s.key.to_s.humanize %>: <%= s.current %> / <%= s.allowed %> (<%= s.percent_used.round(1) %>%)
+    <% if s.severity != :ok %> — <%= s.severity %><%= ": #{s.message}" if s.message.present? %><% end %>
+  </div>
 <% end %>
 
-<% sev = org.limits_severity(:projects, :custom_models) %>
-<% if sev != :ok %>
-  <div class="notice notice--<%= sev %>"><%= org.limits_message(:projects, :custom_models) %></div>
+<% ov = org.limits_overview(:projects, :custom_models) %>
+<% if ov[:attention?] %>
+  <div class="notice notice--<%= ov[:severity] %>"><%= ov[:message] %></div>
 <% end %>
 ```
 
