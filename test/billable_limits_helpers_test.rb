@@ -97,11 +97,29 @@ class BillableLimitsHelpersTest < ActiveSupport::TestCase
     ov = @org.limits_overview(:projects, :custom_models)
     assert_includes [:ok, :warning, :at_limit, :grace, :blocked], ov[:severity]
     assert_includes [0,1,2,3,4], ov[:severity_level]
+    assert_kind_of String, ov[:title]
     assert_equal [:projects, :custom_models].sort, ov[:keys].sort
     assert_includes [true, false], ov[:attention?]
     assert ov.key?(:message)
     assert ov.key?(:cta_text)
     assert ov.key?(:cta_url)
+  end
+
+  def test_limits_overall_helpers_on_array
+    items = @org.limits(:projects, :custom_models)
+    assert_respond_to items, :overall_severity
+    assert_respond_to items, :overall_severity_level
+    assert_respond_to items, :overall_title
+    assert_respond_to items, :overall_message
+    assert_respond_to items, :overall_attention?
+    assert_respond_to items, :overall_keys
+    assert_respond_to items, :overall_highest_keys
+    assert_respond_to items, :overall_highest_limits
+    assert_respond_to items, :overall_keys_sentence
+    assert_respond_to items, :overall_noun
+    assert_respond_to items, :overall_has_have
+    assert_respond_to items, :overall_cta_text
+    assert_respond_to items, :overall_cta_url
   end
 
   def test_limits_severity_and_message
@@ -191,5 +209,83 @@ class BillableLimitsHelpersTest < ActiveSupport::TestCase
     assert item.period_end.is_a?(Time)
     assert item.period_seconds_remaining.is_a?(Integer)
     assert item.period_seconds_remaining >= 0
+  end
+
+  def test_status_item_human_key
+    item = @org.limit(:projects)
+    assert_equal "projects", item.human_key
+  end
+
+  def test_overview_extras_and_grammar_single_highest
+    # Make custom_models at limit (1/1)
+    CustomModel.create!(organization: @org, name: "C1")
+    ov = @org.limits_overview(:projects, :custom_models)
+    assert_equal :at_limit, ov[:severity]
+    assert_equal [ :custom_models ], ov[:highest_keys]
+    assert_equal 1, ov[:highest_limits].size
+    assert_equal :custom_models, ov[:highest_limits].first.key
+    assert_includes ["plan limit", "plan limits"], ov[:noun]
+    assert_includes ["has", "have"], ov[:has_have]
+    # keys_sentence should mention "custom models"
+    assert_match(/custom models/, ov[:keys_sentence])
+    # Message should be short and humanized
+    assert_kind_of String, ov[:message]
+    refute_empty ov[:message]
+  end
+
+  def test_message_for_phrasing_per_severity
+    # blocked
+    PricingPlans.reset_configuration!
+    PricingPlans.configure do |config|
+      config.default_plan = :free
+      config.plan :free do
+        limits :products, to: 1, after_limit: :block_usage
+      end
+    end
+    org = create_organization
+    Project.send(:limited_by_pricing_plans, :projects, billable: :organization)
+    PricingPlans::LimitChecker.stub(:current_usage_for, 2) do
+      msg = PricingPlans.message_for(org, :products)
+      assert_includes msg, "gone over"
+      assert_includes msg, "Please upgrade"
+    end
+
+    # at_limit
+    PricingPlans::LimitChecker.stub(:current_usage_for, 1) do
+      PricingPlans::LimitChecker.stub(:plan_limit_percent_used, 100.0) do
+        msg = PricingPlans.message_for(org, :products)
+        assert_includes msg, "Upgrade your plan to unlock more"
+      end
+    end
+
+    # warning
+    PricingPlans.reset_configuration!
+    PricingPlans.configure do |config|
+      config.default_plan = :pro
+      config.plan :pro do
+        limits :projects, to: 10, warn_at: [0.5]
+      end
+    end
+    org2 = create_organization
+    Project.send(:limited_by_pricing_plans, :projects, billable: :organization)
+    PricingPlans::LimitChecker.stub(:plan_limit_percent_used, 60.0) do
+      msg = PricingPlans.message_for(org2, :projects)
+      assert_includes msg, "You’re getting close"
+    end
+
+    # grace
+    PricingPlans.reset_configuration!
+    PricingPlans.configure do |config|
+      config.default_plan = :pro
+      config.plan :pro do
+        limits :projects, to: 1, after_limit: :grace_then_block, grace: 7.days
+      end
+    end
+    org3 = create_organization
+    Project.send(:limited_by_pricing_plans, :projects, billable: :organization)
+    PricingPlans::GraceManager.mark_exceeded!(org3, :projects)
+    msg = PricingPlans.message_for(org3, :projects)
+    assert_includes msg, "You’re currently over your limit"
+    assert_includes msg, "avoid any interruptions"
   end
 end

@@ -187,6 +187,7 @@ module PricingPlans
     # Includes raw usage, gating flags, and view-friendly severity/message
     StatusItem = Struct.new(
       :key,
+      :human_key,
       :current,
       :allowed,
       :percent_used,
@@ -213,11 +214,12 @@ module PricingPlans
     )
 
     def status(billable, limits: [])
-      Array(limits).map do |limit_key|
+      items = Array(limits).map do |limit_key|
         st = limit_status(limit_key, billable: billable)
         if !st[:configured]
           StatusItem.new(
             key: limit_key,
+            human_key: limit_key.to_s.humanize.downcase,
             current: 0,
             allowed: nil,
             percent_used: 0.0,
@@ -280,6 +282,7 @@ module PricingPlans
           end
           StatusItem.new(
             key: limit_key,
+            human_key: limit_key.to_s.humanize.downcase,
             current: current,
             allowed: allowed,
             percent_used: st[:percent_used],
@@ -312,6 +315,48 @@ module PricingPlans
           )
         end
       end
+
+      # Compute and attach overall helpers directly on the returned array
+      keys = items.map(&:key)
+      sev = highest_severity_for(billable, *keys)
+      title = summary_title_for(sev)
+      msg = summary_message_for(billable, *keys, severity: sev)
+      highest_keys = keys.select { |k| severity_for(billable, k) == sev }
+      highest_limits = items.select { |it| highest_keys.include?(it.key) }
+      human_keys = highest_keys.map { |k| k.to_s.humanize.downcase }
+      keys_sentence = if human_keys.respond_to?(:to_sentence)
+        human_keys.to_sentence
+      else
+        human_keys.length <= 2 ? human_keys.join(" and ") : (human_keys[0..-2].join(", ") + " and " + human_keys[-1])
+      end
+      noun = highest_keys.size == 1 ? "plan limit" : "plan limits"
+      has_have = highest_keys.size == 1 ? "has" : "have"
+      cta = cta_for_upgrade(billable)
+
+      sev_level = case sev
+                  when :ok then 0
+                  when :warning then 1
+                  when :at_limit then 2
+                  when :grace then 3
+                  when :blocked then 4
+                  else 0
+                  end
+
+      items.define_singleton_method(:overall_severity) { sev }
+      items.define_singleton_method(:overall_severity_level) { sev_level }
+      items.define_singleton_method(:overall_title) { title }
+      items.define_singleton_method(:overall_message) { msg }
+      items.define_singleton_method(:overall_attention?) { sev != :ok }
+      items.define_singleton_method(:overall_keys) { keys }
+      items.define_singleton_method(:overall_highest_keys) { highest_keys }
+      items.define_singleton_method(:overall_highest_limits) { highest_limits }
+      items.define_singleton_method(:overall_keys_sentence) { keys_sentence }
+      items.define_singleton_method(:overall_noun) { noun }
+      items.define_singleton_method(:overall_has_have) { has_have }
+      items.define_singleton_method(:overall_cta_text) { cta[:text] }
+      items.define_singleton_method(:overall_cta_url) { cta[:url] }
+
+      items
     end
 
     # Aggregates across multiple limits for global banners/messages
@@ -345,21 +390,73 @@ module PricingPlans
     end
 
     # Global overview for multiple keys for easy banner building.
-    # Returns: { severity:, severity_level:, message:, attention?:, keys:, cta_text:, cta_url: }
+    # Returns: { severity:, severity_level:, title:, message:, attention?:, keys:, highest_keys:, highest_limits:, keys_sentence:, noun:, has_have:, cta_text:, cta_url: }
     def overview_for(billable, *limit_keys)
       keys = limit_keys.flatten
-      sev = highest_severity_for(billable, *keys)
-      msg = combine_messages_for(billable, *keys)
-      cta = cta_for(billable)
+      items = status(billable, limits: keys)
       {
-        severity: sev,
-        severity_level: (sev == :ok ? 0 : (sev == :warning ? 1 : (sev == :at_limit ? 2 : (sev == :grace ? 3 : 4)))) ,
-        message: msg,
-        attention?: sev != :ok,
-        keys: keys,
-        cta_text: cta[:text],
-        cta_url: cta[:url]
+        severity: items.overall_severity,
+        severity_level: items.overall_severity_level,
+        title: items.overall_title,
+        message: items.overall_message,
+        attention?: items.overall_attention?,
+        keys: items.overall_keys,
+        highest_keys: items.overall_highest_keys,
+        highest_limits: items.overall_highest_limits,
+        keys_sentence: items.overall_keys_sentence,
+        noun: items.overall_noun,
+        has_have: items.overall_has_have,
+        cta_text: items.overall_cta_text,
+        cta_url: items.overall_cta_url
       }
+    end
+
+    # Human title for overall banner based on severity
+    def summary_title_for(severity)
+      case severity
+      when :blocked then "Plan limit reached"
+      when :grace   then "Over limit — grace active"
+      when :at_limit then "At your plan limit"
+      when :warning then "Approaching plan limit"
+      else "All good"
+      end
+    end
+
+    # Short, humanized summary for multiple keys
+    # Builds copy using only the keys at the highest severity
+    def summary_message_for(billable, *limit_keys, severity: nil)
+      keys = limit_keys.flatten
+      return nil if keys.empty?
+      sev = severity || highest_severity_for(billable, *keys)
+      return nil if sev == :ok
+
+      affected = keys.select { |k| severity_for(billable, k) == sev }
+      human_keys = affected.map { |k| k.to_s.humanize.downcase }
+      keys_list = if human_keys.respond_to?(:to_sentence)
+        human_keys.to_sentence
+      else
+        # Simple fallback: "a, b and c"
+        if human_keys.length <= 2
+          human_keys.join(" and ")
+        else
+          human_keys[0..-2].join(", ") + " and " + human_keys[-1]
+        end
+      end
+      noun = affected.size == 1 ? "plan limit" : "plan limits"
+
+      case sev
+      when :blocked
+        "Your #{noun} for #{keys_list} #{affected.size == 1 ? "has" : "have"} been exceeded. Please upgrade to continue."
+      when :grace
+        # If any grace ends_at is present, show the earliest
+        grace_end = keys.map { |k| GraceManager.grace_ends_at(billable, k) }.compact.min
+        suffix = grace_end ? ", grace active until #{grace_end}" : ""
+        "You are over your #{noun} for #{keys_list}#{suffix}. Please upgrade to avoid service disruption."
+      when :at_limit
+        "You have reached your #{noun} for #{keys_list}."
+      else # :warning
+        "You are approaching your #{noun} for #{keys_list}."
+      end
     end
 
     # Combine human messages for a set of limits into one string
@@ -408,27 +505,37 @@ module PricingPlans
         end
       end
 
+      noun = PricingPlans.noun_for(key) rescue "limit"
+
       # Defaults
       case sev
       when :blocked
-        "Cannot create more #{key.to_s.humanize.downcase} on your current plan."
+        if lim.is_a?(Numeric)
+          "You've gone over your #{noun} for #{key.to_s.humanize.downcase} (#{cur}/#{lim}). Please upgrade your plan."
+        else
+          "You've gone over your #{noun} for #{key.to_s.humanize.downcase}. Please upgrade your plan."
+        end
       when :grace
-        deadline = grace_ends ? ", grace active until #{grace_ends}" : ""
-        "Over the #{key.to_s.humanize.downcase} limit#{deadline}."
+        deadline = grace_ends ? ", and your grace period ends #{grace_ends.strftime('%B %d at %I:%M%p')}" : ""
+        if lim.is_a?(Numeric)
+          "Heads up! You’re currently over your #{noun} for #{key.to_s.humanize.downcase} (#{cur}/#{lim})#{deadline}. Please upgrade soon to avoid any interruptions."
+        else
+          "Heads up! You’re currently over your #{noun} for #{key.to_s.humanize.downcase}#{deadline}. Please upgrade soon to avoid any interruptions."
+        end
       when :at_limit
         if lim.is_a?(Numeric)
-          "You are at #{cur}/#{lim} #{key.to_s.humanize.downcase}. Upgrade to unlock more."
+          "You’ve reached your #{noun} for #{key.to_s.humanize.downcase} (#{cur}/#{lim}). Upgrade your plan to unlock more."
         else
-          "You are at the configured limit for #{key.to_s.humanize.downcase}. Upgrade to unlock more."
+          "You’re at the maximum allowed for #{key.to_s.humanize.downcase}. Want more? Consider upgrading your plan."
         end
       else # :warning
         if lim.is_a?(Numeric)
-          "You have used #{cur}/#{lim} #{key.to_s.humanize.downcase}."
+          "You’re getting close to your #{noun} for #{key.to_s.humanize.downcase} (#{cur}/#{lim}). Keep an eye on your usage, or upgrade your plan now to stay ahead."
         else
-          "You are approaching your #{key.to_s.humanize.downcase} limit."
+          "You’re getting close to your #{noun} for #{key.to_s.humanize.downcase}. Keep an eye on your usage, or upgrade your plan now to stay ahead."
         end
       end
-    end
+      end
 
     # Compute how much over the limit the billable is for a key (0 if within)
     def overage_for(billable, limit_key)
@@ -462,12 +569,20 @@ module PricingPlans
     end
 
     # Recommend CTA data (pure data, no UI): { text:, url: }
-    # Resolves plan-level CTA first, then global defaults; returns nil fields when unknown
+    # For limit banners, prefer global upgrade defaults to avoid confusing “Current Plan” CTAs
+    def cta_for_upgrade(billable)
+      cfg = configuration
+      url = cfg.default_cta_url
+      url ||= (cfg.redirect_on_blocked_limit.is_a?(String) ? cfg.redirect_on_blocked_limit : nil)
+      text = cfg.default_cta_text.presence || "View Plans"
+      { text: text, url: url }
+    end
+
+    # Recommend CTA data used by other contexts (pricing plan cards etc.)
     def cta_for(billable)
       plan = PlanResolver.effective_plan_for(billable)
       cfg = configuration
       url = plan&.cta_url(billable: billable) || cfg.default_cta_url
-      # Fallback: if controller redirect target is a String path/URL, use it as a sensible default CTA
       if url.nil? && cfg.redirect_on_blocked_limit.is_a?(String)
         url = cfg.redirect_on_blocked_limit
       end
@@ -483,7 +598,7 @@ module PricingPlans
 
       msg = message_for(billable, limit_key)
       over = overage_for(billable, limit_key)
-      cta  = cta_for(billable)
+      cta  = cta_for_upgrade(billable)
       titles = {
         warning: "Approaching Limit",
         at_limit: "You've reached your #{limit_key.to_s.humanize.downcase} limit",

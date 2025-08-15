@@ -844,7 +844,14 @@ We provide a small, consolidated set of data helpers that make it dead simple to
   - Global helpers: `PricingPlans.highlighted_plan`, `PricingPlans.highlighted_plan_key`, `PricingPlans.popular_plan`, `PricingPlans.popular_plan_key`
 
 - Usage/status for settings dashboards:
-  - `org.limit(:projects)` → one status item for a limit (responds to `key`, `current`, `allowed`, `percent_used`, `grace_active`, `grace_ends_at`, `blocked`, `per`, `severity`, `severity_level`, `message`, `overage`, `configured`, `unlimited`, `remaining`, `after_limit`, `attention?`, `next_creation_blocked?`, `warn_thresholds`, `next_warn_percent`, `period_start`, `period_end`, `period_seconds_remaining`)
+  - `org.limit(:projects)` → one status item for a limit. Fields:
+    - key, human_key, current, allowed, percent_used
+    - grace_active, grace_ends_at, blocked, per
+    - severity, severity_level (0..4), attention?
+    - message (nil unless non-:ok), overage, remaining, unlimited, after_limit
+    - next_creation_blocked?
+    - warn_thresholds, next_warn_percent
+    - period_start, period_end, period_seconds_remaining (per-period only)
     - Example:
       ```erb
       <% s = current_organization.limit(:projects) %>
@@ -855,9 +862,17 @@ We provide a small, consolidated set of data helpers that make it dead simple to
         <div class="notice notice--warning">Over limit — grace active until <%= s.grace_ends_at %></div>
       <% end %>
       ```
+    - Note: prefer `org.limit(:key)` when you need a single item. It always returns a single `StatusItem`.
   - `org.limits(:projects, :custom_models)` → Array of status items (with no args, defaults to all limits on the current plan). Each item includes severity, severity_level, message, overage, remaining, next_creation_blocked?, warn info, and period window (for per-period limits).
+    - Note: `org.limits` always returns an Array, even when you pass a single key (e.g., `org.limits(:projects)`). Use `org.limit(:projects)` if you need just one item.
+    - The returned Array also exposes precomputed overall helpers:
+      - `overall_severity`, `overall_severity_level`, `overall_attention?`
+      - `overall_title`, `overall_message`
+      - `overall_keys`, `overall_highest_keys`, `overall_highest_limits`
+      - `overall_keys_sentence`, `overall_noun`, `overall_has_have`
+      - `overall_cta_text`, `overall_cta_url`
   - `org.limits_summary(:projects, :custom_models)` → Alias of `org.limits`.
-  - `org.limits_overview(:projects, :custom_models)` → Combined banner data: `{ severity:, severity_level:, message:, attention?:, keys:, cta_text:, cta_url: }`.
+  - `org.limits_overview(:projects, :custom_models)` → Thin wrapper around `org.limits`’ overall helpers, convenient for JSON: `{ severity:, severity_level:, title:, message:, attention?:, keys:, highest_keys:, highest_limits:, keys_sentence:, noun:, has_have:, cta_text:, cta_url: }`.
   - `org.limits_severity(:projects, :custom_models)` → `:ok | :warning | :at_limit | :grace | :blocked`.
   - `org.limits_message(:projects, :custom_models)` → Combined human message string (or `nil`).
 
@@ -877,7 +892,7 @@ We provide a small, consolidated set of data helpers that make it dead simple to
         `{ visible?: true/false, severity:, title:, message:, overage:, cta_text:, cta_url: }`
     - One-call banner overview across keys (pure data):
       - `org.limits_overview(:products, :licenses)` returns:
-        `{ severity:, message:, attention?:, keys:, cta_text:, cta_url: }`
+        `{ severity:, severity_level:, title:, message:, attention?:, keys:, highest_keys:, highest_limits:, keys_sentence:, noun:, has_have:, cta_text:, cta_url: }`
 
 #### Simple ERB examples
 
