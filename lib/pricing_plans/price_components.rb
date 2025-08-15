@@ -14,5 +14,3 @@ module PricingPlans
     keyword_init: true
   )
 end
-
-

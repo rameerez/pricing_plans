@@ -31,6 +31,7 @@ module PricingPlans
     def pricing_plan_cta(plan, billable: nil, context: :marketing, current_plan: nil)
       text = plan.cta_text
       url = plan.cta_url(billable: billable)
+      url ||= pricing_plans_subscribe_path(plan)
       disabled = false
       reason = nil
 
@@ -41,7 +42,17 @@ module PricingPlans
 
       { text: text, url: url, method: :get, disabled: disabled, reason: reason }
     end
+
+    # Helper that resolves the conventional subscribe path if present in host app
+    # Defaults to monthly interval; apps can override by adding interval param in links
+    def pricing_plans_subscribe_path(plan, interval: :month)
+      if respond_to?(:main_app) && main_app.respond_to?(:subscribe_path)
+        return main_app.subscribe_path(plan: plan.key, interval: interval)
+      end
+      if defined?(Rails) && Rails.application.routes.url_helpers.respond_to?(:subscribe_path)
+        return Rails.application.routes.url_helpers.subscribe_path(plan: plan.key, interval: interval)
+      end
+      nil
+    end
   end
 end
-
-

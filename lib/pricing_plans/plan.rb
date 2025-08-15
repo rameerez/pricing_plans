@@ -169,26 +169,9 @@ module PricingPlans
       return @cta_url if @cta_url
       default = PricingPlans.configuration.default_cta_url
       return default if default
-      # best-effort auto
-      if PricingPlans.configuration.auto_cta_with_pay
-        begin
-          gen = PricingPlans.configuration.auto_cta_with_pay
-          billable ||= begin
-            resolver = PricingPlans.configuration.default_billable_resolver
-            resolver.respond_to?(:call) ? resolver.call : nil
-          rescue StandardError
-            nil
-          end
-          if gen.respond_to?(:call)
-            case gen.arity
-            when 2 then return gen.call(billable, self)
-            when 1 then return gen.call(self)
-            else        return gen.call
-            end
-          end
-        rescue StandardError
-          # fallthrough to nil
-        end
+      # New default: if host app defines subscribe_path, prefer that
+      if defined?(Rails) && Rails.application.routes.url_helpers.respond_to?(:subscribe_path)
+        return Rails.application.routes.url_helpers.subscribe_path(plan: key, interval: :month)
       end
       nil
     end

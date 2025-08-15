@@ -359,9 +359,9 @@ module PricingPlans
       cta  = cta_for(billable)
       titles = {
         warning: "Approaching Limit",
-        at_limit: "Cannot create more",
-        grace:   "Limit Exceeded (Grace Active)",
-        blocked: "Cannot create more resources"
+        at_limit: "You've reached your #{limit_key.to_s.humanize.downcase} limit",
+        grace:   "Limit for #{limit_key.to_s.humanize.downcase} exceeded (in grace period)",
+        blocked: "Cannot create more #{limit_key.to_s.humanize.downcase}"
       }
       {
         visible?: true,

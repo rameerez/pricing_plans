@@ -8,10 +8,7 @@ module PricingPlans
 
     attr_accessor :default_plan, :highlighted_plan, :period_cycle
     # Optional ergonomics
-    attr_accessor :default_cta_text, :default_cta_url, :auto_cta_with_pay
-    # Optional global resolver for billable outside controllers/views
-    # Signature: -> { current_billable }
-    attr_accessor :default_billable_resolver
+    attr_accessor :default_cta_text, :default_cta_url
     # Global controller ergonomics
       # Optional global resolver for controller billable. Per-controller settings still win.
       # Accepts:
@@ -60,8 +57,6 @@ module PricingPlans
       @period_cycle = :billing_cycle
       @default_cta_text = nil
       @default_cta_url = nil
-      @auto_cta_with_pay = false
-      @default_billable_resolver = nil
       @message_builder = nil
       @controller_billable_method = nil
       @controller_billable_proc = nil

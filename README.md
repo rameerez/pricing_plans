@@ -7,8 +7,8 @@
 Define plans and their quotas and limits:
 ```ruby
 plan :pro do
-  limits :projects, to: 5.max
   allows :api_access
+  limits :projects, to: 5.max
 end
 ```
 
@@ -30,8 +30,9 @@ Or anywhere in your app:
 # => 2
 ```
 
-> [!TIP]
-> The `pricing_plans` gem works seamlessly out of the box with [`pay`](https://github.com/pay-rails/pay) and [`usage_credits`](https://github.com/rameerez/usage_credits/). More info [here](#using-with-pay-andor-usage_credits).
+And since `pricing_plans` is your single source of truth for plans, you can easily use it to [build pricing pages and paywalls](#views-build-pricing-pages-paywalls-pricing-tables-usage-indicators-conditional-buttons) automatically synced with Stripe prices.
+
+The `pricing_plans` gem works seamlessly out of the box with [`pay`](https://github.com/pay-rails/pay) and [`usage_credits`](https://github.com/rameerez/usage_credits/). More info [here](#using-with-pay-andor-usage_credits).
 
 ## Quickstart
 
@@ -130,10 +131,10 @@ That's the basics! Let's dive in.
 ### Define plan limits (quotas) and features
 
 At a high level, a plan needs to do **two** things:
-  1) Gate features
-  2) Enforce limits (quotas)
+  (1) Gate features
+  (2) Enforce limits (quotas)
 
-#### 1) Gate features in a plan
+#### (1) Gate features in a plan
 
 Let's start by giving access to certain features. For example, our free plan could give users API access:
 
@@ -165,7 +166,7 @@ end
 
 This wouldn't do anything, though, because all features are disabled by default; but it makes it obvious what the plan does and doesn't.
 
-#### 2) Enforce limits (quotas) in a plan
+#### (2) Enforce limits (quotas) in a plan
 
 The other thing plans can do is enforce a limit. We can define limits like this:
 
@@ -375,7 +376,7 @@ PricingPlans.configure do |config|
 end
 ```
 
-##### Limits API reference
+##### "Limits" API reference
 
 To summarize, here's what persistent caps (plan limits) are:
   - Counting is live: `SELECT COUNT(*)` scoped to the billable association, no counter caches.
@@ -828,7 +829,9 @@ end
 
 Note: model validations will still block creation even with `allow_system_override` -- it's just intended to bypass the block on controllers.
 
-### Views (UI-neutral helpers)
+### Views: build pricing pages, paywalls, pricing tables, usage indicators, conditional buttons...
+
+Since `pricing_plans` is your single source of truth for pricing plan information, you can query it at any time to get easy-to-display information to create views like pricing pages and paywalls very easily.
 
 We provide a small, consolidated set of data helpers that make it dead simple to build your own pricing and usage UIs.
 
@@ -878,7 +881,7 @@ We provide a small, consolidated set of data helpers that make it dead simple to
 
 ```erb
 <% if current_organization.within_plan_limits?(:products) %>
-  <!-- Show enabled create button -->
+  <!-- Show enabled "create new product" button -->
 <% else %>
   <!-- Disabled button + hint -->
 <% end %>
@@ -986,30 +989,41 @@ Message customization:
 <% end %>
 ```
 
-To wire the button URL automatically with Pay, use a single initializer hook that generates a Checkout/Billing URL. The proc can accept `(billable, plan)`, `(plan)`, or no args — pick what fits your app conventions. You can also set a global `default_billable_resolver` so you never pass billable explicitly:
+Controller‑first Stripe Checkout wiring (recommended): define a conventional `subscribe` route and we’ll auto‑use it in `plan.cta_url` when present.
 
 ```ruby
-# config/initializers/pricing_plans.rb
-PricingPlans.configure do |config|
-  # Resolve the current billable globally (optional)
-  config.default_billable_resolver = -> { Current.organization || Current.user }
+# config/routes.rb
+get "subscribe", to: "subscriptions#checkout", as: :subscribe
 
-  # Auto-generate CTA URLs with Pay (optional)
-  config.auto_cta_with_pay = ->(billable, plan) do
-    next unless plan.stripe_price
-    billable ||= Current.organization || Current.user
-    return unless billable
+# app/controllers/subscriptions_controller.rb
+class SubscriptionsController < ApplicationController
+  def checkout
+    billable = current_organization || current_user
+    plan     = PricingPlans.registry.plan(params.require(:plan))
+    interval = (params[:interval].presence || "month").to_sym
+    price_id = interval == :year ? plan.yearly_price_id : plan.monthly_price_id
+
     billable.set_payment_processor(:stripe) unless billable.payment_processor
     session = billable.payment_processor.checkout(
       mode: "subscription",
-      line_items: [{ price: plan.stripe_price[:id] || plan.stripe_price }],
-      success_url: Rails.application.routes.url_helpers.root_url,
-      cancel_url: Rails.application.routes.url_helpers.root_url
+      line_items: [{ price: price_id }],
+      success_url: root_url,
+      cancel_url:  root_url
     )
-    session.url
+    redirect_to session.url, allow_other_host: true, status: :see_other
   end
 end
 ```
+
+Then link to it in your views:
+
+```erb
+<%= link_to plan.cta_text, subscribe_path(plan: plan.key, interval: :month), class: "btn" %>
+```
+
+Notes:
+- If you omit the link and leave `plan.cta_url` unset, `plan.cta_url` will automatically return `/subscribe?plan=...&interval=month` when your app defines `subscribe_path`.
+- Use `:interval` toggles in your UI to choose monthly/yearly; `plan.monthly_price_id` / `plan.yearly_price_id` are available if you need raw IDs.
 
 #### Example: settings usage summary (billable-centric)
 
