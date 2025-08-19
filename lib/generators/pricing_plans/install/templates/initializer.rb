@@ -1,8 +1,5 @@
 # frozen_string_literal: true
 
-# Enable pricing_plans DSL sugar like `1.max` within this initializer
-using PricingPlans::IntegerRefinements
-
 PricingPlans.configure do |config|
   # Example plans
   plan :free do
@@ -11,9 +8,9 @@ PricingPlans.configure do |config|
     description   "Perfect for getting started"
     bullets       "Basic features", "Community support"
 
-    limits :projects, to: 3.max, after_limit: :block_usage
+    limits :projects, to: 3, after_limit: :block_usage
     # Example scoped persistent cap (active-only rows)
-    # limits :projects, to: 3.max, count_scope: { status: "active" }
+    # limits :projects, to: 3, count_scope: { status: "active" }
     default!
   end
 
@@ -22,7 +19,7 @@ PricingPlans.configure do |config|
     bullets       "Advanced features", "Priority support", "API access"
 
     allows :api_access, :premium_features
-    limits :projects, to: 25.max, after_limit: :grace_then_block, grace: 7.days
+    limits :projects, to: 25, after_limit: :grace_then_block, grace: 7.days
 
     highlighted!
   end
