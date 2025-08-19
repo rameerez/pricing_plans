@@ -28,8 +28,8 @@ module PricingPlans
         say "\nNext steps:"
         say "  1. Run 'rails db:migrate' to create the necessary tables."
         say "  2. Review and customize your plans in 'config/initializers/pricing_plans.rb'."
-        say "  3. Add the model mixin and attribute limits to your plan_owner model (e.g., User, Organization)."
-        say "  4. Use the controller guards and helper methods to gate access to features based on the active plan. Read the README for information on all available methods."
+        say "  3. Add the model mixin (PricingPlans::PlanOwner) and attribute limits to your plan owner model (e.g., User, Organization)."
+        say "  4. Use the controller guards and helper methods to gate access to features based on the active plan. Read the README and the docs for information on all available methods."
       end
 
       private
