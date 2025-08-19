@@ -35,8 +35,8 @@ ActiveRecord::Base.establish_connection(
 # Load schema
 ActiveRecord::Schema.define do
   create_table :pricing_plans_enforcement_states do |t|
-    t.string :billable_type, null: false
-    t.bigint :billable_id, null: false
+    t.string :plan_owner_type, null: false
+    t.bigint :plan_owner_id, null: false
     t.string :limit_key, null: false
     t.datetime :exceeded_at
     t.datetime :blocked_at
@@ -48,13 +48,13 @@ ActiveRecord::Schema.define do
   end
 
   add_index :pricing_plans_enforcement_states,
-            [:billable_type, :billable_id, :limit_key],
+            [:plan_owner_type, :plan_owner_id, :limit_key],
             unique: true,
             name: 'idx_pricing_plans_enforcement_unique'
 
   create_table :pricing_plans_usages do |t|
-    t.string :billable_type, null: false
-    t.bigint :billable_id, null: false
+    t.string :plan_owner_type, null: false
+    t.bigint :plan_owner_id, null: false
     t.string :limit_key, null: false
     t.datetime :period_start, null: false
     t.datetime :period_end, null: false
@@ -65,13 +65,13 @@ ActiveRecord::Schema.define do
   end
 
   add_index :pricing_plans_usages,
-            [:billable_type, :billable_id, :limit_key, :period_start],
+            [:plan_owner_type, :plan_owner_id, :limit_key, :period_start],
             unique: true,
             name: 'idx_pricing_plans_usages_unique'
 
   create_table :pricing_plans_assignments do |t|
-    t.string :billable_type, null: false
-    t.bigint :billable_id, null: false
+    t.string :plan_owner_type, null: false
+    t.bigint :plan_owner_id, null: false
     t.string :plan_key, null: false
     t.string :source, null: false, default: 'manual'
 
@@ -79,7 +79,7 @@ ActiveRecord::Schema.define do
   end
 
   add_index :pricing_plans_assignments,
-            [:billable_type, :billable_id],
+            [:plan_owner_type, :plan_owner_id],
             unique: true
 
   # Test models

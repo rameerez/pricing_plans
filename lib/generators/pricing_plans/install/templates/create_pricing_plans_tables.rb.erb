@@ -5,7 +5,7 @@ class CreatePricingPlansTables < ActiveRecord::Migration<%= migration_version %>
     primary_key_type, foreign_key_type = primary_and_foreign_key_types
 
     create_table :pricing_plans_enforcement_states, id: primary_key_type do |t|
-      t.references :billable, polymorphic: true, null: false, type: foreign_key_type
+      t.references :plan_owner, polymorphic: true, null: false, type: foreign_key_type
       t.string :limit_key, null: false
       t.datetime :exceeded_at
       t.datetime :blocked_at
@@ -17,13 +17,13 @@ class CreatePricingPlansTables < ActiveRecord::Migration<%= migration_version %>
     end
 
     add_index :pricing_plans_enforcement_states,
-              [:billable_type, :billable_id, :limit_key],
+              [:plan_owner_type, :plan_owner_id, :limit_key],
               unique: true,
               name: "idx_pricing_plans_enforcement_unique"
 
     add_index :pricing_plans_enforcement_states,
-              [:billable_type, :billable_id],
-              name: "idx_pricing_plans_enforcement_billable"
+              [:plan_owner_type, :plan_owner_id],
+              name: "idx_pricing_plans_enforcement_plan_owner"
 
     add_index :pricing_plans_enforcement_states,
               :exceeded_at,
@@ -31,7 +31,7 @@ class CreatePricingPlansTables < ActiveRecord::Migration<%= migration_version %>
               name: "idx_pricing_plans_enforcement_exceeded"
 
     create_table :pricing_plans_usages, id: primary_key_type do |t|
-      t.references :billable, polymorphic: true, null: false, type: foreign_key_type
+      t.references :plan_owner, polymorphic: true, null: false, type: foreign_key_type
       t.string :limit_key, null: false
       t.datetime :period_start, null: false
       t.datetime :period_end, null: false
@@ -42,20 +42,20 @@ class CreatePricingPlansTables < ActiveRecord::Migration<%= migration_version %>
     end
 
     add_index :pricing_plans_usages,
-              [:billable_type, :billable_id, :limit_key, :period_start],
+              [:plan_owner_type, :plan_owner_id, :limit_key, :period_start],
               unique: true,
               name: "idx_pricing_plans_usages_unique"
 
     add_index :pricing_plans_usages,
-              [:billable_type, :billable_id],
-              name: "idx_pricing_plans_usages_billable"
+              [:plan_owner_type, :plan_owner_id],
+              name: "idx_pricing_plans_usages_plan_owner"
 
     add_index :pricing_plans_usages,
               [:period_start, :period_end],
               name: "idx_pricing_plans_usages_period"
 
     create_table :pricing_plans_assignments, id: primary_key_type do |t|
-      t.references :billable, polymorphic: true, null: false, type: foreign_key_type
+      t.references :plan_owner, polymorphic: true, null: false, type: foreign_key_type
       t.string :plan_key, null: false
       t.string :source, null: false, default: "manual"
 
@@ -63,7 +63,7 @@ class CreatePricingPlansTables < ActiveRecord::Migration<%= migration_version %>
     end
 
     add_index :pricing_plans_assignments,
-              [:billable_type, :billable_id],
+              [:plan_owner_type, :plan_owner_id],
               unique: true,
               name: "idx_pricing_plans_assignments_unique"
 

@@ -38,7 +38,7 @@ class ControllerRescuesLimitBlockedTest < ActiveSupport::TestCase
 
   def test_handle_pricing_plans_limit_blocked_html
     ctrl = DummyController.new
-    result = PricingPlans::Result.blocked("blocked!", limit_key: :projects, billable: create_organization)
+    result = PricingPlans::Result.blocked("blocked!", limit_key: :projects, plan_owner: create_organization)
     ctrl.send(:handle_pricing_plans_limit_blocked, result)
     assert_equal ["/pricing", :see_other, false], ctrl._redirected_to
     assert_match(/blocked!/i, ctrl._flash[:alert])
@@ -49,7 +49,7 @@ class ControllerRescuesLimitBlockedTest < ActiveSupport::TestCase
     result = PricingPlans::Result.blocked(
       "blocked!",
       limit_key: :projects,
-      billable: create_organization,
+      plan_owner: create_organization,
       metadata: { redirect_to: "/override" }
     )
     ctrl.send(:handle_pricing_plans_limit_blocked, result)
@@ -60,7 +60,7 @@ class ControllerRescuesLimitBlockedTest < ActiveSupport::TestCase
   def test_handle_pricing_plans_limit_blocked_json
     ctrl = DummyController.new
     ctrl._request_format = :json
-    result = PricingPlans::Result.blocked("blocked!", limit_key: :projects, billable: create_organization)
+    result = PricingPlans::Result.blocked("blocked!", limit_key: :projects, plan_owner: create_organization)
     ctrl.send(:handle_pricing_plans_limit_blocked, result)
     # Default config picks a default plan name; accept any string for plan
     assert_equal :forbidden, ctrl._rendered[0]

@@ -3,18 +3,18 @@
 module PricingPlans
   class PlanResolver
     class << self
-      def effective_plan_for(billable)
+      def effective_plan_for(plan_owner)
         # 1. Check Pay subscription status first (no app-specific gate required)
         if PaySupport.pay_available?
-          plan_from_pay = resolve_plan_from_pay(billable)
+          plan_from_pay = resolve_plan_from_pay(plan_owner)
           return plan_from_pay if plan_from_pay
         end
 
         # 2. Check manual assignment
-        if billable.respond_to?(:id)
+        if plan_owner.respond_to?(:id)
           assignment = Assignment.find_by(
-            billable_type: billable.class.name,
-            billable_id: billable.id
+            plan_owner_type: plan_owner.class.name,
+            plan_owner_id: plan_owner.id
           )
           return Registry.plan(assignment.plan_key) if assignment
         end
@@ -23,16 +23,16 @@ module PricingPlans
         Registry.default_plan
       end
 
-      def plan_key_for(billable)
-        effective_plan_for(billable)&.key
+      def plan_key_for(plan_owner)
+        effective_plan_for(plan_owner)&.key
       end
 
-      def assign_plan_manually!(billable, plan_key, source: "manual")
-        Assignment.assign_plan_to(billable, plan_key, source: source)
+      def assign_plan_manually!(plan_owner, plan_key, source: "manual")
+        Assignment.assign_plan_to(plan_owner, plan_key, source: source)
       end
 
-      def remove_manual_assignment!(billable)
-        Assignment.remove_assignment_for(billable)
+      def remove_manual_assignment!(plan_owner)
+        Assignment.remove_assignment_for(plan_owner)
       end
 
       private
@@ -42,15 +42,15 @@ module PricingPlans
         PaySupport.pay_available?
       end
 
-      def resolve_plan_from_pay(billable)
-        return nil unless billable.respond_to?(:subscribed?) ||
-                          billable.respond_to?(:on_trial?) ||
-                          billable.respond_to?(:on_grace_period?) ||
-                          billable.respond_to?(:subscriptions)
+      def resolve_plan_from_pay(plan_owner)
+        return nil unless plan_owner.respond_to?(:subscribed?) ||
+                          plan_owner.respond_to?(:on_trial?) ||
+                          plan_owner.respond_to?(:on_grace_period?) ||
+                          plan_owner.respond_to?(:subscriptions)
 
-        # Check if billable has active subscription, trial, or grace period
-        if PaySupport.subscription_active_for?(billable)
-          subscription = PaySupport.current_subscription_for(billable)
+        # Check if plan_owner has active subscription, trial, or grace period
+        if PaySupport.subscription_active_for?(plan_owner)
+          subscription = PaySupport.current_subscription_for(plan_owner)
           return nil unless subscription
 
           # Map processor plan to our plan

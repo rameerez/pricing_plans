@@ -3,12 +3,12 @@
 module PricingPlans
   class PeriodCalculator
     class << self
-      def window_for(billable, limit_key)
-        plan = PlanResolver.effective_plan_for(billable)
+      def window_for(plan_owner, limit_key)
+        plan = PlanResolver.effective_plan_for(plan_owner)
         limit_config = plan&.limit_for(limit_key)
 
         period_type = determine_period_type(limit_config)
-        calculate_window_for_period(billable, period_type)
+        calculate_window_for_period(plan_owner, period_type)
       end
 
       private
@@ -26,10 +26,10 @@ module PricingPlans
         Registry.configuration.period_cycle
       end
 
-      def calculate_window_for_period(billable, period_type)
+      def calculate_window_for_period(plan_owner, period_type)
         case period_type
         when :billing_cycle
-          billing_cycle_window(billable)
+          billing_cycle_window(plan_owner)
         when :calendar_month, :month
           calendar_month_window
         when :calendar_week, :week
@@ -38,7 +38,7 @@ module PricingPlans
           calendar_day_window
         when ->(x) { x.respond_to?(:call) }
           # Custom callable
-          result = period_type.call(billable)
+          result = period_type.call(plan_owner)
           validate_custom_window!(result)
           result
         else
@@ -51,27 +51,27 @@ module PricingPlans
         end
       end
 
-      def billing_cycle_window(billable)
+      def billing_cycle_window(plan_owner)
         # Respect tests that stub pay availability
         return fallback_window unless pay_available?
 
         subscription = nil
-        if billable.respond_to?(:subscription)
-          subscription = billable.subscription
+        if plan_owner.respond_to?(:subscription)
+          subscription = plan_owner.subscription
         end
-        if subscription.nil? && billable.respond_to?(:subscriptions)
+        if subscription.nil? && plan_owner.respond_to?(:subscriptions)
           # Prefer a sub with explicit period anchors
-          subscription = billable.subscriptions.find do |sub|
+          subscription = plan_owner.subscriptions.find do |sub|
             sub.respond_to?(:current_period_start) && sub.respond_to?(:current_period_end)
           end
           # Otherwise, fall back to any active/trial/grace subscription
-          subscription ||= billable.subscriptions.find do |sub|
+          subscription ||= plan_owner.subscriptions.find do |sub|
             (sub.respond_to?(:active?) && sub.active?) ||
               (sub.respond_to?(:on_trial?) && sub.on_trial?) ||
               (sub.respond_to?(:on_grace_period?) && sub.on_grace_period?)
           end
         end
-        subscription ||= PaySupport.current_subscription_for(billable)
+        subscription ||= PaySupport.current_subscription_for(plan_owner)
 
         return fallback_window unless subscription
 

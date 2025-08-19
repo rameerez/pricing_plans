@@ -31,7 +31,7 @@ class CompleteWorkflowTest < ActiveSupport::TestCase
     assert_match(/grace period/, result.message)
 
     # Should have enforcement state
-    state = PricingPlans::EnforcementState.find_by(billable: org, limit_key: "projects")
+    state = PricingPlans::EnforcementState.find_by(plan_owner: org, limit_key: "projects")
     assert state.exceeded?
     refute state.blocked?
 
@@ -130,7 +130,7 @@ class CompleteWorkflowTest < ActiveSupport::TestCase
 
       # At 60% (would need fractional projects, so simulate with usage)
       PricingPlans::EnforcementState.create!(
-        billable: org,
+        plan_owner: org,
         limit_key: "projects",
         last_warning_threshold: 0.0
       )

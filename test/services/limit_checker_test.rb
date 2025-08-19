@@ -28,7 +28,7 @@ class LimitCheckerTest < ActiveSupport::TestCase
     # Create usage record (simulating Limitable mixin)
     period_start, period_end = PricingPlans::PeriodCalculator.window_for(org, :custom_models)
     PricingPlans::Usage.create!(
-      billable: org,
+      plan_owner: org,
       limit_key: "custom_models",
       period_start: period_start,
       period_end: period_end,
@@ -132,7 +132,7 @@ class LimitCheckerTest < ActiveSupport::TestCase
 
     # Create enforcement state with lower threshold
     PricingPlans::EnforcementState.create!(
-      billable: org,
+      plan_owner: org,
       limit_key: "projects",
       last_warning_threshold: 0.8
     )
@@ -146,7 +146,7 @@ class LimitCheckerTest < ActiveSupport::TestCase
 
     # Create enforcement state at highest threshold
     PricingPlans::EnforcementState.create!(
-      billable: org,
+      plan_owner: org,
       limit_key: "projects",
       last_warning_threshold: 0.95
     )
@@ -169,7 +169,7 @@ class LimitCheckerTest < ActiveSupport::TestCase
     # Create usage in current period
     period_start, period_end = PricingPlans::PeriodCalculator.window_for(org, :custom_models)
     PricingPlans::Usage.create!(
-      billable: org,
+      plan_owner: org,
       limit_key: "custom_models",
       period_start: period_start,
       period_end: period_end,
@@ -180,7 +180,7 @@ class LimitCheckerTest < ActiveSupport::TestCase
 
     # Usage from different period should not affect current usage
     PricingPlans::Usage.create!(
-      billable: org,
+      plan_owner: org,
       limit_key: "custom_models",
       period_start: 1.month.ago,
       period_end: 1.day.ago,
@@ -239,7 +239,7 @@ class LimitCheckerTest < ActiveSupport::TestCase
 
     # Test with threshold exactly at boundary
     PricingPlans::EnforcementState.create!(
-      billable: org,
+      plan_owner: org,
       limit_key: "projects",
       last_warning_threshold: 0.6
     )
@@ -254,7 +254,7 @@ class LimitCheckerTest < ActiveSupport::TestCase
   def test_limit_checker_graceful_handling_of_missing_plan
     # Create organization without any plan assignment
     org = create_organization
-    PricingPlans::Assignment.where(billable: org).destroy_all
+    PricingPlans::Assignment.where(plan_owner: org).destroy_all
 
     # Mock PlanResolver to return nil
     PricingPlans::PlanResolver.stub(:effective_plan_for, nil) do

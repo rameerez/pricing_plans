@@ -159,8 +159,8 @@ module PricingPlans
 
     # Unified ergonomic API:
     # - Setter/getter: cta_url, cta_url("/checkout")
-    # - Resolver: cta_url(billable: org)
-    def cta_url(value = :__no_arg__, billable: nil)
+    # - Resolver: cta_url(plan_owner: org)
+    def cta_url(value = :__no_arg__, plan_owner: nil)
       unless value == :__no_arg__
         set_cta_url(value)
         return @cta_url

@@ -201,7 +201,7 @@ class ConfigurationTest < ActiveSupport::TestCase
         price 0
       end
 
-      config.on_warning :projects do |billable, threshold|
+      config.on_warning :projects do |plan_owner, threshold|
         handler_called = true
       end
     end
@@ -245,7 +245,7 @@ class ConfigurationTest < ActiveSupport::TestCase
     assert_match(/Something went wrong/, error.message)
   end
 
-  def test_billable_convenience_methods_via_instance
+  def test_plan_owner_convenience_methods_via_instance
     setup_test_plans
     org = Organization.create!(name: "Org")
     # Re-register counters after configuring in this test
@@ -259,7 +259,7 @@ class ConfigurationTest < ActiveSupport::TestCase
     assert_equal :free, org.current_pricing_plan.key
   end
 
-  def test_assign_and_remove_pricing_plan_via_billable
+  def test_assign_and_remove_pricing_plan_via_plan_owner
     setup_test_plans
     org = Organization.create!(name: "Org")
     Project.send(:limited_by_pricing_plans, :projects, plan_owner: :organization) if Project.respond_to?(:limited_by_pricing_plans)
@@ -339,7 +339,7 @@ class ConfigurationTest < ActiveSupport::TestCase
   end
 
   def test_custom_period_cycle_callable
-    custom_callable = ->(billable) { [Time.current, 1.day.from_now] }
+    custom_callable = ->(plan_owner) { [Time.current, 1.day.from_now] }
 
     PricingPlans.configure do |config|
       config.default_plan = :free

@@ -40,7 +40,7 @@ class ComplexAssociationsTest < ActiveSupport::TestCase
     assert_respond_to org, :ai_models_remaining
     assert_equal false, org.ai_models_within_plan_limits?(by: 1)
     assert_includes CustomAiModel.pricing_plans_limits.keys, :ai_models
-    assert_equal :company, CustomAiModel.pricing_plans_limits[:ai_models][:billable_method]
+    assert_equal :company, CustomAiModel.pricing_plans_limits[:ai_models][:plan_owner_method]
   ensure
     Object.send(:remove_const, :CustomAiModel) if defined?(CustomAiModel)
   end
@@ -69,7 +69,7 @@ class ComplexAssociationsTest < ActiveSupport::TestCase
     assert_respond_to org, :deeply_nested_resources_within_plan_limits?
     assert_equal false, org.deeply_nested_resources_within_plan_limits?(by: 1)
     assert :deeply_nested_resources, Deeply::NestedResource.pricing_plans_limits.keys
-    assert_equal :organization, Deeply::NestedResource.pricing_plans_limits[:deeply_nested_resources][:billable_method]
+    assert_equal :organization, Deeply::NestedResource.pricing_plans_limits[:deeply_nested_resources][:plan_owner_method]
   ensure
     Deeply.send(:remove_const, :NestedResource) if defined?(Deeply::NestedResource)
     Object.send(:remove_const, :Deeply) if defined?(Deeply)

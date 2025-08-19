@@ -96,7 +96,7 @@ module PricingPlans
     # Each item includes: :key, :name, :description, :bullets, :price_label,
     # :is_current, :is_popular, :button_text, :button_url
     def for_pricing(plan_owner: nil, view: nil)
-      plans.map { |plan| decorate_for_view(plan, billable: plan_owner, view: view) }
+      plans.map { |plan| decorate_for_view(plan, plan_owner: plan_owner, view: view) }
     end
 
     # View model for modern UIs (Stimulus/Hotwire/JSON). Pure data.
@@ -106,8 +106,8 @@ module PricingPlans
     end
 
     # Opinionated next-plan suggestion: pick the smallest plan that satisfies current usage
-    def suggest_next_plan_for(billable, keys: nil)
-      current_plan = PlanResolver.effective_plan_for(billable)
+    def suggest_next_plan_for(plan_owner, keys: nil)
+      current_plan = PlanResolver.effective_plan_for(plan_owner)
       sorted = plans
       keys ||= (current_plan&.limits&.keys || [])
       keys = keys.map(&:to_sym)
@@ -119,15 +119,15 @@ module PricingPlans
         keys.all? do |key|
           limit = plan.limit_for(key)
           next true unless limit
-          limit[:to] == :unlimited || LimitChecker.current_usage_for(billable, key, limit) <= limit[:to].to_i
+          limit[:to] == :unlimited || LimitChecker.current_usage_for(plan_owner, key, limit) <= limit[:to].to_i
         end
       end
       candidate || current_plan || Registry.default_plan
     end
 
     # Optional view-model decorator for UIs (pure data, no HTML)
-    def decorate_for_view(plan, billable: nil, view: nil)
-      is_current = billable ? (PlanResolver.effective_plan_for(billable)&.key == plan.key) : false
+    def decorate_for_view(plan, plan_owner: nil, view: nil)
+      is_current = plan_owner ? (PlanResolver.effective_plan_for(plan_owner)&.key == plan.key) : false
       is_popular = Registry.highlighted_plan&.key == plan.key
       price_label = plan_price_label_for(plan)
       {
@@ -139,7 +139,7 @@ module PricingPlans
         is_current: is_current,
         is_popular: is_popular,
         button_text: plan.cta_text,
-        button_url: plan.cta_url(billable: billable)
+        button_url: plan.cta_url(plan_owner: plan_owner)
       }
     end
 
@@ -153,16 +153,16 @@ module PricingPlans
     end
 
     # UI-neutral status helpers for building settings/usage UIs
-    def limit_status(limit_key, billable:)
-      plan = PlanResolver.effective_plan_for(billable)
+    def limit_status(limit_key, plan_owner:)
+      plan = PlanResolver.effective_plan_for(plan_owner)
       limit_config = plan&.limit_for(limit_key)
       return { configured: false } unless limit_config
 
-      usage = LimitChecker.current_usage_for(billable, limit_key, limit_config)
+      usage = LimitChecker.current_usage_for(plan_owner, limit_key, limit_config)
       limit_amount = limit_config[:to]
-      percent = LimitChecker.plan_limit_percent_used(billable, limit_key)
-      grace = GraceManager.grace_active?(billable, limit_key)
-      blocked = GraceManager.should_block?(billable, limit_key)
+      percent = LimitChecker.plan_limit_percent_used(plan_owner, limit_key)
+      grace = GraceManager.grace_active?(plan_owner, limit_key)
+      blocked = GraceManager.should_block?(plan_owner, limit_key)
 
       {
         configured: true,
@@ -171,16 +171,16 @@ module PricingPlans
         current_usage: usage,
         percent_used: percent,
         grace_active: grace,
-        grace_ends_at: GraceManager.grace_ends_at(billable, limit_key),
+        grace_ends_at: GraceManager.grace_ends_at(plan_owner, limit_key),
         blocked: blocked,
         after_limit: limit_config[:after_limit],
         per: !!limit_config[:per]
       }
     end
 
-    def limit_statuses(*limit_keys, billable:)
+    def limit_statuses(*limit_keys, plan_owner:)
       keys = limit_keys.flatten
-      keys.index_with { |k| limit_status(k, billable: billable) }
+      keys.index_with { |k| limit_status(k, plan_owner: plan_owner) }
     end
 
     # Unified, pure-data status item for a single limit key
@@ -213,9 +213,9 @@ module PricingPlans
       keyword_init: true
     )
 
-    def status(billable, limits: [])
+    def status(plan_owner, limits: [])
       items = Array(limits).map do |limit_key|
-        st = limit_status(limit_key, billable: billable)
+        st = limit_status(limit_key, plan_owner: plan_owner)
         if !st[:configured]
           StatusItem.new(
             key: limit_key,
@@ -244,7 +244,7 @@ module PricingPlans
             period_seconds_remaining: nil
           )
         else
-          sev = severity_for(billable, limit_key)
+          sev = severity_for(plan_owner, limit_key)
           allowed = st[:limit_amount]
           current = st[:current_usage].to_i
           unlimited = (allowed == :unlimited)
@@ -253,7 +253,7 @@ module PricingPlans
           else
             nil
           end
-          warn_thresholds = LimitChecker.warning_thresholds(billable, limit_key)
+          warn_thresholds = LimitChecker.warning_thresholds(plan_owner, limit_key)
           percent = st[:percent_used].to_f
           next_warn = begin
             thresholds = warn_thresholds.map { |t| t.to_f * 100.0 }.uniq.sort
@@ -264,7 +264,7 @@ module PricingPlans
           period_seconds_remaining = nil
           if st[:per]
             begin
-              period_start, period_end = PeriodCalculator.window_for(billable, limit_key)
+              period_start, period_end = PeriodCalculator.window_for(plan_owner, limit_key)
               if period_end
                 period_seconds_remaining = [0, (period_end - Time.current).to_i].max
               end
@@ -299,8 +299,8 @@ module PricingPlans
                              when :blocked then 4
                              else 0
                              end,
-            message: (sev == :ok ? nil : message_for(billable, limit_key)),
-            overage: overage_for(billable, limit_key),
+            message: (sev == :ok ? nil : message_for(plan_owner, limit_key)),
+            overage: overage_for(plan_owner, limit_key),
             configured: true,
             unlimited: unlimited,
             remaining: remaining,
@@ -318,10 +318,10 @@ module PricingPlans
 
       # Compute and attach overall helpers directly on the returned array
       keys = items.map(&:key)
-      sev = highest_severity_for(billable, *keys)
+      sev = highest_severity_for(plan_owner, *keys)
       title = summary_title_for(sev)
-      msg = summary_message_for(billable, *keys, severity: sev)
-      highest_keys = keys.select { |k| severity_for(billable, k) == sev }
+      msg = summary_message_for(plan_owner, *keys, severity: sev)
+      highest_keys = keys.select { |k| severity_for(plan_owner, k) == sev }
       highest_limits = items.select { |it| highest_keys.include?(it.key) }
       human_keys = highest_keys.map { |k| k.to_s.humanize.downcase }
       keys_sentence = if human_keys.respond_to?(:to_sentence)
@@ -331,7 +331,7 @@ module PricingPlans
       end
       noun = highest_keys.size == 1 ? "plan limit" : "plan limits"
       has_have = highest_keys.size == 1 ? "has" : "have"
-      cta = cta_for_upgrade(billable)
+      cta = cta_for_upgrade(plan_owner)
 
       sev_level = case sev
                   when :ok then 0
@@ -361,10 +361,10 @@ module PricingPlans
 
     # Aggregates across multiple limits for global banners/messages
     # Returns one of :ok, :warning, :at_limit, :grace, :blocked
-    def highest_severity_for(billable, *limit_keys)
+    def highest_severity_for(plan_owner, *limit_keys)
       keys = limit_keys.flatten
       per_key = keys.map do |key|
-        st = limit_status(key, billable: billable)
+        st = limit_status(key, plan_owner: plan_owner)
         next :ok unless st[:configured]
 
         lim = st[:limit_amount]
@@ -381,7 +381,7 @@ module PricingPlans
 
         # Otherwise, warning based on thresholds
         percent = st[:percent_used].to_f
-        warn_thresholds = LimitChecker.warning_thresholds(billable, key)
+        warn_thresholds = LimitChecker.warning_thresholds(plan_owner, key)
         highest_warn = warn_thresholds.max.to_f * 100.0
         (percent >= highest_warn && highest_warn.positive?) ? :warning : :ok
       end
@@ -391,9 +391,9 @@ module PricingPlans
 
     # Global overview for multiple keys for easy banner building.
     # Returns: { severity:, severity_level:, title:, message:, attention?:, keys:, highest_keys:, highest_limits:, keys_sentence:, noun:, has_have:, cta_text:, cta_url: }
-    def overview_for(billable, *limit_keys)
+    def overview_for(plan_owner, *limit_keys)
       keys = limit_keys.flatten
-      items = status(billable, limits: keys)
+      items = status(plan_owner, limits: keys)
       {
         severity: items.overall_severity,
         severity_level: items.overall_severity_level,
@@ -424,13 +424,13 @@ module PricingPlans
 
     # Short, humanized summary for multiple keys
     # Builds copy using only the keys at the highest severity
-    def summary_message_for(billable, *limit_keys, severity: nil)
+    def summary_message_for(plan_owner, *limit_keys, severity: nil)
       keys = limit_keys.flatten
       return nil if keys.empty?
-      sev = severity || highest_severity_for(billable, *keys)
+      sev = severity || highest_severity_for(plan_owner, *keys)
       return nil if sev == :ok
 
-      affected = keys.select { |k| severity_for(billable, k) == sev }
+      affected = keys.select { |k| severity_for(plan_owner, k) == sev }
       human_keys = affected.map { |k| k.to_s.humanize.downcase }
       keys_list = if human_keys.respond_to?(:to_sentence)
         human_keys.to_sentence
@@ -449,7 +449,7 @@ module PricingPlans
         "Your #{noun} for #{keys_list} #{affected.size == 1 ? "has" : "have"} been exceeded. Please upgrade to continue."
       when :grace
         # If any grace ends_at is present, show the earliest
-        grace_end = keys.map { |k| GraceManager.grace_ends_at(billable, k) }.compact.min
+        grace_end = keys.map { |k| GraceManager.grace_ends_at(plan_owner, k) }.compact.min
         suffix = grace_end ? ", grace active until #{grace_end}" : ""
         "You are over your #{noun} for #{keys_list}#{suffix}. Please upgrade to avoid service disruption."
       when :at_limit
@@ -460,10 +460,10 @@ module PricingPlans
     end
 
     # Combine human messages for a set of limits into one string
-    def combine_messages_for(billable, *limit_keys)
+    def combine_messages_for(plan_owner, *limit_keys)
       keys = limit_keys.flatten
       parts = keys.map do |key|
-        result = ControllerGuards.require_plan_limit!(key, plan_owner: billable, by: 0)
+        result = ControllerGuards.require_plan_limit!(key, plan_owner: plan_owner, by: 0)
         next nil if result.ok?
         "#{key.to_s.humanize}: #{result.message}"
       end.compact
@@ -473,16 +473,16 @@ module PricingPlans
 
     # Convenience: severity for a single limit key
     # Returns :ok | :warning | :grace | :blocked
-    def severity_for(billable, limit_key)
-      highest_severity_for(billable, limit_key)
+    def severity_for(plan_owner, limit_key)
+      highest_severity_for(plan_owner, limit_key)
     end
 
     # Convenience: message for a single limit key, or nil if OK
-    def message_for(billable, limit_key)
-      st = limit_status(limit_key, billable: billable)
+    def message_for(plan_owner, limit_key)
+      st = limit_status(limit_key, plan_owner: plan_owner)
       return nil unless st[:configured]
 
-      sev = severity_for(billable, limit_key)
+      sev = severity_for(plan_owner, limit_key)
       return nil if sev == :ok
 
       cfg = configuration
@@ -537,9 +537,9 @@ module PricingPlans
       end
       end
 
-    # Compute how much over the limit the billable is for a key (0 if within)
-    def overage_for(billable, limit_key)
-      st = limit_status(limit_key, billable: billable)
+    # Compute how much over the limit the plan_owner is for a key (0 if within)
+    def overage_for(plan_owner, limit_key)
+      st = limit_status(limit_key, plan_owner: plan_owner)
       return 0 unless st[:configured]
       allowed = st[:limit_amount]
       current = st[:current_usage].to_i
@@ -548,20 +548,20 @@ module PricingPlans
     end
 
     # Boolean: any attention required (warning/grace/blocked) for provided keys
-    def attention_required?(billable, *limit_keys)
-      highest_severity_for(billable, *limit_keys) != :ok
+    def attention_required?(plan_owner, *limit_keys)
+      highest_severity_for(plan_owner, *limit_keys) != :ok
     end
 
     # Boolean: approaching a limit. If `at:` given, uses that numeric threshold (0..1);
     # otherwise uses the highest configured warn_at threshold for the limit.
-    def approaching_limit?(billable, limit_key, at: nil)
-      st = limit_status(limit_key, billable: billable)
+    def approaching_limit?(plan_owner, limit_key, at: nil)
+      st = limit_status(limit_key, plan_owner: plan_owner)
       return false unless st[:configured]
       percent = st[:percent_used].to_f
       threshold = if at
         (at.to_f * 100.0)
       else
-        thresholds = LimitChecker.warning_thresholds(billable, limit_key)
+        thresholds = LimitChecker.warning_thresholds(plan_owner, limit_key)
         thresholds.max.to_f * 100.0
       end
       return false if threshold <= 0.0
@@ -570,7 +570,7 @@ module PricingPlans
 
     # Recommend CTA data (pure data, no UI): { text:, url: }
     # For limit banners, prefer global upgrade defaults to avoid confusing “Current Plan” CTAs
-    def cta_for_upgrade(billable)
+    def cta_for_upgrade(plan_owner)
       cfg = configuration
       url = cfg.default_cta_url
       url ||= (cfg.redirect_on_blocked_limit.is_a?(String) ? cfg.redirect_on_blocked_limit : nil)
@@ -579,10 +579,10 @@ module PricingPlans
     end
 
     # Recommend CTA data used by other contexts (pricing plan cards etc.)
-    def cta_for(billable)
-      plan = PlanResolver.effective_plan_for(billable)
+    def cta_for(plan_owner)
+      plan = PlanResolver.effective_plan_for(plan_owner)
       cfg = configuration
-      url = plan&.cta_url(billable: billable) || cfg.default_cta_url
+      url = plan&.cta_url(plan_owner: plan_owner) || cfg.default_cta_url
       if url.nil? && cfg.redirect_on_blocked_limit.is_a?(String)
         url = cfg.redirect_on_blocked_limit
       end
@@ -592,13 +592,13 @@ module PricingPlans
 
     # Pure-data alert view model for a single limit key. No HTML.
     # Returns keys: :visible? (boolean), :severity, :title, :message, :overage, :cta_text, :cta_url
-    def alert_for(billable, limit_key)
-      sev = severity_for(billable, limit_key)
+    def alert_for(plan_owner, limit_key)
+      sev = severity_for(plan_owner, limit_key)
       return { visible?: false, severity: :ok } if sev == :ok
 
-      msg = message_for(billable, limit_key)
-      over = overage_for(billable, limit_key)
-      cta  = cta_for_upgrade(billable)
+      msg = message_for(plan_owner, limit_key)
+      over = overage_for(plan_owner, limit_key)
+      cta  = cta_for_upgrade(plan_owner)
       titles = {
         warning: "Approaching Limit",
         at_limit: "You've reached your #{limit_key.to_s.humanize.downcase} limit",

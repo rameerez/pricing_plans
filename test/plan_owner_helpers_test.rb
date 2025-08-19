@@ -16,7 +16,7 @@ class PlanOwnerHelpersTest < ActiveSupport::TestCase
     Project.send(:limited_by_pricing_plans, :projects, plan_owner: :organization) if Project.respond_to?(:limited_by_pricing_plans)
   end
 
-  def test_auto_includes_helpers_into_configured_billable
+  def test_auto_includes_helpers_into_configured_plan_owner
     org = Organization.new(name: "Acme")
 
     assert_respond_to org, :within_plan_limits?
@@ -41,7 +41,7 @@ class PlanOwnerHelpersTest < ActiveSupport::TestCase
 
   def test_englishy_sugar_methods_defined_from_associations
     # Organization has has_many :projects in test schema via Project model
-    # Simulate declaration from billable side to define sugar methods
+    # Simulate declaration from plan_owner side to define sugar methods
     unless Organization.method_defined?(:projects_within_plan_limits?)
       PricingPlans::PlanOwner.define_limit_sugar_methods(Organization, :projects)
     end
@@ -103,7 +103,7 @@ class PlanOwnerHelpersTest < ActiveSupport::TestCase
     assert_respond_to org2, :within_plan_limits?
   end
 
-  def test_attach_helpers_when_billable_defined_after_config
+  def test_attach_helpers_when_plan_owner_defined_after_config
     # Configure with a class name that does not exist yet
     PricingPlans.reset_configuration!
     PricingPlans.configure do |config|
@@ -118,7 +118,7 @@ class PlanOwnerHelpersTest < ActiveSupport::TestCase
     Object.const_set(:LatePlanOwner, Class.new)
 
     # Simulate engine's to_prepare hook by invoking the attachment helper
-    PricingPlans::Registry.send(:attach_billable_helpers!)
+    PricingPlans::Registry.send(:attach_plan_owner_helpers!)
 
     late = LatePlanOwner.new
     assert_respond_to late, :within_plan_limits?

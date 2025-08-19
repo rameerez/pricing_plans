@@ -123,7 +123,7 @@ class ControllerGuardsTest < ActiveSupport::TestCase
         assert_match(/reached your limit/i, result.message)
 
         # Should have called GraceManager.mark_blocked!
-        state = PricingPlans::EnforcementState.find_by(billable: @org, limit_key: "projects")
+        state = PricingPlans::EnforcementState.find_by(plan_owner: @org, limit_key: "projects")
         assert state&.blocked?
       end
     end
@@ -144,7 +144,7 @@ class ControllerGuardsTest < ActiveSupport::TestCase
       assert_match(/exceeded.*grace period/i, result.message)
 
       # Verify grace state was created
-      state = PricingPlans::EnforcementState.find_by(billable: @org, limit_key: "projects")
+      state = PricingPlans::EnforcementState.find_by(plan_owner: @org, limit_key: "projects")
       assert state&.exceeded?
       refute state&.blocked?
     end
@@ -189,7 +189,7 @@ class ControllerGuardsTest < ActiveSupport::TestCase
         assert_match(/reached your limit/i, result.message)
 
         # Should have marked as blocked
-        state = PricingPlans::EnforcementState.find_by(billable: @org, limit_key: "projects")
+        state = PricingPlans::EnforcementState.find_by(plan_owner: @org, limit_key: "projects")
         assert state&.blocked?
       end
     end
@@ -298,13 +298,13 @@ class ControllerGuardsTest < ActiveSupport::TestCase
     end
   end
 
-  def test_result_includes_limit_key_and_billable_in_context
+  def test_result_includes_limit_key_and_plan_owner_in_context
     result = require_plan_limit!(:projects, plan_owner: @org, by: 2)
 
     # All results should include context for potential use in controllers
     if result.grace? || result.blocked? || result.warning?
       assert result.limit_key
-      assert result.billable
+      assert result.plan_owner
     end
   end
 

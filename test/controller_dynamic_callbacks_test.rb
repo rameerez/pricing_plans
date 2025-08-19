@@ -6,13 +6,13 @@ class ControllerDynamicCallbacksTest < ActiveSupport::TestCase
   class DummyController
     include PricingPlans::ControllerGuards
 
-    def initialize(billable)
-      @billable = billable
+    def initialize(plan_owner)
+      @plan_owner = plan_owner
     end
 
     # Common convention helper that should be auto-detected
     def current_organization
-      @billable
+      @plan_owner
     end
 
     # Simulate Rails redirect/flash helpers for tests below
@@ -146,7 +146,7 @@ class ControllerDynamicCallbacksTest < ActiveSupport::TestCase
     plan.limits :licenses, to: 0, after_limit: :block_usage
     PricingPlans::PlanResolver.stub(:effective_plan_for, plan) do
       controller_class.pricing_plans_redirect_on_blocked_limit = :pricing_path
-      # Provide billable via common convention method
+      # Provide plan_owner via common convention method
       controller.define_singleton_method(:current_organization) { org }
       caught = catch(:abort) do
         controller.enforce_licenses_limit!
@@ -202,7 +202,7 @@ class ControllerDynamicCallbacksTest < ActiveSupport::TestCase
     assert_equal true, controller.enforce_api_access!(for: block)
   end
 
-  def test_enforce_dynamic_feature_guard_accepts_explicit_billable_override
+  def test_enforce_dynamic_feature_guard_accepts_explicit_plan_owner_override
     org1 = create_organization
     org2 = create_organization
     controller = DummyController.new(org1)
@@ -215,7 +215,7 @@ class ControllerDynamicCallbacksTest < ActiveSupport::TestCase
     assert_equal true, controller.enforce_api_access!(plan_owner: org2)
   end
 
-  def test_billable_resolution_prefers_configured_method_over_conventions
+  def test_plan_owner_resolution_prefers_configured_method_over_conventions
     org1 = create_organization
     org2 = create_organization
     PricingPlans::Assignment.assign_plan_to(org2, :pro)
@@ -227,7 +227,7 @@ class ControllerDynamicCallbacksTest < ActiveSupport::TestCase
     assert_equal true, controller.enforce_api_access!
   end
 
-  def test_billable_resolution_with_block
+  def test_plan_owner_resolution_with_block
     org1 = create_organization
     org2 = create_organization
     PricingPlans::Assignment.assign_plan_to(org2, :pro)
@@ -242,7 +242,7 @@ class ControllerDynamicCallbacksTest < ActiveSupport::TestCase
     end
     DummyConfiguredController.use_block! { @org2 }
     controller = DummyConfiguredController.new(org1: org1, org2: org2)
-    # Should allow access; block-provided billable is supported (exact target not material here)
+    # Should allow access; block-provided plan_owner is supported (exact target not material here)
     assert_nothing_raised { controller.enforce_api_access! }
   end
 
@@ -252,7 +252,7 @@ class ControllerDynamicCallbacksTest < ActiveSupport::TestCase
     refute controller.respond_to?(:enforce_api_access)
   end
 
-  def test_configuration_error_when_billable_cannot_be_inferred
+  def test_configuration_error_when_plan_owner_cannot_be_inferred
     # Reconfigure to a plan owner class without a matching helper
     original = PricingPlans.configuration.plan_owner_class
     PricingPlans.configuration.plan_owner_class = "Workspace"

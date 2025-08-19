@@ -40,7 +40,7 @@ class PlanTest < ActiveSupport::TestCase
     refute p3.free?
   end
 
-  def test_billable_on_free_plan
+  def test_plan_owner_on_free_plan
     org = create_organization
 
     free_plan = PricingPlans::Registry.plan(:free)

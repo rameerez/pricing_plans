@@ -165,7 +165,7 @@ class PlanResolverTest < ActiveSupport::TestCase
     end
   end
 
-  def test_billable_without_pay_methods
+  def test_plan_owner_without_pay_methods
     # Create a basic object without Pay methods
     basic_org = Object.new
 

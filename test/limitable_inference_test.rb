@@ -13,7 +13,7 @@ class LimitableInferenceTest < ActiveSupport::TestCase
 
     limits = test_class.pricing_plans_limits
     assert limits.key?(:projects)
-    assert_equal :organization, limits[:projects][:billable_method]
+    assert_equal :organization, limits[:projects][:plan_owner_method]
     assert_nil limits[:projects][:per]
   end
 
@@ -25,10 +25,10 @@ class LimitableInferenceTest < ActiveSupport::TestCase
     end
 
     limits = test_class.pricing_plans_limits
-    assert_equal :self, limits[:own_records][:billable_method]
+    assert_equal :self, limits[:own_records][:plan_owner_method]
   end
 
-  def test_on_alias_for_billable_keyword
+  def test_on_alias_for_plan_owner_keyword
     test_class = Class.new(ActiveRecord::Base) do
       self.table_name = "projects"
       belongs_to :organization
@@ -37,10 +37,10 @@ class LimitableInferenceTest < ActiveSupport::TestCase
     end
 
     limits = test_class.pricing_plans_limits
-    assert_equal :organization, limits[:projects][:billable_method]
+    assert_equal :organization, limits[:projects][:plan_owner_method]
   end
 
-  def test_billable_declares_association_limits_via_has_many_option
+  def test_plan_owner_declares_association_limits_via_has_many_option
     klass_name = "OrgWithLimitedAssoc_#{SecureRandom.hex(4)}"
     Object.const_set(klass_name, Class.new(ActiveRecord::Base))
     org_class = Object.const_get(klass_name).class_eval do
@@ -52,10 +52,10 @@ class LimitableInferenceTest < ActiveSupport::TestCase
 
     # The child model should have received Limitable configuration for :projects
     assert Project.pricing_plans_limits.key?(:projects)
-    assert_equal :organization, Project.pricing_plans_limits[:projects][:billable_method]
+    assert_equal :organization, Project.pricing_plans_limits[:projects][:plan_owner_method]
     assert_equal "Too many projects!", Project.pricing_plans_limits[:projects][:error_after_limit]
 
-    # The billable should expose sugar methods
+    # The plan_owner should expose sugar methods
     inst = org_class.new
     assert_respond_to inst, :projects_within_plan_limits?
     assert_respond_to inst, :projects_remaining
@@ -64,10 +64,10 @@ class LimitableInferenceTest < ActiveSupport::TestCase
   end
 
   def test_has_many_limited_registers_when_child_class_defined_later
-    billable_const = "OrgWithPending_#{SecureRandom.hex(4)}"
+    plan_owner_const = "OrgWithPending_#{SecureRandom.hex(4)}"
     child_const = "LaterProject_#{SecureRandom.hex(4)}"
-    Object.const_set(billable_const, Class.new(ActiveRecord::Base))
-    org_class = Object.const_get(billable_const).class_eval do
+    Object.const_set(plan_owner_const, Class.new(ActiveRecord::Base))
+    org_class = Object.const_get(plan_owner_const).class_eval do
       self.table_name = "organizations"
       include PricingPlans::PlanOwner
       has_many :later_projects,
@@ -93,11 +93,11 @@ class LimitableInferenceTest < ActiveSupport::TestCase
     child_klass = Object.const_get(child_const)
     limits = child_klass.pricing_plans_limits
     assert limits.key?(:later_projects)
-    assert_equal :organization, limits[:later_projects][:billable_method]
+    assert_equal :organization, limits[:later_projects][:plan_owner_method]
     assert_equal :month, limits[:later_projects][:per]
     assert_equal "Monthly cap", limits[:later_projects][:error_after_limit]
   ensure
-    Object.send(:remove_const, billable_const.to_sym) if Object.const_defined?(billable_const.to_sym)
+    Object.send(:remove_const, plan_owner_const.to_sym) if Object.const_defined?(plan_owner_const.to_sym)
     Object.send(:remove_const, child_const.to_sym) if Object.const_defined?(child_const.to_sym)
   end
 

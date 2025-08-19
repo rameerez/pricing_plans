@@ -11,13 +11,13 @@ class LimitableTest < ActiveSupport::TestCase
 
   def test_limited_by_configures_persistent_limit
     # This is tested indirectly through the Project model which includes Limitable
-    # and calls limited_by :projects, billable: :organization
+    # and calls limited_by :projects, plan_owner: :organization
 
     project = Project.new(name: "Test", organization: create_organization)
 
     # The pricing_plans_limits should be configured
     assert Project.pricing_plans_limits.key?(:projects)
-    assert_equal :organization, Project.pricing_plans_limits[:projects][:billable_method]
+    assert_equal :organization, Project.pricing_plans_limits[:projects][:plan_owner_method]
     assert_nil Project.pricing_plans_limits[:projects][:per]
   end
 
@@ -26,7 +26,7 @@ class LimitableTest < ActiveSupport::TestCase
     custom_model = CustomModel.new(name: "Test", organization: create_organization)
 
     assert CustomModel.pricing_plans_limits.key?(:custom_models)
-    assert_equal :organization, CustomModel.pricing_plans_limits[:custom_models][:billable_method]
+    assert_equal :organization, CustomModel.pricing_plans_limits[:custom_models][:plan_owner_method]
     assert_equal :month, CustomModel.pricing_plans_limits[:custom_models][:per]
   end
 
@@ -50,7 +50,7 @@ class LimitableTest < ActiveSupport::TestCase
     assert_nil counter, "Expected no counter for per-period limits"
   end
 
-  def test_count_for_billable_counts_associated_records
+  def test_count_for_plan_owner_counts_associated_records
     org = create_organization
     PricingPlans::Assignment.assign_plan_to(org, :enterprise)
     Project.create!(name: "Project 1", organization: org)
@@ -61,10 +61,10 @@ class LimitableTest < ActiveSupport::TestCase
     PricingPlans::Assignment.assign_plan_to(other_org, :enterprise)
     Project.create!(name: "Other Project", organization: other_org)
 
-    count = Project.count_for_billable(org, :organization)
+    count = Project.count_for_plan_owner(org, :organization)
     assert_equal 2, count
 
-    other_count = Project.count_for_billable(other_org, :organization)
+    other_count = Project.count_for_plan_owner(other_org, :organization)
     assert_equal 1, other_count
   end
 
@@ -160,7 +160,7 @@ class LimitableTest < ActiveSupport::TestCase
 
       # Find the usage record - let the system calculate the period
       usage = PricingPlans::Usage.find_by(
-        billable: org,
+        plan_owner: org,
         limit_key: "custom_models"
       )
 
@@ -180,7 +180,7 @@ class LimitableTest < ActiveSupport::TestCase
 
       # Simulate race condition by creating usage record first
       existing_usage = PricingPlans::Usage.create!(
-        billable: org,
+        plan_owner: org,
         limit_key: "custom_models",
         period_start: period_start,
         period_end: period_end,
@@ -258,7 +258,7 @@ class LimitableTest < ActiveSupport::TestCase
     }
   end
 
-  def test_billable_method_self_option
+  def test_plan_owner_method_self_option
     # Test a theoretical model that limits itself
     test_class = Class.new(ActiveRecord::Base) do
       self.table_name = "organizations"  # Reuse existing table for test
@@ -268,7 +268,7 @@ class LimitableTest < ActiveSupport::TestCase
 
     test_instance = test_class.new(name: "Test")
 
-    assert_equal :self, test_class.pricing_plans_limits[:self_limit][:billable_method]
+    assert_equal :self, test_class.pricing_plans_limits[:self_limit][:plan_owner_method]
   end
 
   def test_multiple_limits_on_same_model
@@ -290,7 +290,7 @@ class LimitableTest < ActiveSupport::TestCase
     assert_equal :week, limits[:second_limit][:per]
   end
 
-  def test_infers_limit_key_when_omitted_and_billable_from_config
+  def test_infers_limit_key_when_omitted_and_plan_owner_from_config
     test_class = Class.new(ActiveRecord::Base) do
       self.table_name = "projects"
       belongs_to :organization
@@ -300,11 +300,11 @@ class LimitableTest < ActiveSupport::TestCase
 
     limits = test_class.pricing_plans_limits
     assert limits.key?(:projects)
-    assert_equal :organization, limits[:projects][:billable_method]
+    assert_equal :organization, limits[:projects][:plan_owner_method]
     assert_nil limits[:projects][:per]
   end
 
-  def test_infers_billable_from_common_conventions_when_configured_missing
+  def test_infers_plan_owner_from_common_conventions_when_configured_missing
     # Temporarily set an unassociated plan_owner_class so it won't match
     original = PricingPlans.configuration.plan_owner_class
     PricingPlans.configuration.plan_owner_class = "Workspace"
@@ -318,7 +318,7 @@ class LimitableTest < ActiveSupport::TestCase
       end
 
       limits = test_class.pricing_plans_limits
-      assert_equal :account, limits[:projects][:billable_method]
+      assert_equal :account, limits[:projects][:plan_owner_method]
     ensure
       PricingPlans.configuration.plan_owner_class = original
     end
@@ -332,7 +332,7 @@ class LimitableTest < ActiveSupport::TestCase
     end
 
     limits = test_class.pricing_plans_limits
-    assert_equal :self, limits[:self_limit][:billable_method]
+    assert_equal :self, limits[:self_limit][:plan_owner_method]
   end
 
   def test_per_period_with_inference
@@ -345,7 +345,7 @@ class LimitableTest < ActiveSupport::TestCase
 
     limits = test_class.pricing_plans_limits
     assert_equal :month, limits[:custom_models][:per]
-    assert_equal :organization, limits[:custom_models][:billable_method]
+    assert_equal :organization, limits[:custom_models][:plan_owner_method]
   end
 
   def test_registers_counter_for_inferred_persistent_limit

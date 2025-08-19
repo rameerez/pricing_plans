@@ -90,7 +90,7 @@ class PeriodCalculatorTest < ActiveSupport::TestCase
   end
 
   def test_custom_callable_period
-    custom_period = ->(billable) do
+    custom_period = ->(plan_owner) do
       [Time.parse("2025-01-01 00:00:00 UTC"), Time.parse("2025-01-07 23:59:59 UTC")]
     end
 
@@ -104,7 +104,7 @@ class PeriodCalculatorTest < ActiveSupport::TestCase
   end
 
   def test_custom_callable_validation_invalid_return_type
-    invalid_period = ->(billable) { "not an array" }
+    invalid_period = ->(plan_owner) { "not an array" }
 
     PricingPlans.configuration.period_cycle = invalid_period
 
@@ -116,7 +116,7 @@ class PeriodCalculatorTest < ActiveSupport::TestCase
   end
 
   def test_custom_callable_validation_invalid_time_objects
-    invalid_period = ->(billable) { ["not a time", "also not a time"] }
+    invalid_period = ->(plan_owner) { ["not a time", "also not a time"] }
 
     PricingPlans.configuration.period_cycle = invalid_period
 
@@ -128,7 +128,7 @@ class PeriodCalculatorTest < ActiveSupport::TestCase
   end
 
   def test_custom_callable_validation_end_before_start
-    invalid_period = ->(billable) do
+    invalid_period = ->(plan_owner) do
       [Time.parse("2025-01-02 00:00:00 UTC"), Time.parse("2025-01-01 00:00:00 UTC")]
     end
 

@@ -8,13 +8,13 @@ class FeatureDeniedRescueIntegrationTest < ActiveSupport::TestCase
     include PricingPlans::ControllerGuards
     include PricingPlans::ControllerRescues
 
-    def initialize(billable:, format: :json)
-      @billable = billable
+    def initialize(plan_owner:, format: :json)
+      @plan_owner = plan_owner
       @format = format
     end
 
     def current_organization
-      @billable
+      @plan_owner
     end
 
     # Minimal surface needed by the rescue module
@@ -64,17 +64,17 @@ class FeatureDeniedRescueIntegrationTest < ActiveSupport::TestCase
   end
 
   def test_json_gated_returns_403_payload
-    controller = DummyController.new(billable: @org, format: :json)
+    controller = DummyController.new(plan_owner: @org, format: :json)
     controller.gated
     assert_equal :render, controller.result[:action]
     assert_equal :forbidden, controller.result[:kwargs][:status]
     payload = controller.result[:kwargs][:json]
     assert_match(/upgrade|not available/i, payload[:error])
-    # In our tiny controller we do not provide billable to the exception, so feature may be nil here
+    # In our tiny controller we do not provide plan_owner to the exception, so feature may be nil here
   end
 
   def test_html_gated_redirects_to_pricing
-    controller = DummyController.new(billable: @org, format: :html)
+    controller = DummyController.new(plan_owner: @org, format: :html)
     controller.gated
     assert_equal :redirect_to, controller.result[:action]
     assert_equal "/pricing", controller.result[:path]

@@ -166,9 +166,9 @@ class RegistryTest < ActiveSupport::TestCase
         price 0
       end
 
-      config.on_warning :projects do |billable, threshold|
+      config.on_warning :projects do |plan_owner, threshold|
         handler_called = true
-        handler_args = [billable, threshold]
+        handler_args = [plan_owner, threshold]
       end
     end
 
@@ -244,15 +244,15 @@ class RegistryTest < ActiveSupport::TestCase
         price 0
       end
 
-      config.on_warning :projects do |billable, threshold|
+      config.on_warning :projects do |plan_owner, threshold|
         # handler
       end
 
-      config.on_grace_start :projects do |billable, ends_at|
+      config.on_grace_start :projects do |plan_owner, ends_at|
         # handler
       end
 
-      config.on_block :projects do |billable|
+      config.on_block :projects do |plan_owner|
         # handler
       end
     end

@@ -162,10 +162,10 @@ module PricingPlans
       end if base.respond_to?(:define_method)
     end
 
-    # Checks if a given billable object is within the plan limit for a specific key.
+    # Checks if a given plan_owner object is within the plan limit for a specific key.
     #
     # Usage:
-    #   result = require_plan_limit!(:projects, billable: current_organization)
+    #   result = require_plan_limit!(:projects, plan_owner: current_organization)
     #   if result.blocked?
     #     # Handle blocked case (e.g., show upgrade prompt)
     #     redirect_to upgrade_path, alert: result.message
@@ -175,7 +175,7 @@ module PricingPlans
     #
     # Options:
     #   - limit_key:        The symbol for the limit (e.g., :projects)
-    #   - billable:         The billable object (e.g., current_organization)
+    #   - plan_owner:         The plan_owner object (e.g., current_organization)
     #   - by:               The number of units to check for (default: 1)
     #   - allow_system_override: If true, returns a blocked result but does not enforce the block (default: false)
     #
@@ -210,7 +210,7 @@ module PricingPlans
         # Allow trusted flows to bypass hard block while signaling downstream
         if allow_system_override
           metadata = build_metadata(plan_owner, limit_key, current_usage, limit_amount)
-          return Result.new(state: :blocked, message: build_over_limit_message(limit_key, current_usage, limit_amount, :blocked), limit_key: limit_key, billable: plan_owner, metadata: metadata.merge(system_override: true))
+          return Result.new(state: :blocked, message: build_over_limit_message(limit_key, current_usage, limit_amount, :blocked), limit_key: limit_key, plan_owner: plan_owner, metadata: metadata.merge(system_override: true))
         end
         # Handle exceeded limit based on after_limit policy
         case limit_config[:after_limit]
@@ -250,7 +250,7 @@ module PricingPlans
           enriched_result = PricingPlans::Result.blocked(
             result.message,
             limit_key: result.limit_key,
-            billable: result.billable,
+            plan_owner: result.plan_owner,
             metadata: (result.metadata || {}).merge(redirect_to: resolved_target)
           )
           handle_pricing_plans_limit_blocked(enriched_result)
@@ -300,7 +300,7 @@ module PricingPlans
           enriched_result = PricingPlans::Result.blocked(
             result.message,
             limit_key: result.limit_key,
-            billable: result.billable,
+            plan_owner: result.plan_owner,
             metadata: (result.metadata || {}).merge(redirect_to: resolved_target)
           )
           handle_pricing_plans_limit_blocked(enriched_result)
@@ -393,7 +393,7 @@ module PricingPlans
         upgrade_message = if PricingPlans.configuration&.message_builder
           begin
             builder = PricingPlans.configuration.message_builder
-            builder.call(context: :feature_denied, feature_key: feature_key, billable: plan_owner, plan_name: current_plan_name, highlighted_plan: highlighted_plan&.name)
+            builder.call(context: :feature_denied, feature_key: feature_key, plan_owner: plan_owner, plan_name: current_plan_name, highlighted_plan: highlighted_plan&.name)
           rescue StandardError
             nil
           end
@@ -412,10 +412,10 @@ module PricingPlans
 
     private
 
-    def handle_within_limit(billable, limit_key, current_usage, limit_amount, by)
+    def handle_within_limit(plan_owner, limit_key, current_usage, limit_amount, by)
       # Check for warning thresholds
       percent_after_action = ((current_usage + by).to_f / limit_amount) * 100
-      warning_thresholds = LimitChecker.warning_thresholds(billable, limit_key)
+      warning_thresholds = LimitChecker.warning_thresholds(plan_owner, limit_key)
 
       crossed_threshold = warning_thresholds.find do |threshold|
         threshold_percent = threshold * 100
@@ -427,56 +427,56 @@ module PricingPlans
 
       if crossed_threshold
         # Emit warning event
-        GraceManager.maybe_emit_warning!(billable, limit_key, crossed_threshold)
+        GraceManager.maybe_emit_warning!(plan_owner, limit_key, crossed_threshold)
 
         remaining = limit_amount - current_usage - by
         warning_message = build_warning_message(limit_key, remaining, limit_amount)
-        metadata = build_metadata(billable, limit_key, current_usage + by, limit_amount)
-        Result.warning(warning_message, limit_key: limit_key, billable: billable, metadata: metadata)
+        metadata = build_metadata(plan_owner, limit_key, current_usage + by, limit_amount)
+        Result.warning(warning_message, limit_key: limit_key, plan_owner: plan_owner, metadata: metadata)
       else
         remaining = limit_amount - current_usage - by
-        metadata = build_metadata(billable, limit_key, current_usage + by, limit_amount)
+        metadata = build_metadata(plan_owner, limit_key, current_usage + by, limit_amount)
         Result.within("#{remaining} #{limit_key.to_s.humanize.downcase} remaining", metadata: metadata)
       end
     end
 
-    def handle_warning_only(billable, limit_key, current_usage, limit_amount)
+    def handle_warning_only(plan_owner, limit_key, current_usage, limit_amount)
       warning_message = build_over_limit_message(limit_key, current_usage, limit_amount, :warning)
-      metadata = build_metadata(billable, limit_key, current_usage, limit_amount)
-      Result.warning(warning_message, limit_key: limit_key, billable: billable, metadata: metadata)
+      metadata = build_metadata(plan_owner, limit_key, current_usage, limit_amount)
+      Result.warning(warning_message, limit_key: limit_key, plan_owner: plan_owner, metadata: metadata)
     end
 
-    def handle_immediate_block(billable, limit_key, current_usage, limit_amount)
+    def handle_immediate_block(plan_owner, limit_key, current_usage, limit_amount)
       blocked_message = build_over_limit_message(limit_key, current_usage, limit_amount, :blocked)
 
       # Mark as blocked immediately
-      GraceManager.mark_blocked!(billable, limit_key)
+      GraceManager.mark_blocked!(plan_owner, limit_key)
 
-      metadata = build_metadata(billable, limit_key, current_usage, limit_amount)
-      Result.blocked(blocked_message, limit_key: limit_key, billable: billable, metadata: metadata)
+      metadata = build_metadata(plan_owner, limit_key, current_usage, limit_amount)
+      Result.blocked(blocked_message, limit_key: limit_key, plan_owner: plan_owner, metadata: metadata)
     end
 
-    def handle_grace_then_block(billable, limit_key, current_usage, limit_amount, limit_config)
+    def handle_grace_then_block(plan_owner, limit_key, current_usage, limit_amount, limit_config)
       # Check if already in grace or blocked
-      if GraceManager.should_block?(billable, limit_key)
+      if GraceManager.should_block?(plan_owner, limit_key)
         # Mark as blocked if not already blocked
-        GraceManager.mark_blocked!(billable, limit_key)
+        GraceManager.mark_blocked!(plan_owner, limit_key)
         blocked_message = build_over_limit_message(limit_key, current_usage, limit_amount, :blocked)
-        metadata = build_metadata(billable, limit_key, current_usage, limit_amount)
-        Result.blocked(blocked_message, limit_key: limit_key, billable: billable, metadata: metadata)
-      elsif GraceManager.grace_active?(billable, limit_key)
+        metadata = build_metadata(plan_owner, limit_key, current_usage, limit_amount)
+        Result.blocked(blocked_message, limit_key: limit_key, plan_owner: plan_owner, metadata: metadata)
+      elsif GraceManager.grace_active?(plan_owner, limit_key)
         # Already in grace period
-        grace_ends_at = GraceManager.grace_ends_at(billable, limit_key)
+        grace_ends_at = GraceManager.grace_ends_at(plan_owner, limit_key)
         grace_message = build_grace_message(limit_key, current_usage, limit_amount, grace_ends_at)
-        metadata = build_metadata(billable, limit_key, current_usage, limit_amount, grace_ends_at: grace_ends_at)
-        Result.grace(grace_message, limit_key: limit_key, billable: billable, metadata: metadata)
+        metadata = build_metadata(plan_owner, limit_key, current_usage, limit_amount, grace_ends_at: grace_ends_at)
+        Result.grace(grace_message, limit_key: limit_key, plan_owner: plan_owner, metadata: metadata)
       else
         # Start grace period
-        GraceManager.mark_exceeded!(billable, limit_key, grace_period: limit_config[:grace])
-        grace_ends_at = GraceManager.grace_ends_at(billable, limit_key)
+        GraceManager.mark_exceeded!(plan_owner, limit_key, grace_period: limit_config[:grace])
+        grace_ends_at = GraceManager.grace_ends_at(plan_owner, limit_key)
         grace_message = build_grace_message(limit_key, current_usage, limit_amount, grace_ends_at)
-        metadata = build_metadata(billable, limit_key, current_usage, limit_amount, grace_ends_at: grace_ends_at)
-        Result.grace(grace_message, limit_key: limit_key, billable: billable, metadata: metadata)
+        metadata = build_metadata(plan_owner, limit_key, current_usage, limit_amount, grace_ends_at: grace_ends_at)
+        Result.grace(grace_message, limit_key: limit_key, plan_owner: plan_owner, metadata: metadata)
       end
     end
 
@@ -558,7 +558,7 @@ module PricingPlans
       end
     end
 
-    def build_metadata(billable, limit_key, usage, limit_amount, grace_ends_at: nil)
+    def build_metadata(plan_owner, limit_key, usage, limit_amount, grace_ends_at: nil)
       {
         limit_amount: limit_amount,
         current_usage: usage,

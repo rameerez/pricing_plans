@@ -174,10 +174,10 @@ class GraceManagerTest < ActiveSupport::TestCase
     org = create_organization
 
     PricingPlans::GraceManager.mark_exceeded!(org, :projects)
-    assert PricingPlans::EnforcementState.exists?(billable: org, limit_key: "projects")
+    assert PricingPlans::EnforcementState.exists?(plan_owner: org, limit_key: "projects")
 
     PricingPlans::GraceManager.reset_state!(org, :projects)
-    refute PricingPlans::EnforcementState.exists?(billable: org, limit_key: "projects")
+    refute PricingPlans::EnforcementState.exists?(plan_owner: org, limit_key: "projects")
   end
 
   def test_reset_state_handles_nonexistent_state
@@ -263,7 +263,7 @@ class GraceManagerTest < ActiveSupport::TestCase
     assert_equal state1.id, state2.id
 
     # Only one enforcement state should exist
-    assert_equal 1, PricingPlans::EnforcementState.where(billable: org, limit_key: "projects").count
+    assert_equal 1, PricingPlans::EnforcementState.where(plan_owner: org, limit_key: "projects").count
   end
 
   def test_deadlock_retry_mechanism

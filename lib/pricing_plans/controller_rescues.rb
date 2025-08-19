@@ -38,8 +38,8 @@ module PricingPlans
           plan: begin
             if error.respond_to?(:plan_owner)
               plan_obj = PricingPlans::PlanResolver.effective_plan_for(error.plan_owner)
-            elsif error.respond_to?(:billable)
-              plan_obj = PricingPlans::PlanResolver.effective_plan_for(error.billable)
+            elsif error.respond_to?(:plan_owner)
+              plan_obj = PricingPlans::PlanResolver.effective_plan_for(error.plan_owner)
             else
               plan_obj = nil
             end
@@ -83,7 +83,7 @@ module PricingPlans
           error: message,
           limit: result&.limit_key,
           plan: begin
-            plan_obj = PricingPlans::PlanResolver.effective_plan_for(result&.billable)
+            plan_obj = PricingPlans::PlanResolver.effective_plan_for(result&.plan_owner)
             plan_obj&.name
           rescue StandardError
             nil

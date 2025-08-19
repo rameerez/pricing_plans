@@ -48,7 +48,7 @@ class ViewHelpersTest < ActiveSupport::TestCase
   end
 
   def test_limit_status_basic
-    status = PricingPlans.limit_status(:projects, billable: @org)
+    status = PricingPlans.limit_status(:projects, plan_owner: @org)
     assert_equal true, status[:configured]
     assert_equal :projects, status[:limit_key]
     assert_includes [:unlimited, Integer], status[:limit_amount].class
@@ -162,7 +162,7 @@ class ViewHelpersTest < ActiveSupport::TestCase
         # No grace and not blocked (for free plan projects after_limit: :block_usage, severity should be :blocked at >= limit)
         # For a limit with grace_then_block, at_limit should appear
         # Switch to pro plan where :projects => 10; stub limit_status to mimic per plan
-        st = PricingPlans.limit_status(:projects, billable: org)
+        st = PricingPlans.limit_status(:projects, plan_owner: org)
         # Baseline: ensure message exists when not OK
         msg = org.limit_message(:projects)
         assert_nil msg if org.limit_severity(:projects) == :ok

@@ -24,7 +24,7 @@ class CtaHelpersTest < ActiveSupport::TestCase
 
   def test_cta_url_resolver_prefers_default_cta_url_when_set
     PricingPlans.configuration.default_cta_url = "/pricing"
-    assert_equal "/pricing", @plan.cta_url(billable: @org)
+    assert_equal "/pricing", @plan.cta_url(plan_owner: @org)
   ensure
     PricingPlans.configuration.default_cta_url = nil
   end
@@ -51,7 +51,7 @@ class CtaHelpersTest < ActiveSupport::TestCase
         Rails.define_singleton_method(:application) { OpenStruct.new(routes: app.routes) }
       end
 
-      url = @plan.cta_url(billable: @org)
+      url = @plan.cta_url(plan_owner: @org)
       assert_equal "/subscribe?plan=pro&interval=month", url
     ensure
       if created_rails

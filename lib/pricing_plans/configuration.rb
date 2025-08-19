@@ -46,7 +46,7 @@ module PricingPlans
     # Optional default interval for UI toggles
     attr_accessor :interval_default_for_ui
     # Optional downgrade policy hook for CTA ergonomics
-    # Signature: ->(from:, to:, billable:) { [allowed_boolean, reason_string_or_nil] }
+    # Signature: ->(from:, to:, plan_owner:) { [allowed_boolean, reason_string_or_nil] }
     attr_accessor :downgrade_policy
     attr_reader :plans, :event_handlers
 

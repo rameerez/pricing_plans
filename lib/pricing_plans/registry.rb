@@ -10,7 +10,7 @@ module PricingPlans
 
         validate_registry!
         lint_usage_credits_integration!
-        attach_billable_helpers!
+        attach_plan_owner_helpers!
         attach_pending_association_limits!
 
         self
@@ -107,13 +107,13 @@ module PricingPlans
         validate_limit_consistency!
       end
 
-      def attach_billable_helpers!
+      def attach_plan_owner_helpers!
         klass = plan_owner_class rescue nil
         return unless klass
         return if klass.included_modules.include?(PricingPlans::PlanOwner)
         klass.include(PricingPlans::PlanOwner)
       rescue StandardError
-        # If billable class isn't available yet, skip silently.
+        # If plan_owner class isn't available yet, skip silently.
       end
 
       def attach_pending_association_limits!

@@ -52,7 +52,7 @@ class LimitCheckerMoreTest < ActiveSupport::TestCase
       end
 
       # Create an enforcement state with last_warning_threshold = 0.8
-      state = PricingPlans::EnforcementState.create!(billable: org, limit_key: "projects", last_warning_threshold: 0.8)
+      state = PricingPlans::EnforcementState.create!(plan_owner: org, limit_key: "projects", last_warning_threshold: 0.8)
 
       # Now at 6/10 = 60%, lower than last threshold → should be nil
       PricingPlans::LimitChecker.stub(:current_usage_for, 6) do
@@ -198,7 +198,7 @@ class LimitCheckerMoreTest < ActiveSupport::TestCase
     end
   end
 
-  def test_persistent_count_scope_proc_with_billable_param
+  def test_persistent_count_scope_proc_with_plan_owner_param
     org1 = create_organization
     org2 = create_organization
     PricingPlans::Assignment.assign_plan_to(org1, :enterprise)
@@ -209,11 +209,11 @@ class LimitCheckerMoreTest < ActiveSupport::TestCase
     org1.projects.create!(name: 'B')
     org2.projects.create!(name: 'A')
 
-    # Plan-level scope that uses both relation and billable
+    # Plan-level scope that uses both relation and plan_owner
     plan = OpenStruct.new
     plan.define_singleton_method(:limit_for) do |key|
       if key == :projects
-        { to: 10, count_scope: ->(rel, billable) { rel.where(organization_id: billable.id).where(name: 'A') } }
+        { to: 10, count_scope: ->(rel, plan_owner) { rel.where(organization_id: plan_owner.id).where(name: 'A') } }
       end
     end
 

@@ -148,8 +148,8 @@ module PricingPlans
     end
 
     # Syntactic sugar for feature checks:
-    # Allows calls like `billable.plan_allows_api_access?` which map to
-    # `billable.plan_allows?(:api_access)`.
+    # Allows calls like `plan_owner.plan_allows_api_access?` which map to
+    # `plan_owner.plan_allows?(:api_access)`.
     def method_missing(method_name, *args, &block)
       if (m = method_name.to_s.match(/^plan_allows_(.+)\?$/))
         feature_key = m[1].to_sym

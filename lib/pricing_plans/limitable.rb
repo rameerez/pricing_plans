@@ -11,29 +11,29 @@ module PricingPlans
       # Callbacks for automatic tracking
       after_create :increment_per_period_counters
       after_destroy :decrement_persistent_counters
-      # Add billable-centric convenience methods to instances of the billable class
-      # when possible. These are no-ops if the model isn't the billable itself.
+      # Add plan_owner-centric convenience methods to instances of the plan_owner class
+      # when possible. These are no-ops if the model isn't the plan_owner itself.
       define_method :within_plan_limits? do |limit_key, by: 1|
-        billable = self
-        LimitChecker.within_limit?(billable, limit_key, by: by)
+        plan_owner = self
+        LimitChecker.within_limit?(plan_owner, limit_key, by: by)
       end
 
       define_method :plan_limit_remaining do |limit_key|
-        billable = self
-        LimitChecker.plan_limit_remaining(billable, limit_key)
+        plan_owner = self
+        LimitChecker.plan_limit_remaining(plan_owner, limit_key)
       end
 
       define_method :plan_limit_percent_used do |limit_key|
-        billable = self
-        LimitChecker.plan_limit_percent_used(billable, limit_key)
+        plan_owner = self
+        LimitChecker.plan_limit_percent_used(plan_owner, limit_key)
       end
 
       define_method :current_pricing_plan do
         PlanResolver.effective_plan_for(self)
       end
 
-      define_singleton_method :assign_pricing_plan! do |billable, plan_key, source: "manual"|
-        Assignment.assign_plan_to(billable, plan_key, source: source)
+      define_singleton_method :assign_pricing_plan! do |plan_owner, plan_key, source: "manual"|
+        Assignment.assign_plan_to(plan_owner, plan_key, source: source)
       end
     end
 
@@ -56,12 +56,12 @@ module PricingPlans
       # Backing implementation used by both the classic and new macro
       def limited_by(limit_key, plan_owner:, per: nil, error_after_limit: nil, source: nil, count_scope: nil)
         limit_key = limit_key.to_sym
-        billable_method = plan_owner.to_sym
+        plan_owner_method = plan_owner.to_sym
 
         # Store the configuration
         self.pricing_plans_limits = pricing_plans_limits.merge(
           limit_key => {
-            billable_method: billable_method,
+            plan_owner_method: plan_owner_method,
             per: per,
             error_after_limit: error_after_limit,
             source: source,
@@ -72,53 +72,53 @@ module PricingPlans
         # Register counter only for persistent caps
         unless per
           source_proc = count_scope || source
-          PricingPlans::LimitableRegistry.register_counter(limit_key) do |billable_instance|
-            # Base relation for this limited model and billable
-            base_relation = relation_for_billable(billable_instance, billable_method)
+          PricingPlans::LimitableRegistry.register_counter(limit_key) do |plan_owner_instance|
+            # Base relation for this limited model and plan_owner
+            base_relation = relation_for_plan_owner(plan_owner_instance, plan_owner_method)
 
             # Prefer plan-level count_scope if present; fallback to model-provided one
             scope_cfg = begin
-              plan = PlanResolver.effective_plan_for(billable_instance)
+              plan = PlanResolver.effective_plan_for(plan_owner_instance)
               cfg = plan&.limit_for(limit_key)
               cfg && cfg[:count_scope]
             end
             scope_cfg ||= source_proc if source_proc
 
-            relation = apply_count_scope(base_relation, scope_cfg, billable_instance)
+            relation = apply_count_scope(base_relation, scope_cfg, plan_owner_instance)
             relation.respond_to?(:count) ? relation.count : base_relation.count
           end
         end
 
         # Add validation to prevent creation when over limit
-        validate_limit_on_create(limit_key, billable_method, per, error_after_limit)
+        validate_limit_on_create(limit_key, plan_owner_method, per, error_after_limit)
       end
 
-      def count_for_billable(billable_instance, billable_method)
-        relation_for_billable(billable_instance, billable_method).count
+      def count_for_plan_owner(plan_owner_instance, plan_owner_method)
+        relation_for_plan_owner(plan_owner_instance, plan_owner_method).count
       end
 
-      def relation_for_billable(billable_instance, billable_method)
-        joins_condition = if billable_method == :self
-          { id: billable_instance.id }
+      def relation_for_plan_owner(plan_owner_instance, plan_owner_method)
+        joins_condition = if plan_owner_method == :self
+          { id: plan_owner_instance.id }
         else
-          { billable_method => billable_instance }
+          { plan_owner_method => plan_owner_instance }
         end
         where(joins_condition)
       end
 
       # Apply a flexible count_scope to an ActiveRecord::Relation.
       # Accepts Proc/Lambda, Symbol (scope name), Hash (where), or Array of these.
-      def apply_count_scope(relation, scope_cfg, billable_instance)
+      def apply_count_scope(relation, scope_cfg, plan_owner_instance)
         return relation unless scope_cfg
 
         case scope_cfg
         when Array
-          scope_cfg.reduce(relation) { |rel, cfg| apply_count_scope(rel, cfg, billable_instance) }
+          scope_cfg.reduce(relation) { |rel, cfg| apply_count_scope(rel, cfg, plan_owner_instance) }
         when Proc
-          # Support arity variants: (rel) or (rel, billable)
+          # Support arity variants: (rel) or (rel, plan_owner)
           case scope_cfg.arity
           when 1 then scope_cfg.call(relation)
-          when 2 then scope_cfg.call(relation, billable_instance)
+          when 2 then scope_cfg.call(relation, plan_owner_instance)
           else
             relation.instance_exec(&scope_cfg)
           end
@@ -154,13 +154,13 @@ module PricingPlans
 
         # Prefer configured plan_owner_class association name if present
         begin
-          billable_klass = PricingPlans::Registry.plan_owner_class
+          plan_owner_klass = PricingPlans::Registry.plan_owner_class
         rescue StandardError
-          billable_klass = nil
+          plan_owner_klass = nil
         end
 
-        if billable_klass
-          association_name = billable_klass.name.underscore.to_sym
+        if plan_owner_klass
+          association_name = plan_owner_klass.name.underscore.to_sym
           return association_name if reflect_on_association(association_name)
         end
 
@@ -173,7 +173,7 @@ module PricingPlans
         :self
       end
 
-      def validate_limit_on_create(limit_key, billable_method, per, error_after_limit)
+      def validate_limit_on_create(limit_key, plan_owner_method, per, error_after_limit)
         method_name = :"check_limit_on_create_#{limit_key}"
 
         # Only define the method if it doesn't already exist
@@ -181,23 +181,23 @@ module PricingPlans
           validate method_name, on: :create
 
           define_method method_name do
-            billable_instance = if billable_method == :self
+            plan_owner_instance = if plan_owner_method == :self
               self
             else
-              send(billable_method)
+              send(plan_owner_method)
             end
 
-            return unless billable_instance
+            return unless plan_owner_instance
 
-            # Skip validation if the billable doesn't have limits configured
-            plan = PlanResolver.effective_plan_for(billable_instance)
+            # Skip validation if the plan_owner doesn't have limits configured
+            plan = PlanResolver.effective_plan_for(plan_owner_instance)
             limit_config = plan&.limit_for(limit_key)
             return unless limit_config
             return if limit_config[:to] == :unlimited
 
             # For persistent caps, check if we'd exceed the limit
             if per.nil?
-              current_count = self.class.count_for_billable(billable_instance, billable_method)
+              current_count = self.class.count_for_plan_owner(plan_owner_instance, plan_owner_method)
               if current_count >= limit_config[:to]
                 # Check grace/block policy
                 case limit_config[:after_limit]
@@ -205,7 +205,7 @@ module PricingPlans
                   # Allow creation with warning
                   return
                 when :block_usage, :grace_then_block
-                  if limit_config[:after_limit] == :block_usage || GraceManager.should_block?(billable_instance, limit_key)
+                  if limit_config[:after_limit] == :block_usage || GraceManager.should_block?(plan_owner_instance, limit_key)
                     message = error_after_limit || "Cannot create #{self.class.name.downcase}: #{limit_key} limit exceeded"
                     errors.add(:base, message)
                   end
@@ -213,13 +213,13 @@ module PricingPlans
               end
             else
               # For per-period limits, check usage in current period
-              current_usage = LimitChecker.current_usage_for(billable_instance, limit_key, limit_config)
+              current_usage = LimitChecker.current_usage_for(plan_owner_instance, limit_key, limit_config)
               if current_usage >= limit_config[:to]
                 case limit_config[:after_limit]
                 when :just_warn
                   return
                 when :block_usage, :grace_then_block
-                  if limit_config[:after_limit] == :block_usage || GraceManager.should_block?(billable_instance, limit_key)
+                  if limit_config[:after_limit] == :block_usage || GraceManager.should_block?(plan_owner_instance, limit_key)
                     message = error_after_limit || "Cannot create #{self.class.name.downcase}: #{limit_key} limit exceeded for this period"
                     errors.add(:base, message)
                   end
@@ -237,19 +237,19 @@ module PricingPlans
       self.class.pricing_plans_limits.each do |limit_key, config|
         next unless config[:per] # Only per-period limits
 
-        billable_instance = if config[:billable_method] == :self
+        plan_owner_instance = if config[:plan_owner_method] == :self
           self
         else
-          send(config[:billable_method])
+          send(config[:plan_owner_method])
         end
 
-        next unless billable_instance
+        next unless plan_owner_instance
 
-        period_start, period_end = PeriodCalculator.window_for(billable_instance, limit_key)
+        period_start, period_end = PeriodCalculator.window_for(plan_owner_instance, limit_key)
 
         # Use upsert for better performance and concurrency handling
         usage = Usage.find_or_initialize_by(
-          billable: billable_instance,
+          plan_owner: plan_owner_instance,
           limit_key: limit_key.to_s,
           period_start: period_start,
           period_end: period_end
@@ -264,7 +264,7 @@ module PricingPlans
           rescue ActiveRecord::RecordNotUnique
             # Handle race condition - record was created by another process
             usage = Usage.find_by(
-              billable: billable_instance,
+              plan_owner: plan_owner_instance,
               limit_key: limit_key.to_s,
               period_start: period_start,
               period_end: period_end

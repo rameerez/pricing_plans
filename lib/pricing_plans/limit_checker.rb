@@ -4,64 +4,64 @@ module PricingPlans
   class LimitChecker
     class << self
       # English-y aliases used widely across helpers/tests
-      def plan_limit_remaining(billable, limit_key)
-        remaining(billable, limit_key)
+      def plan_limit_remaining(plan_owner, limit_key)
+        remaining(plan_owner, limit_key)
       end
 
-      def plan_limit_percent_used(billable, limit_key)
-        percent_used(billable, limit_key)
+      def plan_limit_percent_used(plan_owner, limit_key)
+        percent_used(plan_owner, limit_key)
       end
-      def within_limit?(billable, limit_key, by: 1)
-        remaining_amount = remaining(billable, limit_key)
+      def within_limit?(plan_owner, limit_key, by: 1)
+        remaining_amount = remaining(plan_owner, limit_key)
         return true if remaining_amount == :unlimited
         remaining_amount >= by
       end
 
-      def remaining(billable, limit_key)
-        plan = PlanResolver.effective_plan_for(billable)
+      def remaining(plan_owner, limit_key)
+        plan = PlanResolver.effective_plan_for(plan_owner)
         limit_config = plan&.limit_for(limit_key)
         return :unlimited unless limit_config
 
         limit_amount = limit_config[:to]
         return :unlimited if limit_amount == :unlimited
 
-        current_usage = current_usage_for(billable, limit_key, limit_config)
+        current_usage = current_usage_for(plan_owner, limit_key, limit_config)
         [0, limit_amount - current_usage].max
       end
 
-      def percent_used(billable, limit_key)
-        plan = PlanResolver.effective_plan_for(billable)
+      def percent_used(plan_owner, limit_key)
+        plan = PlanResolver.effective_plan_for(plan_owner)
         limit_config = plan&.limit_for(limit_key)
         return 0.0 unless limit_config
 
         limit_amount = limit_config[:to]
         return 0.0 if limit_amount == :unlimited || limit_amount.zero?
 
-        current_usage = current_usage_for(billable, limit_key, limit_config)
+        current_usage = current_usage_for(plan_owner, limit_key, limit_config)
         [(current_usage.to_f / limit_amount) * 100, 100.0].min
       end
 
       # Keep short helpers undocumented; public API is plan_limit_* aliases
 
-      def after_limit_action(billable, limit_key)
-        plan = PlanResolver.effective_plan_for(billable)
+      def after_limit_action(plan_owner, limit_key)
+        plan = PlanResolver.effective_plan_for(plan_owner)
         limit_config = plan&.limit_for(limit_key)
         return :block_usage unless limit_config
 
         limit_config[:after_limit]
       end
 
-      def limit_amount(billable, limit_key)
-        plan = PlanResolver.effective_plan_for(billable)
+      def limit_amount(plan_owner, limit_key)
+        plan = PlanResolver.effective_plan_for(plan_owner)
         limit_config = plan&.limit_for(limit_key)
         return :unlimited unless limit_config
 
         limit_config[:to]
       end
 
-      def current_usage_for(billable, limit_key, limit_config = nil)
+      def current_usage_for(plan_owner, limit_key, limit_config = nil)
         limit_config ||= begin
-          plan = PlanResolver.effective_plan_for(billable)
+          plan = PlanResolver.effective_plan_for(plan_owner)
           plan&.limit_for(limit_key)
         end
 
@@ -69,31 +69,31 @@ module PricingPlans
 
         if limit_config[:per]
           # Per-period allowance - check usage table
-          per_period_usage(billable, limit_key)
+          per_period_usage(plan_owner, limit_key)
         else
           # Persistent cap - count live objects
-          persistent_usage(billable, limit_key)
+          persistent_usage(plan_owner, limit_key)
         end
       end
 
-      def warning_thresholds(billable, limit_key)
-        plan = PlanResolver.effective_plan_for(billable)
+      def warning_thresholds(plan_owner, limit_key)
+        plan = PlanResolver.effective_plan_for(plan_owner)
         limit_config = plan&.limit_for(limit_key)
         return [] unless limit_config
 
         limit_config[:warn_at] || []
       end
 
-      def should_warn?(billable, limit_key)
-        percent = percent_used(billable, limit_key)
-        thresholds = warning_thresholds(billable, limit_key)
+      def should_warn?(plan_owner, limit_key)
+        percent = percent_used(plan_owner, limit_key)
+        thresholds = warning_thresholds(plan_owner, limit_key)
 
         # Find the highest threshold that has been crossed
         crossed_threshold = thresholds.select { |t| percent >= (t * 100) }.max
         return nil unless crossed_threshold
 
         # Check if we've already warned for this threshold
-        state = enforcement_state(billable, limit_key)
+        state = enforcement_state(plan_owner, limit_key)
         last_threshold = state&.last_warning_threshold
 
         # Return the threshold if this is a new higher threshold, nil otherwise
@@ -102,11 +102,11 @@ module PricingPlans
 
       private
 
-      def per_period_usage(billable, limit_key)
-        period_start, period_end = PeriodCalculator.window_for(billable, limit_key)
+      def per_period_usage(plan_owner, limit_key)
+        period_start, period_end = PeriodCalculator.window_for(plan_owner, limit_key)
 
         usage = Usage.find_by(
-          billable: billable,
+          plan_owner: plan_owner,
           limit_key: limit_key.to_s,
           period_start: period_start,
           period_end: period_end
@@ -115,19 +115,19 @@ module PricingPlans
         usage&.used || 0
       end
 
-      def persistent_usage(billable, limit_key)
+      def persistent_usage(plan_owner, limit_key)
         # This is provided by the Limitable mixin, which registers per-model counters
         # keyed by limit key. When declared via has_many limited_by_pricing_plans, the
         # child model registers the counter as well.
         counter = LimitableRegistry.counter_for(limit_key)
         return 0 unless counter
 
-        counter.call(billable)
+        counter.call(plan_owner)
       end
 
-      def enforcement_state(billable, limit_key)
+      def enforcement_state(plan_owner, limit_key)
         EnforcementState.find_by(
-          billable: billable,
+          plan_owner: plan_owner,
           limit_key: limit_key.to_s
         )
       end
