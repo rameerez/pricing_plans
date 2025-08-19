@@ -152,6 +152,12 @@ module PricingPlans
       nil
     end
 
+    # Minimal noun resolver for human messages. Defaults to "limit" to match
+    # expected copy in tests and docs. Host apps may override this method.
+    def noun_for(limit_key)
+      "limit"
+    end
+
     # UI-neutral status helpers for building settings/usage UIs
     def limit_status(limit_key, plan_owner:)
       plan = PlanResolver.effective_plan_for(plan_owner)
@@ -482,60 +488,63 @@ module PricingPlans
       st = limit_status(limit_key, plan_owner: plan_owner)
       return nil unless st[:configured]
 
-      sev = severity_for(plan_owner, limit_key)
-      return nil if sev == :ok
+      severity = severity_for(plan_owner, limit_key)
+      return nil if severity == :ok
 
       cfg = configuration
-      key = limit_key
-      cur = st[:current_usage]
-      lim = st[:limit_amount]
-      grace_ends = st[:grace_ends_at]
+      current_usage = st[:current_usage]
+      limit_amount = st[:limit_amount]
+      grace_ends_at = st[:grace_ends_at]
 
       if cfg.message_builder
-        context = case sev
+        context = case severity
                   when :blocked then :over_limit
-                  when :grace   then :grace
+                  when :grace then :grace
                   when :at_limit then :at_limit
                   else :warning
                   end
         begin
-          return cfg.message_builder.call(context: context, limit_key: key, current_usage: cur, limit_amount: lim, grace_ends_at: grace_ends)
+          custom = cfg.message_builder.call(context: context, limit_key: limit_key, current_usage: current_usage, limit_amount: limit_amount, grace_ends_at: grace_ends_at)
+          return custom if custom
         rescue StandardError
           # fall through to defaults
         end
       end
 
-      noun = PricingPlans.noun_for(key) rescue "limit"
+      noun = begin
+        PricingPlans.noun_for(limit_key)
+      rescue StandardError
+        "limit"
+      end
 
-      # Defaults
-      case sev
+      case severity
       when :blocked
-        if lim.is_a?(Numeric)
-          "You've gone over your #{noun} for #{key.to_s.humanize.downcase} (#{cur}/#{lim}). Please upgrade your plan."
+        if limit_amount.is_a?(Numeric)
+          "You've gone over your #{noun} for #{limit_key.to_s.humanize.downcase} (#{current_usage}/#{limit_amount}). Please upgrade your plan."
         else
-          "You've gone over your #{noun} for #{key.to_s.humanize.downcase}. Please upgrade your plan."
+          "You've gone over your #{noun} for #{limit_key.to_s.humanize.downcase}. Please upgrade your plan."
         end
       when :grace
-        deadline = grace_ends ? ", and your grace period ends #{grace_ends.strftime('%B %d at %I:%M%p')}" : ""
-        if lim.is_a?(Numeric)
-          "Heads up! You’re currently over your #{noun} for #{key.to_s.humanize.downcase} (#{cur}/#{lim})#{deadline}. Please upgrade soon to avoid any interruptions."
+        deadline = grace_ends_at ? ", and your grace period ends #{grace_ends_at.strftime('%B %d at %I:%M%p')}" : ""
+        if limit_amount.is_a?(Numeric)
+          "Heads up! You’re currently over your #{noun} for #{limit_key.to_s.humanize.downcase} (#{current_usage}/#{limit_amount})#{deadline}. Please upgrade soon to avoid any interruptions."
         else
-          "Heads up! You’re currently over your #{noun} for #{key.to_s.humanize.downcase}#{deadline}. Please upgrade soon to avoid any interruptions."
+          "Heads up! You’re currently over your #{noun} for #{limit_key.to_s.humanize.downcase}#{deadline}. Please upgrade soon to avoid any interruptions."
         end
       when :at_limit
-        if lim.is_a?(Numeric)
-          "You’ve reached your #{noun} for #{key.to_s.humanize.downcase} (#{cur}/#{lim}). Upgrade your plan to unlock more."
+        if limit_amount.is_a?(Numeric)
+          "You’ve reached your #{noun} for #{limit_key.to_s.humanize.downcase} (#{current_usage}/#{limit_amount}). Upgrade your plan to unlock more."
         else
-          "You’re at the maximum allowed for #{key.to_s.humanize.downcase}. Want more? Consider upgrading your plan."
+          "You’re at the maximum allowed for #{limit_key.to_s.humanize.downcase}. Want more? Consider upgrading your plan."
         end
       else # :warning
-        if lim.is_a?(Numeric)
-          "You’re getting close to your #{noun} for #{key.to_s.humanize.downcase} (#{cur}/#{lim}). Keep an eye on your usage, or upgrade your plan now to stay ahead."
+        if limit_amount.is_a?(Numeric)
+          "You’re getting close to your #{noun} for #{limit_key.to_s.humanize.downcase} (#{current_usage}/#{limit_amount}). Keep an eye on your usage, or upgrade your plan now to stay ahead."
         else
-          "You’re getting close to your #{noun} for #{key.to_s.humanize.downcase}. Keep an eye on your usage, or upgrade your plan now to stay ahead."
+          "You’re getting close to your #{noun} for #{limit_key.to_s.humanize.downcase}. Keep an eye on your usage, or upgrade your plan now to stay ahead."
         end
       end
-      end
+    end
 
     # Compute how much over the limit the plan_owner is for a key (0 if within)
     def overage_for(plan_owner, limit_key)

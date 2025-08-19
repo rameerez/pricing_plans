@@ -1,4 +1,4 @@
-# 💵 `pricing_plans` - Define and enforce pricing plan limits in your Rails app
+# 💵 `pricing_plans` - Define and enforce pricing plan limits in your Rails app (SaaS entitlements)
 
 [![Gem Version](https://badge.fury.io/rb/pricing_plans.svg)](https://badge.fury.io/rb/pricing_plans)
 
@@ -70,7 +70,7 @@ class User < ApplicationRecord
 end
 ```
 
-This mixin will automatically give your plan owner model the [model helpers and methods](/docs/03-model-helpers.md) you can use to consistently enforce check and enforce limits:
+This mixin will automatically give your plan owner model the [model helpers and methods](/docs/03-model-helpers.md) you can use to consistently check and enforce limits:
 ```ruby
 class User < ApplicationRecord
   include PricingPlans::PlanOwner
@@ -82,7 +82,7 @@ end
 You also get [controller helpers](/docs/02-controller-helpers.md):
 
 ```ruby
-before_action { gate_feature!(:api_access, plan_owner: current_organization) }
+before_action { gate_feature!(:api_access) }
 
 # or with syntactic sugar:
 
@@ -220,11 +220,15 @@ Note: model validations will still block creation even with `allow_system_overri
 
 ## Testing
 
-We use Minitest for testing. Run the test suite with `bundle exec rake test`
+We use Minitest for testing. Run the test suite with:
+
+```bash
+bundle exec rake test
+```
 
 ## Development
 
-After checking out the repo, run `bin/setup` to install dependencies. Then, run `rake spec` to run the tests. You can also run `bin/console` for an interactive prompt that will allow you to experiment.
+After checking out the repo, run `bin/setup` to install dependencies. Then, run `rake test` to run the tests. You can also run `bin/console` for an interactive prompt that will allow you to experiment.
 
 To install this gem onto your local machine, run `bundle exec rake install`.
 

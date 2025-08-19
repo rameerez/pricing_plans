@@ -6,9 +6,7 @@ module PricingPlans
   class Plan
     using IntegerRefinements
 
-    attr_reader :key, :name, :description, :bullets, :price, :price_string, :stripe_price,
-                :features, :limits, :meta,
-                :cta_text, :cta_url
+    attr_reader :key, :features
 
     def initialize(key)
       @key = key

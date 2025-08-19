@@ -184,7 +184,8 @@ module PricingPlans
     #   - :warning  (allowed, but near limit)
     #   - :grace    (allowed, but in grace period)
     #   - :blocked  (not allowed)
-    def require_plan_limit!(limit_key, plan_owner:, by: 1, allow_system_override: false)
+    def require_plan_limit!(limit_key, plan_owner: nil, by: 1, allow_system_override: false)
+      plan_owner ||= (respond_to?(:pricing_plans_plan_owner) ? pricing_plans_plan_owner : nil)
       plan = PlanResolver.effective_plan_for(plan_owner)
       limit_config = plan&.limit_for(limit_key)
 
@@ -233,7 +234,8 @@ module PricingPlans
     # Defaults:
     # - On blocked: redirect_to pricing_path (if available) with alert; else render 403 JSON.
     # - On grace/warning: set flash[:warning] with the human message.
-    def enforce_plan_limit!(limit_key, plan_owner:, by: 1, allow_system_override: false, redirect_to: nil)
+    def enforce_plan_limit!(limit_key, plan_owner: nil, by: 1, allow_system_override: false, redirect_to: nil)
+      plan_owner ||= (respond_to?(:pricing_plans_plan_owner) ? pricing_plans_plan_owner : nil)
       result = require_plan_limit!(limit_key, plan_owner: plan_owner, by: by, allow_system_override: allow_system_override)
 
       if result.blocked?
@@ -284,7 +286,8 @@ module PricingPlans
     #   with_plan_limit!(:licenses, plan_owner: current_organization, by: 1) do |result|
     #     # proceed with side-effects, can inspect result.warning?/grace?
     #   end
-    def with_plan_limit!(limit_key, plan_owner:, by: 1, allow_system_override: false, redirect_to: nil, &block)
+    def with_plan_limit!(limit_key, plan_owner: nil, by: 1, allow_system_override: false, redirect_to: nil, &block)
+      plan_owner ||= (respond_to?(:pricing_plans_plan_owner) ? pricing_plans_plan_owner : nil)
       result = require_plan_limit!(limit_key, plan_owner: plan_owner, by: by, allow_system_override: allow_system_override)
 
       if result.blocked?
@@ -379,7 +382,8 @@ module PricingPlans
     public
 
     # Preferred alias for feature gating (plain-English name)
-    def gate_feature!(feature_key, plan_owner:)
+    def gate_feature!(feature_key, plan_owner: nil)
+      plan_owner ||= (respond_to?(:pricing_plans_plan_owner) ? pricing_plans_plan_owner : nil)
       require_feature!(feature_key, plan_owner: plan_owner)
     end
 
