@@ -46,6 +46,9 @@ Building a pricing table is as easy as iterating over all `Plans` and displaying
 > [!TIP]
 > If you need more detail for the price (not just `price_label`, but also if it's monthly, yearly, etc.) check out the [Semantic Pricing API](/docs/05-semantic-pricing.md).
 
+
+![pricing_plans Ruby on Rails gem - pricing table features](/docs/images/pricing_plans_ruby_rails_gem_pricing_table.jpg)
+
 ## Get the highlighted plan
 
 You get helpers to access the highlighted plan:
@@ -58,6 +61,8 @@ You get helpers to access the highlighted plan:
 
 
 ## Conditional UI
+
+![pricing_plans Ruby gem - conditional UI](/docs/images/product_creation_blocked.jpg)
 
 We can leverage the [model methods and helpers](/docs/03-model-helpers.md) to build conditional UIs depending on pricing plan limits:
 
@@ -85,6 +90,8 @@ Tip: you could also use `plan_allows?(:api_access)` to build feature-gating UIs.
 
 ## Alerts and usage
 
+![pricing_plans Ruby on Rails gem - pricing plan upgrade prompt](/docs/images/pricing_plans_ruby_rails_gem_usage_alert_upgrade.jpg)
+
 ### Example: display an alert for a limit
 
 ```erb
@@ -93,7 +100,7 @@ Tip: you could also use `plan_allows?(:api_access)` to build feature-gating UIs.
 <% end %>
 ```
 
-### Example: limit usage summary
+### Example: plan usage summary
 
 ```erb
 <% s = current_organization.limit(:projects) %>
@@ -106,6 +113,8 @@ Tip: you could also use `plan_allows?(:api_access)` to build feature-gating UIs.
 ```
 
 Tip: you could also use `plan_limit_remaining(:projects)` and `plan_limit_percent_used(:projects)` to show current usage.
+
+![pricing_plans Ruby on Rails gem - pricing plan usage meter](/docs/images/pricing_plans_ruby_rails_gem_usage_meter.jpg)
 
 ## Message customization
 
