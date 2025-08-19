@@ -34,6 +34,9 @@ Or check limits and feature access anywhere in your app:
 
 `pricing_plans` is your single source of truth for pricing plans, so you can use it to [build pricing pages and paywalls](/docs/04-views.md) too.
 
+![pricing_plans Ruby on Rails gem - pricing table features](/docs/images/pricing_plans_ruby_rails_gem.jpg)
+
+
 The gem works standalone, and it also plugs nicely into popular gems: it works seamlessly out of the box if you're already using [`pay`](https://github.com/pay-rails/pay) or [`usage_credits`](https://github.com/rameerez/usage_credits/). More info [here](/docs/06-gem-compatibility.md).
 
 ## Quickstart
@@ -80,7 +83,9 @@ You also get [controller helpers](/docs/02-controller-helpers.md):
 
 ```ruby
 before_action { gate_feature!(:api_access, plan_owner: current_organization) }
-# or syntactic sugar:
+
+# or with syntactic sugar:
+
 before_action :enforce_api_access!
 ```
 
