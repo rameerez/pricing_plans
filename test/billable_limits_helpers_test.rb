@@ -2,7 +2,7 @@
 
 require "test_helper"
 
-class BillableLimitsHelpersTest < ActiveSupport::TestCase
+class PlanOwnerLimitsHelpersTest < ActiveSupport::TestCase
   def setup
     super
     PricingPlans.reset_configuration!
@@ -15,8 +15,8 @@ class BillableLimitsHelpersTest < ActiveSupport::TestCase
     end
     @org = create_organization
     # Re-register counters in case configuration was reset
-    Project.send(:limited_by_pricing_plans, :projects, billable: :organization)
-    CustomModel.send(:limited_by_pricing_plans, :custom_models, billable: :organization)
+    Project.send(:limited_by_pricing_plans, :projects, plan_owner: :organization)
+    CustomModel.send(:limited_by_pricing_plans, :custom_models, plan_owner: :organization)
   end
 
   def test_limit_returns_status_item
@@ -87,7 +87,7 @@ class BillableLimitsHelpersTest < ActiveSupport::TestCase
 
     # Push projects to at least warning/grace territory
     3.times { |i| @org.projects.create!(name: "P#{i}") }
-    _ = PricingPlans::ControllerGuards.require_plan_limit!(:projects, billable: @org)
+    _ = PricingPlans::ControllerGuards.require_plan_limit!(:projects, plan_owner: @org)
     item = @org.limits(:projects).find { |x| x.key == :projects }
     assert_includes [:warning, :at_limit, :grace, :blocked], item.severity
     assert_includes [0,1,2,3,4], item.severity_level
@@ -129,7 +129,7 @@ class BillableLimitsHelpersTest < ActiveSupport::TestCase
 
     # Exceed persistent cap (projects 3) into grace semantics
     3.times { |i| @org.projects.create!(name: "P#{i}") }
-    result = PricingPlans::ControllerGuards.require_plan_limit!(:projects, billable: @org)
+    result = PricingPlans::ControllerGuards.require_plan_limit!(:projects, plan_owner: @org)
     assert result.grace? || result.blocked? || result.warning?
 
     sev = @org.limits_severity(:projects, :custom_models)
@@ -167,7 +167,7 @@ class BillableLimitsHelpersTest < ActiveSupport::TestCase
     # Exceed projects to enter grace semantics
     3.times { |i| @org.projects.create!(name: "P#{i}") }
     # Trigger a check that may start grace depending on after_limit policy
-    PricingPlans::ControllerGuards.require_plan_limit!(:projects, billable: @org)
+    PricingPlans::ControllerGuards.require_plan_limit!(:projects, plan_owner: @org)
     st = @org.limit(:projects)
     assert_includes [true, false], st.grace_active
     assert_includes [true, false], st.blocked
@@ -183,7 +183,7 @@ class BillableLimitsHelpersTest < ActiveSupport::TestCase
       end
     end
     org = create_organization
-    Project.send(:limited_by_pricing_plans, :projects, billable: :organization)
+    Project.send(:limited_by_pricing_plans, :projects, plan_owner: :organization)
     PricingPlans::LimitChecker.stub(:current_usage_for, 1) do
       PricingPlans::LimitChecker.stub(:plan_limit_percent_used, 100.0) do
         item = org.limits(:products).first
@@ -202,7 +202,7 @@ class BillableLimitsHelpersTest < ActiveSupport::TestCase
       end
     end
     org = create_organization
-    CustomModel.send(:limited_by_pricing_plans, :custom_models, billable: :organization)
+    CustomModel.send(:limited_by_pricing_plans, :custom_models, plan_owner: :organization)
     item = org.limits(:custom_models).first
     assert_equal true, item.per
     assert item.period_start.is_a?(Time)
@@ -243,7 +243,7 @@ class BillableLimitsHelpersTest < ActiveSupport::TestCase
       end
     end
     org = create_organization
-    Project.send(:limited_by_pricing_plans, :projects, billable: :organization)
+    Project.send(:limited_by_pricing_plans, :projects, plan_owner: :organization)
     PricingPlans::LimitChecker.stub(:current_usage_for, 2) do
       msg = PricingPlans.message_for(org, :products)
       assert_includes msg, "gone over"
@@ -267,7 +267,7 @@ class BillableLimitsHelpersTest < ActiveSupport::TestCase
       end
     end
     org2 = create_organization
-    Project.send(:limited_by_pricing_plans, :projects, billable: :organization)
+    Project.send(:limited_by_pricing_plans, :projects, plan_owner: :organization)
     PricingPlans::LimitChecker.stub(:plan_limit_percent_used, 60.0) do
       msg = PricingPlans.message_for(org2, :projects)
       assert_includes msg, "You’re getting close"
@@ -282,7 +282,7 @@ class BillableLimitsHelpersTest < ActiveSupport::TestCase
       end
     end
     org3 = create_organization
-    Project.send(:limited_by_pricing_plans, :projects, billable: :organization)
+    Project.send(:limited_by_pricing_plans, :projects, plan_owner: :organization)
     PricingPlans::GraceManager.mark_exceeded!(org3, :projects)
     msg = PricingPlans.message_for(org3, :projects)
     assert_includes msg, "You’re currently over your limit"

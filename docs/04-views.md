@@ -54,7 +54,7 @@ You get helpers to access the highlighted plan:
 
 
 ## Get the next plan suggestion
-  - `PricingPlans.suggest_next_plan_for(enforceable, keys: [:projects, ...])`
+  - `PricingPlans.suggest_next_plan_for(plan_owner, keys: [:projects, ...])`
 
 
 ## Conditional UI
@@ -89,7 +89,7 @@ Tip: you could also use `plan_allows?(:api_access)` to build feature-gating UIs.
 
 ```erb
 <% if current_organization.attention_required_for_limit?(:projects) %>
-  <%= render "shared/plan_limit_alert", enforceable: current_organization, key: :projects %>
+  <%= render "shared/plan_limit_alert", plan_owner: current_organization, key: :projects %>
 <% end %>
 ```
 

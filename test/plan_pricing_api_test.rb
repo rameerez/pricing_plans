@@ -117,7 +117,7 @@ class PlanPricingApiTest < ActiveSupport::TestCase
       config.plan :pro do
         price 20
       end
-      config.downgrade_policy = ->(from:, to:, billable:) { to.price.to_i < from.price.to_i ? [false, "Not allowed"] : [true, nil] }
+      config.downgrade_policy = ->(from:, to:, plan_owner:) { to.price.to_i < from.price.to_i ? [false, "Not allowed"] : [true, nil] }
     end
     basic = PricingPlans::Registry.plan(:basic)
     pro = PricingPlans::Registry.plan(:pro)

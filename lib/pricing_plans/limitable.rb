@@ -41,22 +41,22 @@ module PricingPlans
       # New ergonomic macro: limited_by_pricing_plans
       # - Auto-includes this concern if not already included
       # - Infers limit_key from model's collection/table name when not provided
-      # - Infers billable association from configured billable_class (or common conventions)
+      # - Infers plan owner association from configured plan_owner_class (or common conventions)
       # - Accepts `per:` to declare per-period allowances
-      def limited_by_pricing_plans(limit_key = nil, billable: nil, per: nil, on: nil, error_after_limit: nil, count_scope: nil)
+      def limited_by_pricing_plans(limit_key = nil, plan_owner: nil, per: nil, on: nil, error_after_limit: nil, count_scope: nil)
         include PricingPlans::Limitable unless ancestors.include?(PricingPlans::Limitable)
 
         inferred_limit_key = (limit_key || inferred_limit_key_for_model).to_sym
-        effective_billable  = billable || on
-        inferred_billable   = infer_billable_association(effective_billable)
+        effective_owner  = plan_owner || on
+        inferred_owner   = infer_plan_owner_association(effective_owner)
 
-        limited_by(inferred_limit_key, billable: inferred_billable, per: per, error_after_limit: error_after_limit, count_scope: count_scope)
+        limited_by(inferred_limit_key, plan_owner: inferred_owner, per: per, error_after_limit: error_after_limit, count_scope: count_scope)
       end
 
       # Backing implementation used by both the classic and new macro
-      def limited_by(limit_key, billable:, per: nil, error_after_limit: nil, source: nil, count_scope: nil)
+      def limited_by(limit_key, plan_owner:, per: nil, error_after_limit: nil, source: nil, count_scope: nil)
         limit_key = limit_key.to_sym
-        billable_method = billable.to_sym
+        billable_method = plan_owner.to_sym
 
         # Store the configuration
         self.pricing_plans_limits = pricing_plans_limits.merge(
@@ -149,12 +149,12 @@ module PricingPlans
         raise PricingPlans::ConfigurationError, "Cannot infer limit key: provide one explicitly"
       end
 
-      def infer_billable_association(explicit)
+      def infer_plan_owner_association(explicit)
         return explicit.to_sym if explicit
 
-        # Prefer configured billable_class association name if present
+        # Prefer configured plan_owner_class association name if present
         begin
-          billable_klass = PricingPlans::Registry.billable_class
+          billable_klass = PricingPlans::Registry.plan_owner_class
         rescue StandardError
           billable_klass = nil
         end

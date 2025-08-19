@@ -25,13 +25,13 @@ class ControllerDynamicCallbacksTest < ActiveSupport::TestCase
     include PricingPlans::ControllerGuards
 
     class << self
-      # Choose a custom resolver method for billable
+      # Choose a custom resolver method for plan owner
       def use_configured_method!
-        self.pricing_plans_billable_method = :configured_org
+        self.pricing_plans_plan_owner_method = :configured_org
       end
 
       def use_block!(&block)
-        pricing_plans_billable(&block)
+        pricing_plans_plan_owner(&block)
       end
     end
 
@@ -212,7 +212,7 @@ class ControllerDynamicCallbacksTest < ActiveSupport::TestCase
 
     # org2 on pro → allowed
     PricingPlans::Assignment.assign_plan_to(org2, :pro)
-    assert_equal true, controller.enforce_api_access!(billable: org2)
+    assert_equal true, controller.enforce_api_access!(plan_owner: org2)
   end
 
   def test_billable_resolution_prefers_configured_method_over_conventions
@@ -234,11 +234,11 @@ class ControllerDynamicCallbacksTest < ActiveSupport::TestCase
     PricingPlans::Assignment.assign_plan_to(org1, :pro)
 
     # Ensure no residue from other tests
-    if DummyConfiguredController.respond_to?(:pricing_plans_billable_method=)
-      DummyConfiguredController.pricing_plans_billable_method = nil
+    if DummyConfiguredController.respond_to?(:pricing_plans_plan_owner_method=)
+      DummyConfiguredController.pricing_plans_plan_owner_method = nil
     end
-    if DummyConfiguredController.respond_to?(:pricing_plans_billable_proc=)
-      DummyConfiguredController.pricing_plans_billable_proc = nil
+    if DummyConfiguredController.respond_to?(:pricing_plans_plan_owner_proc=)
+      DummyConfiguredController.pricing_plans_plan_owner_proc = nil
     end
     DummyConfiguredController.use_block! { @org2 }
     controller = DummyConfiguredController.new(org1: org1, org2: org2)
@@ -253,9 +253,9 @@ class ControllerDynamicCallbacksTest < ActiveSupport::TestCase
   end
 
   def test_configuration_error_when_billable_cannot_be_inferred
-    # Reconfigure to a billable class without a matching helper
-    original = PricingPlans.configuration.billable_class
-    PricingPlans.configuration.billable_class = "Workspace"
+    # Reconfigure to a plan owner class without a matching helper
+    original = PricingPlans.configuration.plan_owner_class
+    PricingPlans.configuration.plan_owner_class = "Workspace"
     PricingPlans.send(:registry).build_from_configuration(PricingPlans.configuration)
 
     begin
@@ -267,10 +267,10 @@ class ControllerDynamicCallbacksTest < ActiveSupport::TestCase
       error = assert_raises(PricingPlans::ConfigurationError) do
         controller.enforce_api_access!
       end
-      assert_match(/unable to infer billable/i, error.message)
+      assert_match(/unable to infer plan owner/i, error.message)
     ensure
-      # Restore billable class for future tests
-      PricingPlans.configuration.billable_class = original
+      # Restore plan owner class for future tests
+      PricingPlans.configuration.plan_owner_class = original
       PricingPlans.send(:registry).build_from_configuration(PricingPlans.configuration)
     end
   end
@@ -306,7 +306,7 @@ class ControllerWithPlanLimitSugarTest < ActiveSupport::TestCase
     PricingPlans::PlanResolver.stub(:effective_plan_for, plan) do
       ctrl = build_controller
       yielded = nil
-      ctrl.with_plan_limit!(:licenses, billable: @org, by: 1) { |res| yielded = res }
+      ctrl.with_plan_limit!(:licenses, plan_owner: @org, by: 1) { |res| yielded = res }
       assert yielded
       assert yielded.within? || yielded.warning?
     end
@@ -320,7 +320,7 @@ class ControllerWithPlanLimitSugarTest < ActiveSupport::TestCase
       PricingPlans::LimitChecker.stub(:current_usage_for, 0) do
         PricingPlans::LimitChecker.stub(:warning_thresholds, [0.5]) do
           ctrl = build_controller
-          res = ctrl.with_plan_limit!(:licenses, billable: @org, by: 1) { |_res| }
+          res = ctrl.with_plan_limit!(:licenses, plan_owner: @org, by: 1) { |_res| }
           assert res.warning? || res.grace?
           assert ctrl.flash[:warning]
         end
@@ -334,7 +334,7 @@ class ControllerWithPlanLimitSugarTest < ActiveSupport::TestCase
     PricingPlans::PlanResolver.stub(:effective_plan_for, plan) do
       ctrl = build_controller
       caught = catch(:abort) do
-        ctrl.with_plan_limit!(:licenses, billable: @org, by: 1) { |_res| }
+        ctrl.with_plan_limit!(:licenses, plan_owner: @org, by: 1) { |_res| }
         :no_abort
       end
       refute_equal :no_abort, caught
@@ -349,7 +349,7 @@ class ControllerWithPlanLimitSugarTest < ActiveSupport::TestCase
     PricingPlans::PlanResolver.stub(:effective_plan_for, plan) do
       ctrl = build_controller
       caught = catch(:abort) do
-        ctrl.with_licenses_limit!(billable: @org, by: 1) { |_res| }
+        ctrl.with_licenses_limit!(plan_owner: @org, by: 1) { |_res| }
         :no_abort
       end
       refute_equal :no_abort, caught

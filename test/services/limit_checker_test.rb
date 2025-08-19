@@ -54,7 +54,7 @@ class LimitCheckerTest < ActiveSupport::TestCase
 
   def test_remaining_with_inferred_macro_registration
     # Ensure re-registration via original constant to avoid anonymous class pitfalls
-    Project.send(:limited_by_pricing_plans, :projects, billable: :organization)
+    Project.send(:limited_by_pricing_plans, :projects, plan_owner: :organization)
 
     org = create_organization
     assert_equal 1, PricingPlans::LimitChecker.plan_limit_remaining(org, :projects)

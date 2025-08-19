@@ -25,7 +25,7 @@ class ComplexAssociationsTest < ActiveSupport::TestCase
 
     # Extend Organization with non-standard association
     Organization.class_eval do
-      include PricingPlans::Billable unless included_modules.include?(PricingPlans::Billable)
+      include PricingPlans::PlanOwner unless included_modules.include?(PricingPlans::PlanOwner)
       has_many :ai_models,
         class_name: "CustomAiModel",
         foreign_key: "organization_id",
@@ -55,7 +55,7 @@ class ComplexAssociationsTest < ActiveSupport::TestCase
     end
 
     Organization.class_eval do
-      include PricingPlans::Billable unless included_modules.include?(PricingPlans::Billable)
+      include PricingPlans::PlanOwner unless included_modules.include?(PricingPlans::PlanOwner)
       has_many :deeply_nested_resources,
         class_name: "Deeply::NestedResource",
         limited_by_pricing_plans: true

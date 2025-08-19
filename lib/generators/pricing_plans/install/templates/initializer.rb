@@ -42,11 +42,11 @@ PricingPlans.configure do |config|
 
   # Optional settings
 
-  # Optional: global controller billable resolver (per-controller still wins)
+  # Optional: global controller plan owner resolver (per-controller still wins)
   # Either a symbol helper name or a block evaluated in the controller
-  # config.controller_billable :current_organization
+  # config.controller_plan_owner :current_organization
   # or
-  # config.controller_billable { current_account }
+  # config.controller_plan_owner { current_account }
 
   # Period cycle for per-period limits
   # :billing_cycle, :calendar_month, :calendar_week, :calendar_day
@@ -99,5 +99,5 @@ PricingPlans.configure do |config|
   # config.interval_default_for_ui = :month # or :year
 
   # Downgrade policy hook used by CTA ergonomics helpers
-  # config.downgrade_policy = ->(from:, to:, billable:) { [true, nil] }
+  # config.downgrade_policy = ->(from:, to:, plan_owner:) { [true, nil] }
 end

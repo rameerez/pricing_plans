@@ -10,24 +10,24 @@ module PricingPlans
     # Optional ergonomics
     attr_accessor :default_cta_text, :default_cta_url
     # Global controller ergonomics
-      # Optional global resolver for controller billable. Per-controller settings still win.
+      # Optional global resolver for controller plan owner. Per-controller settings still win.
       # Accepts:
       # - Symbol: a controller helper to call (e.g., :current_organization)
       # - Proc: instance-exec'd in the controller (self is the controller)
-      attr_reader :controller_billable_method, :controller_billable_proc
+      attr_reader :controller_plan_owner_method, :controller_plan_owner_proc
     # When a limit check blocks, controllers can redirect to a global default target.
     # Accepts:
     # - Symbol: a controller helper to call (e.g., :pricing_path)
     # - String: an absolute/relative path or full URL
     # - Proc: instance-exec'd in the controller (self is the controller). Signature: ->(result) { ... }
-    #   Result contains: limit_key, billable, message, metadata
+    #   Result contains: limit_key, plan_owner, message, metadata
     attr_accessor :redirect_on_blocked_limit
     # Optional global message builder proc for human copy (i18n/hooks)
     # Signature suggestion: (context:, **kwargs) -> string
     # Contexts used: :over_limit, :grace, :feature_denied
     # Example kwargs: limit_key:, current_usage:, limit_amount:, grace_ends_at:, feature_key:, plan_name:
     attr_accessor :message_builder
-    attr_reader :billable_class
+    attr_reader :plan_owner_class
     # Optional: custom resolver for displaying price labels from processor
     # Signature: ->(plan) { "${amount}/mo" }
     attr_accessor :price_label_resolver
@@ -51,15 +51,15 @@ module PricingPlans
     attr_reader :plans, :event_handlers
 
     def initialize
-      @billable_class = nil
+      @plan_owner_class = nil
       @default_plan = nil
       @highlighted_plan = nil
       @period_cycle = :billing_cycle
       @default_cta_text = nil
       @default_cta_url = nil
       @message_builder = nil
-      @controller_billable_method = nil
-      @controller_billable_proc = nil
+      @controller_plan_owner_method = nil
+      @controller_plan_owner_proc = nil
       @redirect_on_blocked_limit = nil
       @price_label_resolver = nil
       @auto_price_labels_from_processor = true
@@ -69,7 +69,7 @@ module PricingPlans
       @price_cache_ttl = 600 # 10 minutes
       @free_price_caption = "Forever free"
       @interval_default_for_ui = :month
-      @downgrade_policy = ->(from:, to:, billable:) { [true, nil] }
+      @downgrade_policy = ->(from:, to:, plan_owner:) { [true, nil] }
       @plans = {}
       @event_handlers = {
         warning: {},
@@ -78,15 +78,15 @@ module PricingPlans
       }
     end
 
-    def billable_class=(value)
+    def plan_owner_class=(value)
       if value.nil?
-        @billable_class = nil
+        @plan_owner_class = nil
         return
       end
       unless value.is_a?(String) || value.is_a?(Class)
-        raise PricingPlans::ConfigurationError, "billable_class must be a string or class"
+        raise PricingPlans::ConfigurationError, "plan_owner_class must be a string or class"
       end
-      @billable_class = value
+      @plan_owner_class = value
     end
 
     def plan(key, &block)
@@ -99,20 +99,20 @@ module PricingPlans
     end
 
 
-      # Global controller billable resolver API
+      # Global controller plan owner resolver API
       # Usage:
-      #   config.controller_billable :current_organization
+      #   config.controller_plan_owner :current_organization
       #   # or
-      #   config.controller_billable { current_account }
-      def controller_billable(method_name = nil, &block)
+      #   config.controller_plan_owner { current_account }
+      def controller_plan_owner(method_name = nil, &block)
         if method_name
-          @controller_billable_method = method_name.to_sym
-          @controller_billable_proc = nil
+          @controller_plan_owner_method = method_name.to_sym
+          @controller_plan_owner_proc = nil
         elsif block_given?
-          @controller_billable_proc = block
-          @controller_billable_method = nil
+          @controller_plan_owner_proc = block
+          @controller_plan_owner_method = nil
         else
-          @controller_billable_method
+          @controller_plan_owner_method
         end
       end
 

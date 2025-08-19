@@ -1,20 +1,20 @@
 
 # Controller helpers and methods
 
-The `pricing_plans` gem ships with controller helpers that make it easy to gate features defined in your pricing plans, and enforce limits. For these controllers methods to work, you first need to let the gem know who the current "enforceable" object is. The enforceable object is the object on which the plan limits are applied (typically, the same object that gets billed for a subscription: the current user, current organization, etc.)
+The `pricing_plans` gem ships with controller helpers that make it easy to gate features defined in your pricing plans, and enforce limits. For these controllers methods to work, you first need to let the gem know who the current "plan owner" object is. The plan owner is the object on which the plan limits are applied (typically, the same object that gets billed for a subscription: the current user, current organization, etc.)
 
 ## Setting things up for controllers
 
-First of all, the gem needs a way to know what the current enforceable object is (the current user, current organization, etc.)
+First of all, the gem needs a way to know what the current plan owner object is (the current user, current organization, etc.)
 
 You can set this globally in the initializer:
 ```ruby
 # config/initializers/pricing_plans.rb
 PricingPlans.configure do |config|
   # Either:
-  config.controller_enforceable_object :current_organization
+  config.controller_plan_owner :current_organization
   # Or:
-  # config.controller_enforceable_object { current_account }
+  # config.controller_plan_owner { current_account }
 end
 ```
 
@@ -26,7 +26,7 @@ If this is not defined, `pricing_plans` will [auto-try common conventions](/lib/
 - `current_company`
 - `current_workspace`
 - `current_tenant`
-- If you set `enforceable_class` in `pricing_plans.rb`, we’ll also try `current_<enforceable_class>`.
+- If you set `plan_owner_class` in `pricing_plans.rb`, we’ll also try `current_<plan_owner_class>`.
 
 If these methods are already defined in your Application Controller or individual controller(s), there's nothing you need to do! For example: `pricing_plans` works out of the box with Devise, because Devise already defines `current_user` at the Application Controller level.
 
@@ -40,13 +40,13 @@ class ApplicationController < ActionController::Base
 end
 ```
 
-If needed, you can override the enforceable object per controller:
+If needed, you can override the plan owner per controller:
 ```ruby
 class YourSpecificController < ApplicationController
-  pricing_plans_enforceable_object :current_organization
+  pricing_plans_plan_owner :current_organization
 
   # Or pass a block:
-  # pricing_plans_enforceable_object { current_user&.organization }
+  # pricing_plans_plan_owner { current_user&.organization }
 end
 ```
 
@@ -57,13 +57,13 @@ Once all of this is configured, you can gate features and enforce limits easily 
 Feature-gate any controller action with:
 
 ```ruby
-before_action { require_feature!(:api_access) }
+before_action { gate_feature!(:api_access) }
 ```
 
-You can also specify the enforceable object to override global or per-controller settings:
+You can also specify the plan owner to override global or per-controller settings:
 
 ```ruby
-before_action { require_feature!(:api_access, enforceable: current_organization) }
+before_action { gate_feature!(:api_access, plan_owner: current_organization) }
 ```
 
 We also provide syntactic sugar for each feature defined in your pricing plans. For example, if you defined `allows :api_access` in your plans, you can simply enforce it like this instead:
@@ -102,10 +102,10 @@ You can enforce limits for any action:
 before_action { enforce_plan_limit!(:projects) }
 ```
 
-You can also override who the enforceable object is:
+You can also override who the plan owner is:
 
 ```ruby
-before_action { enforce_plan_limit!(:projects, enforceable: current_organization) }
+before_action { enforce_plan_limit!(:projects, plan_owner: current_organization) }
 ```
 
 As with feature gating, there is syntactic sugar per limit:
@@ -119,7 +119,7 @@ The pattern is `enforce_<limit_key>_limit!` -- a method gets generated for every
 
 You can also specify a custom redirect path that will override the global config:
 ```ruby
-before_action { enforce_plan_limit!(:projects, enforceable: current_organization, redirect_to: pricing_path) }
+before_action { enforce_plan_limit!(:projects, plan_owner: current_organization, redirect_to: pricing_path) }
 ```
 
 > [!IMPORTANT]
@@ -133,7 +133,7 @@ before_action { enforce_projects_limit!(by: 10) }  # Checks whether current_orga
 
 ### Getting the raw `result` from a limit check
 
-The `require_plan_limit!` method is also available (`require_`, not `enforce_`). This method returns a raw `result` object which is the result of checking the limit with respect to the current enforceable object. You can call these on `result`:
+The `require_plan_limit!` method is also available (`require_`, not `enforce_`). This method returns a raw `result` object which is the result of checking the limit with respect to the current plan owner. You can call these on `result`:
 - `result.message`
 - `result.ok?`
 - `result.warning?`
@@ -145,7 +145,7 @@ This is useful for checking and enforcing limits mid-action (rather than via a `
 
 ```ruby
 def create
-  result = require_plan_limit!(:products, enforceable: current_organization, by: 1)
+  result = require_plan_limit!(:products, plan_owner: current_organization, by: 1)
 
   if result.blocked? # ok?, warning?, grace?, blocked?, success?
     # result.message is available:
@@ -167,7 +167,7 @@ class ApplicationController < ActionController::Base
   def handle_pricing_plans_limit_blocked(result)
     # Default behavior (HTML): flash + redirect_to(pricing_path) if defined; else render 403
     # You can customize globally here. The Result carries rich context:
-    # - result.limit_key, result.enforceable, result.message, result.metadata
+    # - result.limit_key, result.plan_owner, result.message, result.metadata
     redirect_to(pricing_path, status: :see_other, alert: result.message)
   end
 end

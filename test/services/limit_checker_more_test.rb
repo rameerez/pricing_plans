@@ -155,7 +155,7 @@ class LimitCheckerMoreTest < ActiveSupport::TestCase
       self.table_name = 'projects'
       belongs_to :organization
       include PricingPlans::Limitable
-      limited_by_pricing_plans :projects, billable: :organization, count_scope: { name: 'A' }
+      limited_by_pricing_plans :projects, plan_owner: :organization, count_scope: { name: 'A' }
       self
     end
 
@@ -182,7 +182,7 @@ class LimitCheckerMoreTest < ActiveSupport::TestCase
       scope :named_a, -> { where(name: 'A') }
       scope :named_b, -> { where(name: 'B') }
     end
-    Project.send(:limited_by_pricing_plans, :projects, billable: :organization, count_scope: :named_a)
+    Project.send(:limited_by_pricing_plans, :projects, plan_owner: :organization, count_scope: :named_a)
 
     PricingPlans::Assignment.assign_plan_to(org, :enterprise)
     org.projects.create!(name: 'A')
@@ -241,7 +241,7 @@ class LimitCheckerMoreTest < ActiveSupport::TestCase
     plan.define_singleton_method(:limit_for) { |key| { to: 1 } if key == :projects }
     PricingPlans::PlanResolver.stub(:effective_plan_for, plan) do
       yielded = false
-      result = PricingPlans::JobGuards.with_plan_limit(:projects, billable: org, by: 1) { yielded = true }
+      result = PricingPlans::JobGuards.with_plan_limit(:projects, plan_owner: org, by: 1) { yielded = true }
       assert yielded
       assert result.within?
     end
@@ -253,7 +253,7 @@ class LimitCheckerMoreTest < ActiveSupport::TestCase
     plan.define_singleton_method(:limit_for) { |key| { to: 0, after_limit: :block_usage } if key == :projects }
     PricingPlans::PlanResolver.stub(:effective_plan_for, plan) do
       yielded = false
-      result = PricingPlans::JobGuards.with_plan_limit(:projects, billable: org, by: 1) { yielded = true }
+      result = PricingPlans::JobGuards.with_plan_limit(:projects, plan_owner: org, by: 1) { yielded = true }
       refute yielded
       assert result.blocked?
     end
@@ -265,7 +265,7 @@ class LimitCheckerMoreTest < ActiveSupport::TestCase
     plan.define_singleton_method(:limit_for) { |key| { to: 0, after_limit: :block_usage } if key == :projects }
     PricingPlans::PlanResolver.stub(:effective_plan_for, plan) do
       yielded = false
-      result = PricingPlans::JobGuards.with_plan_limit(:projects, billable: org, by: 1, allow_system_override: true) { yielded = true }
+      result = PricingPlans::JobGuards.with_plan_limit(:projects, plan_owner: org, by: 1, allow_system_override: true) { yielded = true }
       assert yielded
       assert result.blocked?
       assert_equal true, result.metadata[:system_override]

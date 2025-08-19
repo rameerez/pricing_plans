@@ -10,14 +10,14 @@ module PricingPlans
         @pending ||= []
       end
 
-      def register(billable_class:, association_name:, options:)
-        pending << { billable_class: billable_class, association_name: association_name, options: options }
+      def register(plan_owner_class:, association_name:, options:)
+        pending << { plan_owner_class: plan_owner_class, association_name: association_name, options: options }
       end
 
       def flush_pending!
         pending.delete_if do |entry|
-          billable = entry[:billable_class]
-          assoc = billable.reflect_on_association(entry[:association_name])
+          owner = entry[:plan_owner_class]
+          assoc = owner.reflect_on_association(entry[:association_name])
           next false unless assoc
 
           begin
@@ -25,11 +25,11 @@ module PricingPlans
             child_klass.include PricingPlans::Limitable unless child_klass.ancestors.include?(PricingPlans::Limitable)
             opts = entry[:options]
             limit_key = (opts[:limit_key] || entry[:association_name]).to_sym
-            # Define sugar methods on the billable when the association resolves
-            PricingPlans::Billable.define_limit_sugar_methods(billable, limit_key)
+            # Define sugar methods on the plan owner when the association resolves
+            PricingPlans::PlanOwner.define_limit_sugar_methods(owner, limit_key)
             child_klass.limited_by_pricing_plans(
               limit_key,
-              billable: child_klass.reflections.values.find { |r| r.macro == :belongs_to && r.foreign_key.to_s == assoc.foreign_key.to_s }&.name || billable.name.underscore.to_sym,
+              plan_owner: child_klass.reflections.values.find { |r| r.macro == :belongs_to && r.foreign_key.to_s == assoc.foreign_key.to_s }&.name || owner.name.underscore.to_sym,
               per: opts[:per],
               error_after_limit: opts[:error_after_limit],
               count_scope: opts[:count_scope]

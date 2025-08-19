@@ -2,7 +2,7 @@
 
 [![Gem Version](https://badge.fury.io/rb/pricing_plans.svg)](https://badge.fury.io/rb/pricing_plans)
 
-Enforce pricing plan limits with one-liners that read like plain English. Stop scattering and entangling pricing logic everywhere in your Rails SaaS.
+Enforce pricing plan limits with one-liners that read like plain English. Avoid scattering and entangling pricing logic everywhere in your Rails SaaS.
 
 For example, this is how you **define plans** and their entitlements:
 ```ruby
@@ -50,18 +50,18 @@ rails db:migrate
 
 This will also create a `config/initializers/pricing_plans.rb` file where you need to [define your pricing plans](/docs/01-define-pricing-plans.md).
 
-Then, just add the model mixin to the actual model on which limits should be enforced, like: `User`, `Organization`, etc.:
+Then, just add the model mixin to the actual model on which limits should be enforced (the plan owner), like: `User`, `Organization`, etc.:
 
 ```ruby
 class User < ApplicationRecord
-  include PricingPlans::Enforceable
+  include PricingPlans::PlanOwner
 end
 ```
 
 This mixin will automatically give your model the [helpers and methods](/docs/03-model-helpers.md) you can use to consistently enforce check and enforce limits:
 ```ruby
 class User < ApplicationRecord
-  include PricingPlans::Enforceable
+  include PricingPlans::PlanOwner
 
   has_many :projects, limited_by_pricing_plans: { error_after_limit: "Too many projects for your plan!" }, dependent: :destroy
 end
@@ -123,10 +123,10 @@ Integrating payment processing (Stripe, `pay`, etc.) is relatively straightforwa
 The `pricing_plans` gem needs three new models in the schema in order to work: `Assignment`, `EnforcementState`, and `Usage`. Why are they needed?
 
 - `PricingPlans::Assignment` allow manual plan overrides independent of billing system (or before you wire up Stripe/Pay). Great for admin toggles, trials, demos.
-  - What: The arbitrary `plan_key` and a `source` label (default "manual"). Unique per enforceable.
-  - How it’s used: `PlanResolver` checks Pay → manual assignment → default plan. You can call `assign_pricing_plan!` and `remove_pricing_plan!` on the enforceable.
+  - What: The arbitrary `plan_key` and a `source` label (default "manual"). Unique per plan_owner.
+  - How it’s used: `PlanResolver` checks Pay → manual assignment → default plan. You can call `assign_pricing_plan!` and `remove_pricing_plan!` on the plan_owner.
 
-- `PricingPlans::EnforcementState` tracks per-enforceable per-limit enforcement state for persistent caps and per-period allowances (grace/warnings/block state) in a race-safe way.
+- `PricingPlans::EnforcementState` tracks per-plan_owner per-limit enforcement state for persistent caps and per-period allowances (grace/warnings/block state) in a race-safe way.
   - What: `exceeded_at`, `blocked_at`, last warning info, and a small JSON `data` column where we persist plan-derived parameters like grace period seconds.
   - How it’s used: When you exceed a limit, we upsert/read this row under row-level locking to start grace, compute when it ends, flip to blocked, and to ensure idempotent event emission (`on_warning`, `on_grace_start`, `on_block`).
 
@@ -182,7 +182,7 @@ To do that, you can use `require_plan_limit!`. An example to proceed but mark do
 
 ```ruby
 def webhook_create
-  result = require_plan_limit!(:projects, enforceable: current_organization, allow_system_override: true)
+  result = require_plan_limit!(:projects, plan_owner: current_organization, allow_system_override: true)
 
   # Your custom logic here.
   # You could proceed to create; inspect result.grace?/warning? and result.metadata[:system_override]

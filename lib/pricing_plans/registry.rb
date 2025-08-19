@@ -44,10 +44,10 @@ module PricingPlans
         @event_handlers || { warning: {}, grace_start: {}, block: {} }
       end
 
-      def billable_class
+      def plan_owner_class
         return nil unless @configuration
 
-        value = @configuration.billable_class
+        value = @configuration.plan_owner_class
         return nil unless value
 
         case value
@@ -56,7 +56,7 @@ module PricingPlans
         when Class
           value
         else
-          raise ConfigurationError, "billable_class must be a string or class"
+          raise ConfigurationError, "plan_owner_class must be a string or class"
         end
       end
 
@@ -108,10 +108,10 @@ module PricingPlans
       end
 
       def attach_billable_helpers!
-        klass = billable_class rescue nil
+        klass = plan_owner_class rescue nil
         return unless klass
-        return if klass.included_modules.include?(PricingPlans::Billable)
-        klass.include(PricingPlans::Billable)
+        return if klass.included_modules.include?(PricingPlans::PlanOwner)
+        klass.include(PricingPlans::PlanOwner)
       rescue StandardError
         # If billable class isn't available yet, skip silently.
       end

@@ -36,7 +36,13 @@ module PricingPlans
           error: error.message,
           feature: (error.respond_to?(:feature_key) ? error.feature_key : nil),
           plan: begin
-            plan_obj = PricingPlans::PlanResolver.effective_plan_for(error.billable) if error.respond_to?(:billable)
+            if error.respond_to?(:plan_owner)
+              plan_obj = PricingPlans::PlanResolver.effective_plan_for(error.plan_owner)
+            elsif error.respond_to?(:billable)
+              plan_obj = PricingPlans::PlanResolver.effective_plan_for(error.billable)
+            else
+              plan_obj = nil
+            end
             plan_obj&.name
           rescue StandardError
             nil

@@ -25,7 +25,7 @@ class CompleteWorkflowTest < ActiveSupport::TestCase
     plan.limits :projects, to: 1, after_limit: :grace_then_block, grace: 7.days
     result = nil
     PricingPlans::PlanResolver.stub(:effective_plan_for, plan) do
-      result = PricingPlans::ControllerGuards.require_plan_limit!(:projects, billable: org)
+      result = PricingPlans::ControllerGuards.require_plan_limit!(:projects, plan_owner: org)
     end
     assert result.grace?
     assert_match(/grace period/, result.message)
@@ -48,7 +48,7 @@ class CompleteWorkflowTest < ActiveSupport::TestCase
       plan = PricingPlans::Plan.new(:tmp)
       plan.limits :projects, to: 1, after_limit: :grace_then_block, grace: 7.days
       PricingPlans::PlanResolver.stub(:effective_plan_for, plan) do
-        result = PricingPlans::ControllerGuards.require_plan_limit!(:projects, billable: org)
+        result = PricingPlans::ControllerGuards.require_plan_limit!(:projects, plan_owner: org)
         assert result.blocked?
         assert_match(/limit/, result.message)
       end
@@ -82,7 +82,7 @@ class CompleteWorkflowTest < ActiveSupport::TestCase
 
     # Feature access granted
     assert_nothing_raised do
-      PricingPlans::ControllerGuards.require_feature!(:api_access, billable: org)
+      PricingPlans::ControllerGuards.require_feature!(:api_access, plan_owner: org)
     end
   end
 
@@ -99,7 +99,7 @@ class CompleteWorkflowTest < ActiveSupport::TestCase
       assert_equal 0, PricingPlans::LimitChecker.plan_limit_remaining(org, :custom_models)
 
       # Can't create more this period
-      result = PricingPlans::ControllerGuards.require_plan_limit!(:custom_models, billable: org)
+      result = PricingPlans::ControllerGuards.require_plan_limit!(:custom_models, plan_owner: org)
       assert result.grace?  # Pro plan has grace_then_block
     end
 
@@ -109,7 +109,7 @@ class CompleteWorkflowTest < ActiveSupport::TestCase
       assert_equal 3, PricingPlans::LimitChecker.plan_limit_remaining(org, :custom_models)
 
       # Can create models again
-      result = PricingPlans::ControllerGuards.require_plan_limit!(:custom_models, billable: org)
+      result = PricingPlans::ControllerGuards.require_plan_limit!(:custom_models, plan_owner: org)
       assert result.ok?
 
       org.custom_models.create!(name: "Model in new period")
@@ -162,7 +162,7 @@ class CompleteWorkflowTest < ActiveSupport::TestCase
     plan.limits :projects, to: 1, after_limit: :grace_then_block, grace: 7.days
     result1 = nil
     PricingPlans::PlanResolver.stub(:effective_plan_for, plan) do
-      result1 = PricingPlans::ControllerGuards.require_plan_limit!(:projects, billable: org)
+      result1 = PricingPlans::ControllerGuards.require_plan_limit!(:projects, plan_owner: org)
     end
     assert result1.grace?, "First limit check should be in grace period"
 
@@ -174,7 +174,7 @@ class CompleteWorkflowTest < ActiveSupport::TestCase
     # Check again - should still be in grace
     result2 = nil
     PricingPlans::PlanResolver.stub(:effective_plan_for, plan) do
-      result2 = PricingPlans::ControllerGuards.require_plan_limit!(:projects, billable: org)
+      result2 = PricingPlans::ControllerGuards.require_plan_limit!(:projects, plan_owner: org)
     end
     assert result2.grace?, "Second limit check should still be in grace period"
 
@@ -188,7 +188,7 @@ class CompleteWorkflowTest < ActiveSupport::TestCase
 
     # Free plan doesn't allow API access
     error = assert_raises(PricingPlans::FeatureDenied) do
-      PricingPlans::ControllerGuards.require_feature!(:api_access, billable: org)
+      PricingPlans::ControllerGuards.require_feature!(:api_access, plan_owner: org)
     end
     assert_match(/api access/i, error.message)
     assert_match(/pro/i, error.message)  # Should mention upgrade to Pro
@@ -198,7 +198,7 @@ class CompleteWorkflowTest < ActiveSupport::TestCase
 
     # Now API access should work
     assert_nothing_raised do
-      PricingPlans::ControllerGuards.require_feature!(:api_access, billable: org)
+      PricingPlans::ControllerGuards.require_feature!(:api_access, plan_owner: org)
     end
   end
 
@@ -217,7 +217,7 @@ class CompleteWorkflowTest < ActiveSupport::TestCase
     assert_equal :unlimited, PricingPlans::LimitChecker.plan_limit_remaining(org, :projects)
 
     # Never triggers limit checks
-    result = PricingPlans::ControllerGuards.require_plan_limit!(:projects, billable: org)
+    result = PricingPlans::ControllerGuards.require_plan_limit!(:projects, plan_owner: org)
     assert result.ok?
     assert_match(/unlimited/i, result.message)
   end
@@ -258,7 +258,7 @@ class CompleteWorkflowTest < ActiveSupport::TestCase
 
         result = nil
         PricingPlans::PlanResolver.stub(:effective_plan_for, plan) do
-          result = PricingPlans::ControllerGuards.require_plan_limit!(:projects, billable: org)
+          result = PricingPlans::ControllerGuards.require_plan_limit!(:projects, plan_owner: org)
         end
         assert result.grace?
 
@@ -271,7 +271,7 @@ class CompleteWorkflowTest < ActiveSupport::TestCase
       travel_to(Time.parse("2025-01-05 12:00:00 UTC")) do
         result = nil
         PricingPlans::PlanResolver.stub(:effective_plan_for, plan) do
-          result = PricingPlans::ControllerGuards.require_plan_limit!(:projects, billable: org)
+          result = PricingPlans::ControllerGuards.require_plan_limit!(:projects, plan_owner: org)
         end
         assert result.grace?
       end
@@ -280,7 +280,7 @@ class CompleteWorkflowTest < ActiveSupport::TestCase
       travel_to(Time.parse("2025-01-08 12:00:01 UTC")) do
         result = nil
         PricingPlans::PlanResolver.stub(:effective_plan_for, plan) do
-          result = PricingPlans::ControllerGuards.require_plan_limit!(:projects, billable: org)
+          result = PricingPlans::ControllerGuards.require_plan_limit!(:projects, plan_owner: org)
         end
         assert result.blocked?
 

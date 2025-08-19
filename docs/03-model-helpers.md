@@ -1,22 +1,22 @@
 # Model helpers and methods
 
-## Define your `Enforceable` class
+## Define your `PlanOwner` class
 
-Your `Enforceable` class is the class on which plan limits are enforced.
+Your `PlanOwner` class is the class on which plan limits are enforced.
 
 It's usually the same class that gets charged for a subscription, the class that gets billed, the class that "owns" the plan, the class with the `pay_customer` if you're using Pay, etc. It's usually: `User`, `Organization`, `Team`, etc.
 
-To define your `Enforceable` class, just add the model mixin:
+To define your `PlanOwner` class, just add the model mixin:
 
 ```ruby
 class User < ApplicationRecord
-  include PricingPlans::Enforceable
+  include PricingPlans::PlanOwner
 end
 ```
 
-By adding the `PricingPlans::Enforceable` mixin to a model, you automatically get all the features described below.
+By adding the `PricingPlans::PlanOwner` mixin to a model, you automatically get all the features described below.
 
-## Link plan limits to your `Enforceable` model
+## Link plan limits to your `PlanOwner` model
 
 Now you can link any `has_many` relationships in this model to `limits` defined in your `pricing_plans.rb`
 
@@ -28,11 +28,11 @@ plan :pro do
 end
 ```
 
-Then you can link the `:projects` limit to any `has_many` relationship on the `Enforceable` model (`User`, in this example):
+Then you can link the `:projects` limit to any `has_many` relationship on the `PlanOwner` model (`User`, in this example):
 
 ```ruby
 class User < ApplicationRecord
-  include PricingPlans::Enforceable
+  include PricingPlans::PlanOwner
 
   has_many :projects, limited_by_pricing_plans: true
 end
@@ -42,7 +42,7 @@ The `:limited_by_pricing_plans` part infers that the association name (`:project
 
 ```ruby
 class User < ApplicationRecord
-  include PricingPlans::Enforceable
+  include PricingPlans::PlanOwner
 
   has_many :custom_projects, limited_by_pricing_plans: { limit_key: :projects }
 end
@@ -54,7 +54,7 @@ In general, you can omit the limit key when it can be inferred from the model (e
 
 ```ruby
 class User < ApplicationRecord
-  include PricingPlans::Enforceable
+  include PricingPlans::PlanOwner
 
   has_many :projects, limited_by_pricing_plans: true, dependent: :destroy
 end
@@ -64,16 +64,16 @@ You can also customize the validation error message by passing `error_after_limi
 
 ```ruby
 class User < ApplicationRecord
-  include PricingPlans::Enforceable
+  include PricingPlans::PlanOwner
 
   has_many :projects, limited_by_pricing_plans: { error_after_limit: "Too many projects!" }, dependent: :destroy
 end
 ```
 
 
-## Enforce limits in your `Enforceable` class
+## Enforce limits in your `PlanOwner` class
 
-The `Enforceable` class (the class to which you add the `include PricingPlans::Enforceable` mixin) automatically gains these helpers to check limits:
+The `PlanOwner` class (the class to which you add the `include PricingPlans::PlanOwner` mixin) automatically gains these helpers to check limits:
 
 ```ruby
 # Check limits for a relationship
@@ -118,7 +118,7 @@ user.any_grace_active_for?(:products, :activations)
 user.earliest_grace_ends_at_for(:products, :activations)
 ```
 
-## Gate features in your `Enforceable` class
+## Gate features in your `PlanOwner` class
 
 You can also check for feature flags like this:
 
@@ -286,9 +286,7 @@ user.attention_required_for_limit?(:projects)     # => true | false` (alias for 
 user.approaching_limit?(:projects, at: 0.9)       # => true | false` (uses highest `warn_at` if `at` omitted)
 ```
 
-You can also use the top-level equivalents if you prefer: `PricingPlans.severity_for(enforceable, :projects)`
-
-Also available: `message_for`, `overage_for`, `alert_for(enforceable, :projects)`, `attention_required?(enforceable, :projects)`, `approaching_limit?(enforceable, :projects, at: 0.9)`
+You can also use the top-level equivalents if you prefer: `PricingPlans.severity_for(user, :projects)` and friends.
 
 ## Other helpers and methods
 

@@ -103,7 +103,7 @@ end
 
 # Test models
 class Organization < ActiveRecord::Base
-  include PricingPlans::Billable
+  include PricingPlans::PlanOwner
   has_many :projects, dependent: :destroy
   has_many :custom_models, dependent: :destroy
 
@@ -144,13 +144,13 @@ end
 class Project < ActiveRecord::Base
   belongs_to :organization
   include PricingPlans::Limitable
-  limited_by_pricing_plans :projects, billable: :organization
+  limited_by_pricing_plans :projects, plan_owner: :organization
 end
 
 class CustomModel < ActiveRecord::Base
   belongs_to :organization
   include PricingPlans::Limitable
-  limited_by_pricing_plans :custom_models, billable: :organization, per: :month
+  limited_by_pricing_plans :custom_models, plan_owner: :organization, per: :month
 end
 
 # Test configuration helper
@@ -203,8 +203,8 @@ class ActiveSupport::TestCase
     setup_test_plans
 
     # Re-register model counters after configuration reset
-    Project.send(:limited_by_pricing_plans, :projects, billable: :organization) if Project.respond_to?(:limited_by_pricing_plans)
-    CustomModel.send(:limited_by_pricing_plans, :custom_models, billable: :organization, per: :month) if CustomModel.respond_to?(:limited_by_pricing_plans)
+    Project.send(:limited_by_pricing_plans, :projects, plan_owner: :organization) if Project.respond_to?(:limited_by_pricing_plans)
+    CustomModel.send(:limited_by_pricing_plans, :custom_models, plan_owner: :organization, per: :month) if CustomModel.respond_to?(:limited_by_pricing_plans)
 
     # Clean up between tests
     PricingPlans::EnforcementState.destroy_all

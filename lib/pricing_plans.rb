@@ -8,12 +8,12 @@ module PricingPlans
   class ConfigurationError < Error; end
   class PlanNotFoundError < Error; end
   class FeatureDenied < Error
-    attr_reader :feature_key, :billable
+    attr_reader :feature_key, :plan_owner
 
-    def initialize(message = nil, feature_key: nil, billable: nil)
+    def initialize(message = nil, feature_key: nil, plan_owner: nil)
       super(message)
       @feature_key = feature_key
-      @billable = billable
+      @plan_owner = plan_owner
     end
   end
   class InvalidOperation < Error; end
@@ -33,7 +33,7 @@ module PricingPlans
   autoload :JobGuards, "pricing_plans/job_guards"
   autoload :ControllerRescues, "pricing_plans/controller_rescues"
   autoload :Limitable, "pricing_plans/limitable"
-  autoload :Billable, "pricing_plans/billable"
+  autoload :PlanOwner, "pricing_plans/plan_owner"
   autoload :AssociationLimitRegistry, "pricing_plans/association_limit_registry"
   autoload :Result, "pricing_plans/result"
   autoload :OverageReporter, "pricing_plans/overage_reporter"
@@ -95,8 +95,8 @@ module PricingPlans
     # Returns an array of Hashes containing plain data for building pricing UIs.
     # Each item includes: :key, :name, :description, :bullets, :price_label,
     # :is_current, :is_popular, :button_text, :button_url
-    def for_pricing(billable: nil, view: nil)
-      plans.map { |plan| decorate_for_view(plan, billable: billable, view: view) }
+    def for_pricing(plan_owner: nil, view: nil)
+      plans.map { |plan| decorate_for_view(plan, billable: plan_owner, view: view) }
     end
 
     # View model for modern UIs (Stimulus/Hotwire/JSON). Pure data.
@@ -463,7 +463,7 @@ module PricingPlans
     def combine_messages_for(billable, *limit_keys)
       keys = limit_keys.flatten
       parts = keys.map do |key|
-        result = ControllerGuards.require_plan_limit!(key, billable: billable, by: 0)
+        result = ControllerGuards.require_plan_limit!(key, plan_owner: billable, by: 0)
         next nil if result.ok?
         "#{key.to_s.humanize}: #{result.message}"
       end.compact

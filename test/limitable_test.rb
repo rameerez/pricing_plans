@@ -91,7 +91,7 @@ class LimitableTest < ActiveSupport::TestCase
       self.table_name = "projects"
       belongs_to :organization
       include PricingPlans::Limitable
-      limited_by_pricing_plans :projects, billable: :organization, error_after_limit: "Too many projects!"
+      limited_by_pricing_plans :projects, plan_owner: :organization, error_after_limit: "Too many projects!"
       self
     end
 
@@ -263,7 +263,7 @@ class LimitableTest < ActiveSupport::TestCase
     test_class = Class.new(ActiveRecord::Base) do
       self.table_name = "organizations"  # Reuse existing table for test
       include PricingPlans::Limitable
-      limited_by_pricing_plans :self_limit, billable: :self
+      limited_by_pricing_plans :self_limit, plan_owner: :self
     end
 
     test_instance = test_class.new(name: "Test")
@@ -277,8 +277,8 @@ class LimitableTest < ActiveSupport::TestCase
       self.table_name = "projects"  # Reuse existing table
       include PricingPlans::Limitable
 
-      limited_by_pricing_plans :first_limit, billable: :organization
-      limited_by_pricing_plans :second_limit, billable: :organization, per: :week
+      limited_by_pricing_plans :first_limit, plan_owner: :organization
+      limited_by_pricing_plans :second_limit, plan_owner: :organization, per: :week
     end
 
     limits = test_class.pricing_plans_limits
@@ -305,9 +305,9 @@ class LimitableTest < ActiveSupport::TestCase
   end
 
   def test_infers_billable_from_common_conventions_when_configured_missing
-    # Temporarily set an unassociated billable_class so it won't match
-    original = PricingPlans.configuration.billable_class
-    PricingPlans.configuration.billable_class = "Workspace"
+    # Temporarily set an unassociated plan_owner_class so it won't match
+    original = PricingPlans.configuration.plan_owner_class
+    PricingPlans.configuration.plan_owner_class = "Workspace"
 
     begin
     test_class = Class.new(ActiveRecord::Base) do
@@ -320,7 +320,7 @@ class LimitableTest < ActiveSupport::TestCase
       limits = test_class.pricing_plans_limits
       assert_equal :account, limits[:projects][:billable_method]
     ensure
-      PricingPlans.configuration.billable_class = original
+      PricingPlans.configuration.plan_owner_class = original
     end
   end
 

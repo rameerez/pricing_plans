@@ -2,7 +2,7 @@
 
 require "test_helper"
 
-class BillableHelpersTest < ActiveSupport::TestCase
+class PlanOwnerHelpersTest < ActiveSupport::TestCase
   def setup
     super
     PricingPlans.reset_configuration!
@@ -13,7 +13,7 @@ class BillableHelpersTest < ActiveSupport::TestCase
       end
     end
     # Re-register counters after reset
-    Project.send(:limited_by_pricing_plans, :projects, billable: :organization) if Project.respond_to?(:limited_by_pricing_plans)
+    Project.send(:limited_by_pricing_plans, :projects, plan_owner: :organization) if Project.respond_to?(:limited_by_pricing_plans)
   end
 
   def test_auto_includes_helpers_into_configured_billable
@@ -43,7 +43,7 @@ class BillableHelpersTest < ActiveSupport::TestCase
     # Organization has has_many :projects in test schema via Project model
     # Simulate declaration from billable side to define sugar methods
     unless Organization.method_defined?(:projects_within_plan_limits?)
-      PricingPlans::Billable.define_limit_sugar_methods(Organization, :projects)
+      PricingPlans::PlanOwner.define_limit_sugar_methods(Organization, :projects)
     end
 
     org = create_organization
@@ -107,7 +107,7 @@ class BillableHelpersTest < ActiveSupport::TestCase
     # Configure with a class name that does not exist yet
     PricingPlans.reset_configuration!
     PricingPlans.configure do |config|
-      config.billable_class = "LateBillable"
+      config.plan_owner_class = "LatePlanOwner"
       config.default_plan   = :free
       config.plan :free do
         limits :projects, to: 1
@@ -115,15 +115,15 @@ class BillableHelpersTest < ActiveSupport::TestCase
     end
 
     # Define the class afterwards
-    Object.const_set(:LateBillable, Class.new)
+    Object.const_set(:LatePlanOwner, Class.new)
 
     # Simulate engine's to_prepare hook by invoking the attachment helper
     PricingPlans::Registry.send(:attach_billable_helpers!)
 
-    late = LateBillable.new
+    late = LatePlanOwner.new
     assert_respond_to late, :within_plan_limits?
     assert_respond_to late, :current_pricing_plan
   ensure
-    Object.send(:remove_const, :LateBillable) if defined?(LateBillable)
+    Object.send(:remove_const, :LatePlanOwner) if defined?(LatePlanOwner)
   end
 end

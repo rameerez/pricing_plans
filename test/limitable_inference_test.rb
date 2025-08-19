@@ -8,7 +8,7 @@ class LimitableInferenceTest < ActiveSupport::TestCase
       self.table_name = "projects"
       belongs_to :organization
       include PricingPlans::Limitable
-      limited_by_pricing_plans # infer :projects and billable :organization
+      limited_by_pricing_plans # infer :projects and plan_owner :organization
     end
 
     limits = test_class.pricing_plans_limits
@@ -45,7 +45,7 @@ class LimitableInferenceTest < ActiveSupport::TestCase
     Object.const_set(klass_name, Class.new(ActiveRecord::Base))
     org_class = Object.const_get(klass_name).class_eval do
       self.table_name = "organizations"
-      include PricingPlans::Billable
+      include PricingPlans::PlanOwner
       has_many :projects, limited_by_pricing_plans: { error_after_limit: "Too many projects!" }
       self
     end
@@ -69,7 +69,7 @@ class LimitableInferenceTest < ActiveSupport::TestCase
     Object.const_set(billable_const, Class.new(ActiveRecord::Base))
     org_class = Object.const_get(billable_const).class_eval do
       self.table_name = "organizations"
-      include PricingPlans::Billable
+      include PricingPlans::PlanOwner
       has_many :later_projects,
         class_name: child_const,
         foreign_key: "organization_id",

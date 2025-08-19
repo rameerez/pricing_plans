@@ -19,7 +19,7 @@ class MessageBuilderTest < ActiveSupport::TestCase
       end
     end
     # Re-register counters after config reset
-    Project.send(:limited_by_pricing_plans, :projects, billable: :organization) if Project.respond_to?(:limited_by_pricing_plans)
+    Project.send(:limited_by_pricing_plans, :projects, plan_owner: :organization) if Project.respond_to?(:limited_by_pricing_plans)
     @org = create_organization
     @builder_calls = []
     PricingPlans.configuration.message_builder = ->(**kwargs) do
@@ -30,7 +30,7 @@ class MessageBuilderTest < ActiveSupport::TestCase
 
   def test_feature_denied_uses_message_builder
     error = assert_raises(PricingPlans::FeatureDenied) do
-      PricingPlans::ControllerGuards.require_feature!(:api_access, billable: @org)
+      PricingPlans::ControllerGuards.require_feature!(:api_access, plan_owner: @org)
     end
     assert_match(/Built: feature_denied/, error.message)
     assert @builder_calls.any? { |k| k[:context] == :feature_denied }
@@ -40,7 +40,7 @@ class MessageBuilderTest < ActiveSupport::TestCase
     # Hit the limit to trigger grace path
     # free allows 1 project; create 2 and then require by 1 should exceed
     2.times { |i| @org.projects.create!(name: "P#{i}") }
-    res = PricingPlans::ControllerGuards.require_plan_limit!(:projects, billable: @org, by: 1)
+    res = PricingPlans::ControllerGuards.require_plan_limit!(:projects, plan_owner: @org, by: 1)
     assert (res.warning? || res.grace? || res.blocked?), "expected non-within result"
     used_contexts = @builder_calls.map { |k| k[:context] }.uniq
     assert used_contexts.include?(:over_limit) || used_contexts.include?(:grace)

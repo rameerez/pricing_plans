@@ -16,7 +16,7 @@ class ControllerGuardsTest < ActiveSupport::TestCase
     plan.define_singleton_method(:limit_for) { |_key| nil }
 
     PricingPlans::PlanResolver.stub(:effective_plan_for, plan) do
-      result = require_plan_limit!(:non_existent, billable: @org)
+      result = require_plan_limit!(:non_existent, plan_owner: @org)
 
       assert result.within?
       assert_match(/no limit configured/i, result.message)
@@ -31,7 +31,7 @@ class ControllerGuardsTest < ActiveSupport::TestCase
     end
 
     PricingPlans::PlanResolver.stub(:effective_plan_for, plan) do
-      result = require_plan_limit!(:projects, billable: @org)
+      result = require_plan_limit!(:projects, plan_owner: @org)
 
       assert result.within?
       assert_match(/unlimited/i, result.message)
@@ -50,7 +50,7 @@ class ControllerGuardsTest < ActiveSupport::TestCase
 
     PricingPlans::PlanResolver.stub(:effective_plan_for, plan) do
       # With 0 projects and limit of 10, adding 1 puts us at 1/10 = 10%, no threshold crossed
-      result = require_plan_limit!(:projects, billable: @org)
+      result = require_plan_limit!(:projects, plan_owner: @org)
 
       assert result.within?
       assert_match(/remaining/i, result.message)
@@ -76,7 +76,7 @@ class ControllerGuardsTest < ActiveSupport::TestCase
       PricingPlans::LimitChecker.stub(:current_usage_for, 8) do
         PricingPlans::LimitChecker.stub(:warning_thresholds, [0.5, 0.8]) do
           # Creating 1 more would put us at 9/10 = 90%, crossing 0.8 threshold
-          result = require_plan_limit!(:projects, billable: @org, by: 1)
+          result = require_plan_limit!(:projects, plan_owner: @org, by: 1)
 
           # This test depends on complex threshold calculation logic
           # The result may be either within with warning or just within
@@ -98,7 +98,7 @@ class ControllerGuardsTest < ActiveSupport::TestCase
     PricingPlans::PlanResolver.stub(:effective_plan_for, plan) do
       # Mock usage at limit
       PricingPlans::LimitChecker.stub(:current_usage_for, 1) do
-        result = require_plan_limit!(:projects, billable: @org, by: 1)
+        result = require_plan_limit!(:projects, plan_owner: @org, by: 1)
 
         assert result.warning?
         assert_match(/reached your limit/i, result.message)
@@ -117,7 +117,7 @@ class ControllerGuardsTest < ActiveSupport::TestCase
 
     PricingPlans::PlanResolver.stub(:effective_plan_for, plan) do
       PricingPlans::LimitChecker.stub(:current_usage_for, 1) do
-        result = require_plan_limit!(:projects, billable: @org, by: 1)
+        result = require_plan_limit!(:projects, plan_owner: @org, by: 1)
 
         assert result.blocked?
         assert_match(/reached your limit/i, result.message)
@@ -137,7 +137,7 @@ class ControllerGuardsTest < ActiveSupport::TestCase
     plan = PricingPlans::Plan.new(:tmp)
     plan.limits :projects, to: 1, after_limit: :grace_then_block, grace: 7.days
     PricingPlans::PlanResolver.stub(:effective_plan_for, plan) do
-      result = require_plan_limit!(:projects, billable: @org, by: 1)
+      result = require_plan_limit!(:projects, plan_owner: @org, by: 1)
 
       # Should start grace period
       assert result.grace?
@@ -160,7 +160,7 @@ class ControllerGuardsTest < ActiveSupport::TestCase
     plan.limits :projects, to: 1, after_limit: :grace_then_block, grace: 7.days
     PricingPlans::PlanResolver.stub(:effective_plan_for, plan) do
       PricingPlans::GraceManager.mark_exceeded!(@org, :projects)
-      result = require_plan_limit!(:projects, billable: @org, by: 1)
+      result = require_plan_limit!(:projects, plan_owner: @org, by: 1)
 
       assert result.grace?
       assert_match(/exceeded.*grace period/i, result.message)
@@ -183,7 +183,7 @@ class ControllerGuardsTest < ActiveSupport::TestCase
       plan = PricingPlans::Plan.new(:tmp)
       plan.limits :projects, to: 1, after_limit: :grace_then_block, grace: 7.days
       PricingPlans::PlanResolver.stub(:effective_plan_for, plan) do
-        result = require_plan_limit!(:projects, billable: @org, by: 1)
+        result = require_plan_limit!(:projects, plan_owner: @org, by: 1)
 
         assert result.blocked?
         assert_match(/reached your limit/i, result.message)
@@ -200,19 +200,19 @@ class ControllerGuardsTest < ActiveSupport::TestCase
     PricingPlans::Assignment.assign_plan_to(@org, :pro)
 
     assert_nothing_raised do
-      require_feature!(:api_access, billable: @org)
+      require_feature!(:api_access, plan_owner: @org)
     end
   end
 
   def test_require_feature_raises_when_feature_disabled
     # Free plan doesn't allow api_access
     error = assert_raises(PricingPlans::FeatureDenied) do
-      require_feature!(:api_access, billable: @org)
+      require_feature!(:api_access, plan_owner: @org)
     end
 
     assert_match(/your current plan/i, error.message)
     assert_equal :api_access, error.feature_key
-    assert_equal @org, error.billable
+    assert_equal @org, error.plan_owner
   end
 
   def test_require_feature_raises_with_generic_message_when_no_highlighted_plan
@@ -222,7 +222,7 @@ class ControllerGuardsTest < ActiveSupport::TestCase
 
     begin
       error = assert_raises(PricingPlans::FeatureDenied) do
-        require_feature!(:api_access, billable: @org)
+        require_feature!(:api_access, plan_owner: @org)
       end
 
       assert_match(/not available on your current plan/i, error.message)
@@ -235,7 +235,7 @@ class ControllerGuardsTest < ActiveSupport::TestCase
   def test_require_feature_returns_true_when_allowed
     PricingPlans::Assignment.assign_plan_to(@org, :pro)
 
-    result = require_feature!(:api_access, billable: @org)
+    result = require_feature!(:api_access, plan_owner: @org)
     assert_equal true, result
   end
 
@@ -288,18 +288,18 @@ class ControllerGuardsTest < ActiveSupport::TestCase
     PricingPlans::PlanResolver.stub(:effective_plan_for, plan) do
       PricingPlans::LimitChecker.stub(:current_usage_for, 3) do
         # Requesting to add 2 more (would be 5 total, at limit)
-        result = require_plan_limit!(:projects, billable: @org, by: 2)
+        result = require_plan_limit!(:projects, plan_owner: @org, by: 2)
         assert result.within?
 
         # Requesting to add 3 more (would be 6 total, over limit)
-        result = require_plan_limit!(:projects, billable: @org, by: 3)
+        result = require_plan_limit!(:projects, plan_owner: @org, by: 3)
         assert result.grace?
       end
     end
   end
 
   def test_result_includes_limit_key_and_billable_in_context
-    result = require_plan_limit!(:projects, billable: @org, by: 2)
+    result = require_plan_limit!(:projects, plan_owner: @org, by: 2)
 
     # All results should include context for potential use in controllers
     if result.grace? || result.blocked? || result.warning?
@@ -341,7 +341,7 @@ class ControllerGuardsTest < ActiveSupport::TestCase
 
     PricingPlans::PlanResolver.stub(:effective_plan_for, plan) do
       PricingPlans::LimitChecker.stub(:current_usage_for, 1) do
-        result = require_plan_limit!(:projects, billable: @org, by: 1)
+        result = require_plan_limit!(:projects, plan_owner: @org, by: 1)
 
         assert result.blocked?
         assert_match(/unknown after_limit policy/i, result.message)
@@ -358,7 +358,7 @@ class ControllerGuardsTest < ActiveSupport::TestCase
     end
 
     PricingPlans::PlanResolver.stub(:effective_plan_for, plan) do
-      result = require_plan_limit!(:projects, billable: org, by: 1, allow_system_override: true)
+      result = require_plan_limit!(:projects, plan_owner: org, by: 1, allow_system_override: true)
 
       assert result.blocked?
       assert_equal true, result.metadata[:system_override]
@@ -381,7 +381,7 @@ class ControllerGuardsTest < ActiveSupport::TestCase
 
     PricingPlans::PlanResolver.stub(:effective_plan_for, plan) do
       caught = catch(:abort) do
-        controller.enforce_plan_limit!(:projects, billable: org, by: 1)
+        controller.enforce_plan_limit!(:projects, plan_owner: org, by: 1)
         :no_abort
       end
       assert_equal "/pricing", controller.instance_variable_get(:@redirected)
@@ -410,7 +410,7 @@ class ControllerGuardsTest < ActiveSupport::TestCase
         PricingPlans.configuration.redirect_on_blocked_limit = "/global"
         controller_class.pricing_plans_redirect_on_blocked_limit = "/local"
         caught = catch(:abort) do
-          controller.enforce_plan_limit!(:projects, billable: org, by: 1)
+          controller.enforce_plan_limit!(:projects, plan_owner: org, by: 1)
           :no_abort
         end
         refute_equal :no_abort, caught
@@ -439,7 +439,7 @@ class ControllerGuardsTest < ActiveSupport::TestCase
       begin
         PricingPlans.configuration.redirect_on_blocked_limit = "/global_only"
         caught = catch(:abort) do
-          controller.enforce_plan_limit!(:projects, billable: org, by: 1)
+          controller.enforce_plan_limit!(:projects, plan_owner: org, by: 1)
           :no_abort
         end
         refute_equal :no_abort, caught
@@ -472,7 +472,7 @@ class ControllerGuardsTest < ActiveSupport::TestCase
       begin
         PricingPlans.configuration.redirect_on_blocked_limit = nil
         caught = catch(:abort) do
-          controller.enforce_plan_limit!(:projects, billable: org, by: 1)
+          controller.enforce_plan_limit!(:projects, plan_owner: org, by: 1)
           :no_abort
         end
         refute_equal :no_abort, caught
@@ -500,7 +500,7 @@ class ControllerGuardsTest < ActiveSupport::TestCase
 
     PricingPlans::PlanResolver.stub(:effective_plan_for, plan) do
       caught = catch(:abort) do
-        controller.enforce_plan_limit!(:projects, billable: org, by: 1)
+        controller.enforce_plan_limit!(:projects, plan_owner: org, by: 1)
         :no_abort
       end
       refute_equal :no_abort, caught
@@ -523,7 +523,7 @@ class ControllerGuardsTest < ActiveSupport::TestCase
 
     PricingPlans::PlanResolver.stub(:effective_plan_for, plan) do
       caught = catch(:abort) do
-        controller.enforce_projects_limit!(billable: org, by: 1)
+        controller.enforce_projects_limit!(plan_owner: org, by: 1)
         :no_abort
       end
       refute_equal :no_abort, caught
@@ -546,7 +546,7 @@ class ControllerGuardsTest < ActiveSupport::TestCase
       # allow_system_override should short-circuit block handling
       result = controller.enforce_plan_limit!(
         :projects,
-        billable: org,
+        plan_owner: org,
         by: 1,
         allow_system_override: true
       )
@@ -568,7 +568,7 @@ class ControllerGuardsTest < ActiveSupport::TestCase
 
     PricingPlans::PlanResolver.stub(:effective_plan_for, plan) do
       caught = catch(:abort) do
-        controller.enforce_projects_limit!(billable: org, by: 1, redirect_to: "/upgrade")
+        controller.enforce_projects_limit!(plan_owner: org, by: 1, redirect_to: "/upgrade")
         :no_abort
       end
       assert controller.instance_variable_get(:@redirect_target)
@@ -619,7 +619,7 @@ class ControllerGuardsTest < ActiveSupport::TestCase
     assert_equal true, controller.enforce_api_access!(on: :current_organization)
   end
 
-  def test_global_controller_billable_proc_is_used_when_no_per_controller
+  def test_global_controller_plan_owner_proc_is_used_when_no_per_controller
     org = @org
     controller = Class.new do
       include PricingPlans::ControllerGuards
@@ -632,7 +632,7 @@ class ControllerGuardsTest < ActiveSupport::TestCase
       PricingPlans.reset_configuration!
       PricingPlans.configure do |config|
         config.default_plan = :free
-        config.controller_billable { current_account }
+        config.controller_plan_owner { current_account }
         config.plan :free do
           disallows :api_access
         end
@@ -652,7 +652,7 @@ class ControllerGuardsTest < ActiveSupport::TestCase
     end
   end
 
-  def test_global_controller_billable_symbol_is_used_when_no_per_controller
+  def test_global_controller_plan_owner_symbol_is_used_when_no_per_controller
     org = @org
     controller = Class.new do
       include PricingPlans::ControllerGuards
@@ -665,7 +665,7 @@ class ControllerGuardsTest < ActiveSupport::TestCase
       PricingPlans.reset_configuration!
       PricingPlans.configure do |config|
         config.default_plan = :free
-        config.controller_billable :current_organization
+        config.controller_plan_owner :current_organization
         config.plan :free do
           disallows :api_access
         end

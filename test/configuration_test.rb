@@ -27,8 +27,8 @@ class ConfigurationTest < ActiveSupport::TestCase
     assert_equal :pro, config.highlighted_plan
   end
 
-  # billable_class is now optional; we infer via common conventions in controllers/models
-  def test_billable_class_is_optional
+  # plan_owner_class is now optional; we infer via common conventions in controllers/models
+  def test_plan_owner_class_is_optional
     assert_nothing_raised do
       PricingPlans.configure do |config|
         config.default_plan = :free
@@ -176,7 +176,7 @@ class ConfigurationTest < ActiveSupport::TestCase
   def test_event_handlers_require_blocks
     error = assert_raises(PricingPlans::ConfigurationError) do
       PricingPlans.configure do |config|
-        config.billable_class = "Organization"
+        config.plan_owner_class = "Organization"
         config.default_plan = :free
 
         config.plan :free do
@@ -194,7 +194,7 @@ class ConfigurationTest < ActiveSupport::TestCase
     handler_called = false
 
     PricingPlans.configure do |config|
-      config.billable_class = "Organization"
+      config.plan_owner_class = "Organization"
       config.default_plan = :free
 
       config.plan :free do
@@ -223,12 +223,12 @@ class ConfigurationTest < ActiveSupport::TestCase
       end
     end
 
-    # billable_class is optional now; not set
-    assert_nil PricingPlans.configuration.billable_class
+    # plan_owner_class is optional now; not set
+    assert_nil PricingPlans.configuration.plan_owner_class
 
     PricingPlans.reset_configuration!
 
-    assert_nil PricingPlans.configuration.billable_class
+    assert_nil PricingPlans.configuration.plan_owner_class
   end
 
   def test_malformed_plan_blocks_handled
@@ -249,7 +249,7 @@ class ConfigurationTest < ActiveSupport::TestCase
     setup_test_plans
     org = Organization.create!(name: "Org")
     # Re-register counters after configuring in this test
-    Project.send(:limited_by_pricing_plans, :projects, billable: :organization) if Project.respond_to?(:limited_by_pricing_plans)
+    Project.send(:limited_by_pricing_plans, :projects, plan_owner: :organization) if Project.respond_to?(:limited_by_pricing_plans)
     assert_equal :free, PricingPlans::PlanResolver.plan_key_for(org)
     Project.create!(organization: org)
     # At free plan, projects limit is 1 in test helper; next by:1 should be blocked
@@ -262,7 +262,7 @@ class ConfigurationTest < ActiveSupport::TestCase
   def test_assign_and_remove_pricing_plan_via_billable
     setup_test_plans
     org = Organization.create!(name: "Org")
-    Project.send(:limited_by_pricing_plans, :projects, billable: :organization) if Project.respond_to?(:limited_by_pricing_plans)
+    Project.send(:limited_by_pricing_plans, :projects, plan_owner: :organization) if Project.respond_to?(:limited_by_pricing_plans)
     assert_equal :free, PricingPlans::PlanResolver.plan_key_for(org)
     # default free
     assert_equal :free, org.current_pricing_plan.key
@@ -313,7 +313,7 @@ class ConfigurationTest < ActiveSupport::TestCase
 
   def test_arity_zero_block_uses_bare_dsl
     PricingPlans.configure do
-      self.billable_class = "Organization"
+      self.plan_owner_class = "Organization"
       self.default_plan = :free
 
       plan :free do

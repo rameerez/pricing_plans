@@ -38,18 +38,18 @@ module PricingPlans
       end
     end
 
-    # Ensure the configured billable class (e.g., Organization) gains the
-    # billable-centric helpers even if the model is not loaded during
+    # Ensure the configured plan owner class (e.g., Organization) gains the
+    # owner-centric helpers even if the model is not loaded during
     # configuration time. Runs on each code reload in dev.
-    initializer "pricing_plans.billable_helpers" do
+    initializer "pricing_plans.plan_owner_helpers" do
       ActiveSupport::Reloader.to_prepare do
         begin
-          klass = PricingPlans::Registry.billable_class
-          if klass && !klass.included_modules.include?(PricingPlans::Billable)
-            klass.include(PricingPlans::Billable)
+          klass = PricingPlans::Registry.plan_owner_class
+          if klass && !klass.included_modules.include?(PricingPlans::PlanOwner)
+            klass.include(PricingPlans::PlanOwner)
           end
         rescue StandardError
-          # If the billable class isn't resolved yet, skip; next reload will try again.
+          # If the plan owner class isn't resolved yet, skip; next reload will try again.
         end
       end
     end

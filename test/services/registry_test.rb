@@ -33,9 +33,9 @@ class RegistryTest < ActiveSupport::TestCase
     assert_match(/Plan nonexistent not found/, error.message)
   end
 
-  def test_billable_class_resolution_from_string
+  def test_plan_owner_class_resolution_from_string
     PricingPlans.configure do |config|
-      config.billable_class = "Organization"
+      config.plan_owner_class = "Organization"
       config.default_plan = :free
 
       config.plan :free do
@@ -43,12 +43,12 @@ class RegistryTest < ActiveSupport::TestCase
       end
     end
 
-    assert_equal Organization, PricingPlans::Registry.billable_class
+    assert_equal Organization, PricingPlans::Registry.plan_owner_class
   end
 
-  def test_billable_class_resolution_from_class
+  def test_plan_owner_class_resolution_from_class
     PricingPlans.configure do |config|
-      config.billable_class = Organization
+      config.plan_owner_class = Organization
       config.default_plan = :free
 
       config.plan :free do
@@ -56,13 +56,13 @@ class RegistryTest < ActiveSupport::TestCase
       end
     end
 
-    assert_equal Organization, PricingPlans::Registry.billable_class
+    assert_equal Organization, PricingPlans::Registry.plan_owner_class
   end
 
-  def test_billable_class_invalid_type
+  def test_plan_owner_class_invalid_type
     error = assert_raises(PricingPlans::ConfigurationError) do
       PricingPlans.configure do |config|
-        config.billable_class = 123  # Invalid type
+        config.plan_owner_class = 123  # Invalid type
         config.default_plan = :free
 
         config.plan :free do
@@ -71,7 +71,7 @@ class RegistryTest < ActiveSupport::TestCase
       end
     end
 
-    assert_match(/billable_class must be a string or class/, error.message)
+    assert_match(/plan_owner_class must be a string or class/, error.message)
   end
 
   def test_default_and_highlighted_plan_resolution
@@ -209,7 +209,7 @@ class RegistryTest < ActiveSupport::TestCase
     PricingPlans::Registry.clear!
 
     assert_empty PricingPlans::Registry.plans
-    assert_nil PricingPlans::Registry.billable_class
+    assert_nil PricingPlans::Registry.plan_owner_class
     assert_nil PricingPlans::Registry.default_plan
     assert_nil PricingPlans::Registry.highlighted_plan
   end

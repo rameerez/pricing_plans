@@ -78,7 +78,7 @@ pricing_plan_ui_data(plan)
 #   free:, label:
 # }
 
-pricing_plan_cta(plan, enforceable: nil, context: :marketing, current_plan: nil)
+pricing_plan_cta(plan, plan_owner: nil, context: :marketing, current_plan: nil)
 # => { text:, url:, method: :get, disabled:, reason: }
 ```
 
@@ -90,7 +90,7 @@ pricing_plan_cta(plan, enforceable: nil, context: :marketing, current_plan: nil)
 plan.current_for?(current_plan)      # boolean
 plan.upgrade_from?(current_plan)     # boolean
 plan.downgrade_from?(current_plan)   # boolean
-plan.downgrade_blocked_reason(from: current_plan, enforceable: org) # string | nil
+plan.downgrade_blocked_reason(from: current_plan, plan_owner: org) # string | nil
 ```
 
 ## Stripe lookups and caching
@@ -130,8 +130,8 @@ PricingPlans.configure do |config|
   config.interval_default_for_ui = :month # or :year
 
   # Downgrade policy used by CTA ergonomics
-  # Signature: ->(from:, to:, enforceable:) { [allowed_boolean, reason_or_nil] }
-  config.downgrade_policy = ->(from:, to:, enforceable:) { [true, nil] }
+  # Signature: ->(from:, to:, plan_owner:) { [allowed_boolean, reason_or_nil] }
+  config.downgrade_policy = ->(from:, to:, plan_owner:) { [true, nil] }
 end
 ```
 

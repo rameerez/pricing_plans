@@ -459,9 +459,9 @@ module PricingPlans
       comparable_price_cents(self) < comparable_price_cents(current_plan)
     end
 
-    def downgrade_blocked_reason(from: nil, billable: nil)
+    def downgrade_blocked_reason(from: nil, plan_owner: nil)
       return nil unless from
-      allowed, reason = PricingPlans.configuration.downgrade_policy.call(from: from, to: self, billable: billable)
+      allowed, reason = PricingPlans.configuration.downgrade_policy.call(from: from, to: self, plan_owner: plan_owner)
       allowed ? nil : (reason || "Downgrade not allowed")
     end
 

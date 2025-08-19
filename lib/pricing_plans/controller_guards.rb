@@ -7,15 +7,15 @@ module PricingPlans
     # When included into a controller, provide dynamic helpers and callbacks
     def self.included(base)
       if base.respond_to?(:class_attribute)
-        base.class_attribute :pricing_plans_billable_method, instance_accessor: false, default: nil
-        base.class_attribute :pricing_plans_billable_proc, instance_accessor: false, default: nil
+        base.class_attribute :pricing_plans_plan_owner_method, instance_accessor: false, default: nil
+        base.class_attribute :pricing_plans_plan_owner_proc, instance_accessor: false, default: nil
         # Optional per-controller default redirect target when a limit blocks
         # Accepts the same types as the global configuration: Symbol | String | Proc
         base.class_attribute :pricing_plans_redirect_on_blocked_limit, instance_accessor: false, default: nil
       end
       # Fallback storage on eigenclass for environments without class_attribute
-      if !base.respond_to?(:pricing_plans_billable_proc) && base.respond_to?(:singleton_class)
-        base.singleton_class.send(:attr_accessor, :_pricing_plans_billable_proc)
+      if !base.respond_to?(:pricing_plans_plan_owner_proc) && base.respond_to?(:singleton_class)
+        base.singleton_class.send(:attr_accessor, :_pricing_plans_plan_owner_proc)
       end
       if !base.respond_to?(:pricing_plans_redirect_on_blocked_limit) && base.respond_to?(:singleton_class)
         base.singleton_class.send(:attr_accessor, :_pricing_plans_redirect_on_blocked_limit)
@@ -43,49 +43,49 @@ module PricingPlans
         end
       end
 
-      base.define_singleton_method(:pricing_plans_billable) do |method_name = nil, &block|
+      base.define_singleton_method(:pricing_plans_plan_owner) do |method_name = nil, &block|
         if method_name
-          self.pricing_plans_billable_method = method_name.to_sym
-          self.pricing_plans_billable_proc = nil
-          self._pricing_plans_billable_proc = nil if respond_to?(:_pricing_plans_billable_proc)
+          self.pricing_plans_plan_owner_method = method_name.to_sym
+          self.pricing_plans_plan_owner_proc = nil
+          self._pricing_plans_plan_owner_proc = nil if respond_to?(:_pricing_plans_plan_owner_proc)
         elsif block_given?
           # Store the block and use instance_exec at call time
-          self.pricing_plans_billable_proc = block
-          self._pricing_plans_billable_proc = block if respond_to?(:_pricing_plans_billable_proc)
-          self.pricing_plans_billable_method = nil
+          self.pricing_plans_plan_owner_proc = block
+          self._pricing_plans_plan_owner_proc = block if respond_to?(:_pricing_plans_plan_owner_proc)
+          self.pricing_plans_plan_owner_method = nil
         else
-          self.pricing_plans_billable_method
+          self.pricing_plans_plan_owner_method
         end
       end if base.respond_to?(:define_singleton_method)
 
-      base.define_method(:pricing_plans_billable) do
+      base.define_method(:pricing_plans_plan_owner) do
         # 1) Explicit per-controller configuration wins
-        if self.class.respond_to?(:pricing_plans_billable_proc) && self.class.pricing_plans_billable_proc
-          return instance_exec(&self.class.pricing_plans_billable_proc)
-        elsif self.class.respond_to?(:_pricing_plans_billable_proc) && self.class._pricing_plans_billable_proc
-          return instance_exec(&self.class._pricing_plans_billable_proc)
-        elsif self.class.respond_to?(:pricing_plans_billable_method) && self.class.pricing_plans_billable_method
-          return send(self.class.pricing_plans_billable_method)
+        if self.class.respond_to?(:pricing_plans_plan_owner_proc) && self.class.pricing_plans_plan_owner_proc
+          return instance_exec(&self.class.pricing_plans_plan_owner_proc)
+        elsif self.class.respond_to?(:_pricing_plans_plan_owner_proc) && self.class._pricing_plans_plan_owner_proc
+          return instance_exec(&self.class._pricing_plans_plan_owner_proc)
+        elsif self.class.respond_to?(:pricing_plans_plan_owner_method) && self.class.pricing_plans_plan_owner_method
+          return send(self.class.pricing_plans_plan_owner_method)
         end
 
         # 2) Global controller resolver if configured
         begin
           cfg = PricingPlans.configuration
           if cfg
-            if cfg.controller_billable_proc
-              return instance_exec(&cfg.controller_billable_proc)
-            elsif cfg.controller_billable_method
-              meth = cfg.controller_billable_method
+            if cfg.controller_plan_owner_proc
+              return instance_exec(&cfg.controller_plan_owner_proc)
+            elsif cfg.controller_plan_owner_method
+              meth = cfg.controller_plan_owner_method
               return send(meth) if respond_to?(meth)
             end
           end
         rescue StandardError
         end
 
-        # 3) Infer from configured billable class (current_organization, etc.)
-        billable_klass = PricingPlans::Registry.billable_class rescue nil
-        if billable_klass
-          inferred = "current_#{billable_klass.name.underscore}"
+        # 3) Infer from configured plan owner class (current_organization, etc.)
+        owner_klass = PricingPlans::Registry.plan_owner_class rescue nil
+        if owner_klass
+          inferred = "current_#{owner_klass.name.underscore}"
           return send(inferred) if respond_to?(inferred)
         end
 
@@ -94,7 +94,7 @@ module PricingPlans
           return send(meth) if respond_to?(meth)
         end
 
-        raise PricingPlans::ConfigurationError, "Unable to infer billable for controller. Set `self.pricing_plans_billable_method = :current_organization` or provide a block via `pricing_plans_billable { ... }`."
+        raise PricingPlans::ConfigurationError, "Unable to infer plan owner for controller. Set `self.pricing_plans_plan_owner_method = :current_organization` or provide a block via `pricing_plans_plan_owner { ... }`."
       end if base.respond_to?(:define_method)
 
       # Dynamic enforce_*! and with_*! helpers for before_action ergonomics
@@ -102,8 +102,8 @@ module PricingPlans
         if method_name.to_s =~ /^with_(.+)_limit!$/
           limit_key = Regexp.last_match(1).to_sym
           options = args.first.is_a?(Hash) ? args.first : {}
-          billable = if options[:billable]
-            options[:billable]
+          owner = if options[:plan_owner]
+            options[:plan_owner]
           elsif options[:on]
             resolver = options[:on]
             resolver.is_a?(Symbol) ? send(resolver) : instance_exec(&resolver)
@@ -111,17 +111,17 @@ module PricingPlans
             resolver = options[:for]
             resolver.is_a?(Symbol) ? send(resolver) : instance_exec(&resolver)
           else
-            respond_to?(:pricing_plans_billable) ? pricing_plans_billable : nil
+            respond_to?(:pricing_plans_plan_owner) ? pricing_plans_plan_owner : nil
           end
           by = options.key?(:by) ? options[:by] : 1
           allow_system_override = !!options[:allow_system_override]
           redirect_path = options[:redirect_to]
-          return with_plan_limit!(limit_key, billable: billable, by: by, allow_system_override: allow_system_override, redirect_to: redirect_path, &block)
+          return with_plan_limit!(limit_key, plan_owner: owner, by: by, allow_system_override: allow_system_override, redirect_to: redirect_path, &block)
         elsif method_name.to_s =~ /^enforce_(.+)_limit!$/
           limit_key = Regexp.last_match(1).to_sym
           options = args.first.is_a?(Hash) ? args.first : {}
-          billable = if options[:billable]
-            options[:billable]
+          owner = if options[:plan_owner]
+            options[:plan_owner]
           elsif options[:on]
             resolver = options[:on]
             resolver.is_a?(Symbol) ? send(resolver) : instance_exec(&resolver)
@@ -129,19 +129,19 @@ module PricingPlans
             resolver = options[:for]
             resolver.is_a?(Symbol) ? send(resolver) : instance_exec(&resolver)
           else
-            respond_to?(:pricing_plans_billable) ? pricing_plans_billable : nil
+            respond_to?(:pricing_plans_plan_owner) ? pricing_plans_plan_owner : nil
           end
           by = options.key?(:by) ? options[:by] : 1
           allow_system_override = !!options[:allow_system_override]
            redirect_path = options[:redirect_to]
-           enforce_plan_limit!(limit_key, billable: billable, by: by, allow_system_override: allow_system_override, redirect_to: redirect_path)
+           enforce_plan_limit!(limit_key, plan_owner: owner, by: by, allow_system_override: allow_system_override, redirect_to: redirect_path)
           return true
         elsif method_name.to_s =~ /^enforce_(.+)!$/
           feature_key = Regexp.last_match(1).to_sym
           options = args.first.is_a?(Hash) ? args.first : {}
-          # Support: enforce_feature!(for: :current_organization) and enforce_feature!(billable: obj)
-          billable = if options[:billable]
-            options[:billable]
+          # Support: enforce_feature!(for: :current_organization) and enforce_feature!(plan_owner: obj)
+          owner = if options[:plan_owner]
+            options[:plan_owner]
           elsif options[:on]
             resolver = options[:on]
             resolver.is_a?(Symbol) ? send(resolver) : instance_exec(&resolver)
@@ -149,9 +149,9 @@ module PricingPlans
             resolver = options[:for]
             resolver.is_a?(Symbol) ? send(resolver) : instance_exec(&resolver)
           else
-            respond_to?(:pricing_plans_billable) ? pricing_plans_billable : nil
+            respond_to?(:pricing_plans_plan_owner) ? pricing_plans_plan_owner : nil
           end
-          require_feature!(feature_key, billable: billable)
+          require_feature!(feature_key, plan_owner: owner)
           return true
         end
         super(method_name, *args, &block)
@@ -184,8 +184,8 @@ module PricingPlans
     #   - :warning  (allowed, but near limit)
     #   - :grace    (allowed, but in grace period)
     #   - :blocked  (not allowed)
-    def require_plan_limit!(limit_key, billable:, by: 1, allow_system_override: false)
-      plan = PlanResolver.effective_plan_for(billable)
+    def require_plan_limit!(limit_key, plan_owner:, by: 1, allow_system_override: false)
+      plan = PlanResolver.effective_plan_for(plan_owner)
       limit_config = plan&.limit_for(limit_key)
 
       # If no limit is configured, allow the action
@@ -199,7 +199,7 @@ module PricingPlans
       end
 
       # Check current usage and remaining capacity
-      current_usage = LimitChecker.current_usage_for(billable, limit_key, limit_config)
+      current_usage = LimitChecker.current_usage_for(plan_owner, limit_key, limit_config)
       limit_amount = limit_config[:to]
       remaining = limit_amount - current_usage
 
@@ -209,23 +209,23 @@ module PricingPlans
       if would_exceed
         # Allow trusted flows to bypass hard block while signaling downstream
         if allow_system_override
-          metadata = build_metadata(billable, limit_key, current_usage, limit_amount)
-          return Result.new(state: :blocked, message: build_over_limit_message(limit_key, current_usage, limit_amount, :blocked), limit_key: limit_key, billable: billable, metadata: metadata.merge(system_override: true))
+          metadata = build_metadata(plan_owner, limit_key, current_usage, limit_amount)
+          return Result.new(state: :blocked, message: build_over_limit_message(limit_key, current_usage, limit_amount, :blocked), limit_key: limit_key, billable: plan_owner, metadata: metadata.merge(system_override: true))
         end
         # Handle exceeded limit based on after_limit policy
         case limit_config[:after_limit]
         when :just_warn
-          handle_warning_only(billable, limit_key, current_usage, limit_amount)
+          handle_warning_only(plan_owner, limit_key, current_usage, limit_amount)
         when :block_usage
-          handle_immediate_block(billable, limit_key, current_usage, limit_amount)
+          handle_immediate_block(plan_owner, limit_key, current_usage, limit_amount)
         when :grace_then_block
-          handle_grace_then_block(billable, limit_key, current_usage, limit_amount, limit_config)
+          handle_grace_then_block(plan_owner, limit_key, current_usage, limit_amount, limit_config)
         else
           Result.blocked("Unknown after_limit policy: #{limit_config[:after_limit]}")
         end
       else
         # Within limit - check for warnings
-        handle_within_limit(billable, limit_key, current_usage, limit_amount, by)
+        handle_within_limit(plan_owner, limit_key, current_usage, limit_amount, by)
       end
     end
 
@@ -233,8 +233,8 @@ module PricingPlans
     # Defaults:
     # - On blocked: redirect_to pricing_path (if available) with alert; else render 403 JSON.
     # - On grace/warning: set flash[:warning] with the human message.
-    def enforce_plan_limit!(limit_key, billable:, by: 1, allow_system_override: false, redirect_to: nil)
-      result = require_plan_limit!(limit_key, billable: billable, by: by, allow_system_override: allow_system_override)
+    def enforce_plan_limit!(limit_key, plan_owner:, by: 1, allow_system_override: false, redirect_to: nil)
+      result = require_plan_limit!(limit_key, plan_owner: plan_owner, by: by, allow_system_override: allow_system_override)
 
       if result.blocked?
         # If caller opted into system override, let them handle downstream
@@ -281,11 +281,11 @@ module PricingPlans
     # Returns the PricingPlans::Result in all cases where execution continues.
     #
     # Usage:
-    #   with_plan_limit!(:licenses, billable: current_organization, by: 1) do |result|
+    #   with_plan_limit!(:licenses, plan_owner: current_organization, by: 1) do |result|
     #     # proceed with side-effects, can inspect result.warning?/grace?
     #   end
-    def with_plan_limit!(limit_key, billable:, by: 1, allow_system_override: false, redirect_to: nil, &block)
-      result = require_plan_limit!(limit_key, billable: billable, by: by, allow_system_override: allow_system_override)
+    def with_plan_limit!(limit_key, plan_owner:, by: 1, allow_system_override: false, redirect_to: nil, &block)
+      result = require_plan_limit!(limit_key, plan_owner: plan_owner, by: by, allow_system_override: allow_system_override)
 
       if result.blocked?
         # If caller opted into system override, let them proceed (exposes blocked state to the block)
@@ -378,8 +378,13 @@ module PricingPlans
 
     public
 
-    def require_feature!(feature_key, billable:)
-      plan = PlanResolver.effective_plan_for(billable)
+    # Preferred alias for feature gating (plain-English name)
+    def gate_feature!(feature_key, plan_owner:)
+      require_feature!(feature_key, plan_owner: plan_owner)
+    end
+
+    def require_feature!(feature_key, plan_owner:)
+      plan = PlanResolver.effective_plan_for(plan_owner)
 
       unless plan&.allows_feature?(feature_key)
         highlighted_plan = Registry.highlighted_plan
@@ -388,7 +393,7 @@ module PricingPlans
         upgrade_message = if PricingPlans.configuration&.message_builder
           begin
             builder = PricingPlans.configuration.message_builder
-            builder.call(context: :feature_denied, feature_key: feature_key, billable: billable, plan_name: current_plan_name, highlighted_plan: highlighted_plan&.name)
+            builder.call(context: :feature_denied, feature_key: feature_key, billable: plan_owner, plan_name: current_plan_name, highlighted_plan: highlighted_plan&.name)
           rescue StandardError
             nil
           end
@@ -399,7 +404,7 @@ module PricingPlans
           "#{feature_human} is not available on your current plan (#{current_plan_name})."
         end
 
-        raise FeatureDenied.new(upgrade_message, feature_key: feature_key, billable: billable)
+        raise FeatureDenied.new(upgrade_message, feature_key: feature_key, plan_owner: plan_owner)
       end
 
       true

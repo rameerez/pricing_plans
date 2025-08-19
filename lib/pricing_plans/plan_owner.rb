@@ -1,17 +1,17 @@
 # frozen_string_literal: true
 
 module PricingPlans
-  # Mix-in for the configured billable class (e.g., Organization)
-  # Provides readable, billable-centric helpers.
-  module Billable
+  # Mix-in for the configured plan owner class (e.g., Organization)
+  # Provides readable, owner-centric helpers.
+  module PlanOwner
     def self.included(base)
       base.extend(ClassMethods)
       base.singleton_class.prepend HasManyInterceptor
     end
 
-    # Define English-y sugar methods on the billable for a specific limit key.
+    # Define English-y sugar methods on the plan owner for a specific limit key.
     # Idempotent: skips if methods already exist.
-    def self.define_limit_sugar_methods(billable_class, limit_key)
+    def self.define_limit_sugar_methods(plan_owner_class, limit_key)
       key = limit_key.to_sym
       within_m = :"#{key}_within_plan_limits?"
       remaining_m = :"#{key}_remaining"
@@ -20,38 +20,38 @@ module PricingPlans
       grace_ends_m = :"#{key}_grace_ends_at"
       blocked_m = :"#{key}_blocked?"
 
-      unless billable_class.method_defined?(within_m)
-        billable_class.define_method(within_m) do |by: 1|
+      unless plan_owner_class.method_defined?(within_m)
+        plan_owner_class.define_method(within_m) do |by: 1|
           LimitChecker.within_limit?(self, key, by: by)
         end
       end
 
-      unless billable_class.method_defined?(remaining_m)
-        billable_class.define_method(remaining_m) do
+      unless plan_owner_class.method_defined?(remaining_m)
+        plan_owner_class.define_method(remaining_m) do
           LimitChecker.plan_limit_remaining(self, key)
         end
       end
 
-      unless billable_class.method_defined?(percent_m)
-        billable_class.define_method(percent_m) do
+      unless plan_owner_class.method_defined?(percent_m)
+        plan_owner_class.define_method(percent_m) do
           LimitChecker.plan_limit_percent_used(self, key)
         end
       end
 
-      unless billable_class.method_defined?(grace_active_m)
-        billable_class.define_method(grace_active_m) do
+      unless plan_owner_class.method_defined?(grace_active_m)
+        plan_owner_class.define_method(grace_active_m) do
           GraceManager.grace_active?(self, key)
         end
       end
 
-      unless billable_class.method_defined?(grace_ends_m)
-        billable_class.define_method(grace_ends_m) do
+      unless plan_owner_class.method_defined?(grace_ends_m)
+        plan_owner_class.define_method(grace_ends_m) do
           GraceManager.grace_ends_at(self, key)
         end
       end
 
-      unless billable_class.method_defined?(blocked_m)
-        billable_class.define_method(blocked_m) do
+      unless plan_owner_class.method_defined?(blocked_m)
+        plan_owner_class.define_method(blocked_m) do
           GraceManager.should_block?(self, key)
         end
       end
@@ -69,28 +69,28 @@ module PricingPlans
           error_after_limit = config.delete(:error_after_limit)
           count_scope = config.delete(:count_scope)
 
-          # Define English-y sugar methods on the billable immediately
-          PricingPlans::Billable.define_limit_sugar_methods(self, limit_key)
+          # Define English-y sugar methods on the plan owner immediately
+          PricingPlans::PlanOwner.define_limit_sugar_methods(self, limit_key)
 
           begin
             assoc_reflection = reflect_on_association(name)
             child_klass = assoc_reflection.klass
             foreign_key = assoc_reflection.foreign_key.to_s
 
-            # Find the child's belongs_to backref to this billable
-            inferred_billable = child_klass.reflections.values.find { |r| r.macro == :belongs_to && r.foreign_key.to_s == foreign_key }&.name
-            # If foreign_key doesn't match (e.g., child uses :organization), prefer association matching billable's semantic name
-            billable_name_sym = self.name.underscore.to_sym
-            inferred_billable ||= (child_klass.reflections.key?(billable_name_sym.to_s) ? billable_name_sym : nil)
+            # Find the child's belongs_to backref to this plan owner
+            inferred_owner = child_klass.reflections.values.find { |r| r.macro == :belongs_to && r.foreign_key.to_s == foreign_key }&.name
+            # If foreign_key doesn't match (e.g., child uses :organization), prefer association matching owner class semantic name
+            owner_name_sym = self.name.underscore.to_sym
+            inferred_owner ||= (child_klass.reflections.key?(owner_name_sym.to_s) ? owner_name_sym : nil)
             # Common conventions fallback
-            inferred_billable ||= %i[organization account user team company workspace tenant].find { |cand| child_klass.reflections.key?(cand.to_s) }
+            inferred_owner ||= %i[organization account user team company workspace tenant].find { |cand| child_klass.reflections.key?(cand.to_s) }
             # Final fallback to underscored class name
-            inferred_billable ||= billable_name_sym
+            inferred_owner ||= owner_name_sym
 
             child_klass.include PricingPlans::Limitable unless child_klass.ancestors.include?(PricingPlans::Limitable)
             child_klass.limited_by_pricing_plans(
               limit_key,
-              billable: inferred_billable,
+              plan_owner: inferred_owner,
               per: per,
               error_after_limit: error_after_limit,
               count_scope: count_scope
@@ -98,7 +98,7 @@ module PricingPlans
           rescue StandardError
             # If child class cannot be resolved yet, register for later resolution
             PricingPlans::AssociationLimitRegistry.register(
-              billable_class: self,
+              plan_owner_class: self,
               association_name: name,
               options: { limit_key: limit_key, per: per, error_after_limit: error_after_limit, count_scope: count_scope }
             )
