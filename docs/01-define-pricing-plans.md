@@ -127,7 +127,7 @@ PricingPlans.configure do |config|
 end
 ```
 
-In summary: persistent caps count live rows (per billable model). When over the cap:
+In summary: persistent caps count live rows (per enforceable model). When over the cap:
   - `:just_warn` → validation passes; use controller guard to warn.
   - `:block_usage` → validation fails immediately (uses `error_after_limit` if set).
   - `:grace_then_block` → validation fails once grace is considered “blocked” (we track and switch from grace to blocked).
@@ -148,7 +148,7 @@ end
 Accepted `per:` values:
 - `:billing_cycle` (default globally; respects Pay subscription anchors if available, else falls back to calendar month)
 - `:calendar_month`, `:calendar_week`, `:calendar_day`
-- A callable: `->(billable) { [start_time, end_time] }`
+- A callable: `->(enforceable) { [start_time, end_time] }`
 - An ActiveSupport duration: `2.weeks` (window starts at beginning of day)
 
 Per‑period usage is tracked in [the `PricingPlans::Usage` model (`pricing_plans_usages` table)](#why-the-models) and read live. Persistent caps do not use this table.
@@ -159,26 +159,26 @@ Per‑period usage is tracked in [the `PricingPlans::Usage` model (`pricing_plan
 - **Billing cycle**: When `pay` is available, we use the subscription’s anchors (`current_period_start`/`current_period_end`). If not available, we fall back to a monthly window anchored at the subscription’s `created_at`. If there is no subscription, we fall back to calendar month.
 - **Calendar windows**: `:calendar_month`, `:calendar_week`, `:calendar_day` map to `beginning_of_* … end_of_*` for the current time.
 - **Duration windows**: For `ActiveSupport::Duration` (e.g., `2.weeks`), the window starts at `beginning_of_day` and ends at `start + duration`.
-- **Custom callable**: You can pass `->(billable) { [start_time, end_time] }`. We validate that both are present and `end > start`.
+- **Custom callable**: You can pass `->(enforceable) { [start_time, end_time] }`. We validate that both are present and `end > start`.
 
 #### Automatic usage tracking (race‑safe)
 
-- Include `limited_by_pricing_plans` on the model that represents the metered object. On `after_create`, we atomically upsert/increment the current period’s usage row for that `billable` and `limit_key`.
+- Include `limited_by_pricing_plans` on the model that represents the metered object. On `after_create`, we atomically upsert/increment the current period’s usage row for that `enforceable` and `limit_key`.
 - Concurrency: we de‑duplicate with a uniqueness constraint and retry on `RecordNotUnique` to increment safely.
-- Reads are live: `LimitChecker.current_usage_for(billable, :key)` returns the current window’s `used` (or 0 if none).
+- Reads are live: `LimitChecker.current_usage_for(enforceable, :key)` returns the current window’s `used` (or 0 if none).
 
 Callback timing:
 - We increment usage in an `after_create` callback (not `after_commit`). This runs inside the same database transaction as the record creation, so if the outer transaction rolls back, the usage increment rolls back as well.
 
 #### Grace/warnings and period rollover (explicit semantics)
 
-- State lives in `pricing_plans_enforcement_states` per billable+limit.
+- State lives in `pricing_plans_enforcement_states` per enforceable+limit.
 - Per‑period limits:
   - We stamp the active window on the state; when the window changes, stale state is discarded automatically (warnings re‑arm and grace resets at each new window).
   - Warnings: thresholds re‑arm every window; the same threshold can emit again in the next window.
   - Grace: if `:grace_then_block`, grace is per window. A new window clears prior grace/blocked state.
 - Persistent caps:
-  - Warnings are monotonic: once a higher `warn_at` threshold has been emitted, we do not re‑emit lower or equal thresholds again unless you clear state via `PricingPlans::GraceManager.reset_state!(billable, :limit_key)`.
+  - Warnings are monotonic: once a higher `warn_at` threshold has been emitted, we do not re‑emit lower or equal thresholds again unless you clear state via `PricingPlans::GraceManager.reset_state!(enforceable, :limit_key)`.
   - Grace is absolute: if `:grace_then_block`, we start grace once the limit is exceeded. It expires after the configured duration. There is no automatic reset tied to time windows. Enforcement for creates is still driven by “would this action exceed the cap now?”. If usage drops below the cap, create checks will pass again even if a prior state exists.
   - You may clear any existing warning/grace/blocked state manually with `reset_state!`.
 
@@ -192,7 +192,7 @@ travel_to(Time.parse("2025-01-15 12:00:00 UTC")) do
   3.times { org.custom_models.create!(name: "Model") }
   PricingPlans::LimitChecker.plan_limit_remaining(org, :custom_models)
   # => 0
-  result = PricingPlans::ControllerGuards.require_plan_limit!(:custom_models, billable: org)
+  result = PricingPlans::ControllerGuards.require_plan_limit!(:custom_models, enforceable: org)
   result.grace? # => true when after_limit: :grace_then_block
 end
 
@@ -222,16 +222,16 @@ end
 And then, for each threshold and for each limit, an event gets triggered, and we can configure its callback in the `pricing_plans.rb` initializer:
 
 ```ruby
-config.on_warning(:projects) do |billable, threshold|
+config.on_warning(:projects) do |enforceable, threshold|
   # send a mail or a notification
   # this fires when :projects crosses 50%, 80% and 95% of its limit
 end
 
 # Also available:
-config.on_grace_start(:projects) do |billable, grace_ends_at|
+config.on_grace_start(:projects) do |enforceable, grace_ends_at|
   # notify grace started; ends at `grace_ends_at`
 end
-config.on_block(:projects) do |billable|
+config.on_block(:projects) do |enforceable|
   # notify usage is now blocked for :projects
 end
 ```
@@ -269,7 +269,7 @@ end
 ### "Limits" API reference
 
 To summarize, here's what persistent caps (plan limits) are:
-  - Counting is live: `SELECT COUNT(*)` scoped to the billable association, no counter caches.
+  - Counting is live: `SELECT COUNT(*)` scoped to the enforceable association, no counter caches.
   - Validation on create: blocks immediately on `:block_usage`, or blocks when grace is considered “blocked” on `:grace_then_block`. `:just_warn` passes.
   - Deletes automatically lower the count. Backfills simply reflect current rows.
 
@@ -278,9 +278,9 @@ To summarize, here's what persistent caps (plan limits) are:
       - Plan DSL with AR Hash: `limits :licenses, to: 25, count_scope: { status: 'active' }`
       - Plan DSL with named scope: `limits :activations, to: 50, count_scope: :active`
       - Plan DSL with multiple: `limits :seats, to: 10, count_scope: [:active, { kind: 'paid' }]`
-  - Macro form on the child model: `limited_by_pricing_plans :licenses, billable: :organization, count_scope: :active`
-  - Billable‑side convenience: `has_many :licenses, limited_by_pricing_plans: { limit_key: :licenses, count_scope: :active }`
-  - Full freedom: `->(rel) { rel.where(status: 'active') }` or `->(rel, billable) { rel.where(organization_id: billable.id) }`
+  - Macro form on the child model: `limited_by_pricing_plans :licenses, enforceable: :organization, count_scope: :active`
+  - enforceable‑side convenience: `has_many :licenses, limited_by_pricing_plans: { limit_key: :licenses, count_scope: :active }`
+  - Full freedom: `->(rel) { rel.where(status: 'active') }` or `->(rel, enforceable) { rel.where(organization_id: enforceable.id) }`
     - Accepted types: Symbol (named scope), Hash (where), Proc (arity 1 or 2), or Array of these (applied left-to-right).
     - Precedence: plan-level `count_scope` overrides macro-level `count_scope`.
     - Restriction: `count_scope` only applies to persistent caps (not allowed on per-period limits).
