@@ -61,6 +61,31 @@ class BillableHelpersTest < ActiveSupport::TestCase
     assert org.projects_percent_used.is_a?(Numeric)
   end
 
+  def test_feature_sugar_plan_allows_dynamic
+    org = Organization.create!(name: "Acme")
+    # Default plan does not allow :api_access
+    refute org.plan_allows_api_access?
+
+    # Add a pro plan that allows the feature and assign it
+    PricingPlans.configure do |config|
+      config.plan :pro do
+        allows :api_access
+      end
+    end
+    PricingPlans::Assignment.assign_plan_to(org, :pro)
+    assert org.plan_allows_api_access?
+    assert_equal org.plan_allows?(:api_access), org.plan_allows_api_access?
+  end
+
+  def test_feature_sugar_respond_to_missing
+    org = Organization.create!(name: "Acme")
+    assert org.respond_to?(:plan_allows_api_access?)
+    # Pattern-based predicate methods should be discoverable
+    assert org.respond_to?(:plan_allows_completely_made_up_feature?)
+    # Unknown features simply return false
+    refute org.plan_allows_completely_made_up_feature?
+  end
+
   def test_idempotent_inclusion_on_reconfigure
     org = Organization.new(name: "Acme")
     assert_respond_to org, :within_plan_limits?

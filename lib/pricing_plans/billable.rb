@@ -147,6 +147,22 @@ module PricingPlans
       plan&.allows_feature?(feature_key) || false
     end
 
+    # Syntactic sugar for feature checks:
+    # Allows calls like `billable.plan_allows_api_access?` which map to
+    # `billable.plan_allows?(:api_access)`.
+    def method_missing(method_name, *args, &block)
+      if (m = method_name.to_s.match(/^plan_allows_(.+)\?$/))
+        feature_key = m[1].to_sym
+        return plan_allows?(feature_key)
+      end
+      super
+    end
+
+    def respond_to_missing?(method_name, include_private = false)
+      return true if method_name.to_s.start_with?("plan_allows_") && method_name.to_s.end_with?("?")
+      super
+    end
+
     # Pay (Stripe) convenience wrappers (return false/nil if Pay not available)
     # Pay (Stripe) state — billing-facing, NOT used by our enforcement logic
     def pay_subscription_active?
