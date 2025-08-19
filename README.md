@@ -34,7 +34,7 @@ Or check limits and feature access anywhere in your app:
 
 `pricing_plans` is your single source of truth for pricing plans, so you can use it to [build pricing pages and paywalls](/docs/04-views.md) too.
 
-![pricing_plans Ruby on Rails gem - pricing table features](/docs/images/pricing_plans_ruby_rails_gem.jpg)
+![pricing_plans Ruby on Rails gem - pricing table features](/docs/images/pricing_plans_ruby_rails_gem_pricing_table.jpg)
 
 
 The gem works standalone, and it also plugs nicely into popular gems: it works seamlessly out of the box if you're already using [`pay`](https://github.com/pay-rails/pay) or [`usage_credits`](https://github.com/rameerez/usage_credits/). More info [here](/docs/06-gem-compatibility.md).
@@ -89,7 +89,14 @@ before_action { gate_feature!(:api_access, plan_owner: current_organization) }
 before_action :enforce_api_access!
 ```
 
-methods to check limits in your views for conditional UI. Check the [full API reference](/docs/04-views.md).
+And you also get a lot of [view helpers and methods](/docs/04-views.md) to check limits in your views for conditional UI, and to build usage meters, usage warnings, and a handful of other useful UI components.
+
+![pricing_plans Ruby on Rails gem - pricing plan usage meter](/docs/images/pricing_plans_ruby_rails_gem_usage_meter.jpg)
+
+You can also display upgrade alerts to prompt users into upgrading to the next plan when they're near their plan limits:
+
+![pricing_plans Ruby on Rails gem - pricing plan upgrade prompt](/docs/images/pricing_plans_ruby_rails_gem_usage_alert_upgrade.jpg)
+
 
 ## 🤓 Read the docs!
 
