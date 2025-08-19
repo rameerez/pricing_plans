@@ -1,6 +1,6 @@
 # 💵 `pricing_plans` - Define and enforce pricing plan limits in your Rails app (SaaS entitlements)
 
-[![Gem Version](https://badge.fury.io/rb/pricing_plans.svg)](https://badge.fury.io/rb/pricing_plans)
+[![Gem Version](https://badge.fury.io/rb/pricing_plans.svg?x=1)](https://badge.fury.io/rb/pricing_plans)
 
 Enforce pricing plan limits with one-liners that read like plain English. Avoid scattering and entangling pricing logic everywhere in your Rails SaaS.
 
