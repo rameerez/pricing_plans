@@ -4,7 +4,7 @@
 
 Enforce pricing plan limits with one-liners that read like plain English. Avoid scattering and entangling pricing logic everywhere in your Rails SaaS.
 
-For example, this is how you **define plans** and their entitlements:
+For example, this is how you define plans and their entitlements:
 ```ruby
 plan :pro do
   allows :api_access
@@ -12,7 +12,7 @@ plan :pro do
 end
 ```
 
-Then, you can **gate features** in your controllers:
+Then, you can gate features in your controllers:
 ```ruby
 before_action :enforce_api_access!, only: [:create]
 ```
@@ -25,7 +25,7 @@ And check anywhere in your app to hide / show UI:
 
 `pricing_plans` is your single source of truth for pricing plans, so you can use it to [build pricing pages and paywalls](/docs/04-views.md) too.
 
-The gem works standalone, and it also plugs nicely into popular gems: it works seamlessly out of the box with [`pay`](https://github.com/pay-rails/pay) and [`usage_credits`](https://github.com/rameerez/usage_credits/). More info [here](/docs/06-gem-compatibility.md).
+The gem works standalone, and it also plugs nicely into popular gems: it works seamlessly out of the box if you're already using [`pay`](https://github.com/pay-rails/pay) or [`usage_credits`](https://github.com/rameerez/usage_credits/). More info [here](/docs/06-gem-compatibility.md).
 
 ## Quickstart
 
@@ -70,6 +70,9 @@ end
 You also get [controller helpers](/docs/02-controller-helpers.md):
 
 ```ruby
+before_action { gate_feature!(:api_access, plan_owner: current_organization) }
+# or syntactic sugar:
+before_action :enforce_api_access!
 ```
 
 methods to check limits in your views for conditional UI. Check the [full API reference](/docs/04-views.md).
