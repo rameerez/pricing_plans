@@ -17,9 +17,9 @@ Then, you can gate features in your controllers:
 before_action :enforce_api_access!, only: [:create]
 ```
 
-And do one-liner checks to hide / show conditional UI:
+Do one-liner checks to hide / show conditional UI:
 
-```erb
+```ruby
 <% if current_user.within_plan_limits?(:projects) %>
   <!-- Create new project -->
 <% end %>
