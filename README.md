@@ -4,7 +4,7 @@
 
 Enforce pricing plan limits with one-liners that read like plain English. Avoid scattering and entangling pricing logic everywhere in your Rails SaaS.
 
-For example, this is how you define plans and their entitlements:
+For example, this is how you define pricing plans and their entitlements:
 ```ruby
 plan :pro do
   allows :api_access
@@ -12,7 +12,7 @@ plan :pro do
 end
 ```
 
-Then, you can gate features in your controllers:
+You can then gate features in your controllers:
 ```ruby
 before_action :enforce_api_access!, only: [:create]
 ```
@@ -21,7 +21,7 @@ Do one-liner checks to hide / show conditional UI:
 
 ```ruby
 <% if current_user.within_plan_limits?(:projects) %>
-  <!-- Create new project -->
+  ...
 <% end %>
 ```
 
