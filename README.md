@@ -50,7 +50,7 @@ rails db:migrate
 
 This will also create a `config/initializers/pricing_plans.rb` file where you need to [define your pricing plans](/docs/01-define-pricing-plans.md).
 
-Then, just add the model mixin to the actual model on which limits should be enforced (the plan owner), like: `User`, `Organization`, etc.:
+Then, just add the model mixin to the plan owner, that is: the actual model on which limits should be enforced (`User`, `Organization`, etc.):
 
 ```ruby
 class User < ApplicationRecord
@@ -58,7 +58,7 @@ class User < ApplicationRecord
 end
 ```
 
-This mixin will automatically give your model the [helpers and methods](/docs/03-model-helpers.md) you can use to consistently enforce check and enforce limits:
+This mixin will automatically give your plan owner model the [model helpers and methods](/docs/03-model-helpers.md) you can use to consistently enforce check and enforce limits:
 ```ruby
 class User < ApplicationRecord
   include PricingPlans::PlanOwner
