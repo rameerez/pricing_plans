@@ -35,8 +35,8 @@ Gem::Specification.new do |spec|
   spec.require_paths = ["lib"]
 
   # Core dependencies
-  spec.add_dependency "activerecord", "~> 7.1", ">= 7.1.0"
-  spec.add_dependency "activesupport", "~> 7.1", ">= 7.1.0"
+  spec.add_dependency "activerecord", ">= 7.1.0", "< 9.0"
+  spec.add_dependency "activesupport", ">= 7.1.0", "< 9.0"
 
   # Development dependencies
   spec.add_development_dependency "bundler", "~> 2.0"
