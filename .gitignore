@@ -15,6 +15,7 @@
 /node_modules/
 /.ruby-lsp/
 /.solargraph.yml
+/Gemfile.lock
 
 .aux/
 .docs/
