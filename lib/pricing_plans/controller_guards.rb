@@ -133,9 +133,8 @@ module PricingPlans
           end
           by = options.key?(:by) ? options[:by] : 1
           allow_system_override = !!options[:allow_system_override]
-           redirect_path = options[:redirect_to]
-           enforce_plan_limit!(limit_key, plan_owner: owner, by: by, allow_system_override: allow_system_override, redirect_to: redirect_path)
-          return true
+          redirect_path = options[:redirect_to]
+          return enforce_plan_limit!(limit_key, plan_owner: owner, by: by, allow_system_override: allow_system_override, redirect_to: redirect_path)
         elsif method_name.to_s =~ /^enforce_(.+)!$/
           feature_key = Regexp.last_match(1).to_sym
           options = args.first.is_a?(Hash) ? args.first : {}
@@ -230,7 +229,7 @@ module PricingPlans
       end
     end
 
-    # Rails-y controller ergonomics: enforce, set flash/redirect, and abort the callback chain when blocked.
+    # Rails-y controller ergonomics: enforce limits and set flash/redirect when blocked.
     # Defaults:
     # - On blocked: redirect_to pricing_path (if available) with alert; else render 403 JSON.
     # - On grace/warning: set flash[:warning] with the human message.
@@ -264,8 +263,6 @@ module PricingPlans
             respond_to?(:request) && request&.format&.json? ? render(json: { error: result.message }, status: :forbidden) : render(plain: result.message, status: :forbidden)
           end
         end
-        # Stop the filter chain (for before_action ergonomics)
-        throw :abort
         return false
       elsif result.warning? || result.grace?
         if respond_to?(:flash) && flash.respond_to?(:[]=)
@@ -277,7 +274,7 @@ module PricingPlans
     end
 
     # Controller-focused sugar: run a block within the plan limit context.
-    # - If blocked: performs the same redirect/render semantics as enforce_plan_limit! and aborts the callback chain.
+    # - If blocked: performs the same redirect/render semantics as enforce_plan_limit! and returns false.
     # - If warning/grace: sets flash[:warning] and yields the result.
     # - If within: simply yields the result.
     # Returns the PricingPlans::Result in all cases where execution continues.
@@ -314,7 +311,7 @@ module PricingPlans
             respond_to?(:request) && request&.format&.json? ? render(json: { error: result.message }, status: :forbidden) : render(plain: result.message, status: :forbidden)
           end
         end
-        throw :abort
+        return false
       else
         if (result.warning? || result.grace?) && respond_to?(:flash) && flash.respond_to?(:[]=)
           flash[:warning] ||= result.message

@@ -380,13 +380,11 @@ class ControllerGuardsTest < ActiveSupport::TestCase
     end.new
 
     PricingPlans::PlanResolver.stub(:effective_plan_for, plan) do
-      caught = catch(:abort) do
-        controller.enforce_plan_limit!(:projects, plan_owner: org, by: 1)
-        :no_abort
-      end
-      assert_equal "/pricing", controller.instance_variable_get(:@redirected)
-      assert_equal :see_other, controller.instance_variable_get(:@redirect_options)[:status]
-      assert caught != :no_abort
+      result = controller.enforce_plan_limit!(:projects, plan_owner: org, by: 1)
+
+      assert_equal false, result
+      assert_equal "/pricing", controller.redirected
+      assert_equal :see_other, controller.redirect_options[:status]
     end
   end
 
@@ -409,12 +407,11 @@ class ControllerGuardsTest < ActiveSupport::TestCase
       begin
         PricingPlans.configuration.redirect_on_blocked_limit = "/global"
         controller_class.pricing_plans_redirect_on_blocked_limit = "/local"
-        caught = catch(:abort) do
-          controller.enforce_plan_limit!(:projects, plan_owner: org, by: 1)
-          :no_abort
-        end
-        refute_equal :no_abort, caught
-        assert_equal "/local", controller.instance_variable_get(:@redirected)
+
+        result = controller.enforce_plan_limit!(:projects, plan_owner: org, by: 1)
+
+        assert_equal false, result
+        assert_equal "/local", controller.redirected
       ensure
         controller_class.pricing_plans_redirect_on_blocked_limit = nil
         PricingPlans.configuration.redirect_on_blocked_limit = original
@@ -438,12 +435,11 @@ class ControllerGuardsTest < ActiveSupport::TestCase
       original = PricingPlans.configuration.redirect_on_blocked_limit
       begin
         PricingPlans.configuration.redirect_on_blocked_limit = "/global_only"
-        caught = catch(:abort) do
-          controller.enforce_plan_limit!(:projects, plan_owner: org, by: 1)
-          :no_abort
-        end
-        refute_equal :no_abort, caught
-        assert_equal "/global_only", controller.instance_variable_get(:@redirected)
+
+        result = controller.enforce_plan_limit!(:projects, plan_owner: org, by: 1)
+
+        assert_equal false, result
+        assert_equal "/global_only", controller.redirected
       ensure
         PricingPlans.configuration.redirect_on_blocked_limit = original
       end
@@ -471,12 +467,11 @@ class ControllerGuardsTest < ActiveSupport::TestCase
       original = PricingPlans.configuration.redirect_on_blocked_limit
       begin
         PricingPlans.configuration.redirect_on_blocked_limit = nil
-        caught = catch(:abort) do
-          controller.enforce_plan_limit!(:projects, plan_owner: org, by: 1)
-          :no_abort
-        end
-        refute_equal :no_abort, caught
-        assert_equal :forbidden, controller.instance_variable_get(:@rendered)[:status]
+
+        result = controller.enforce_plan_limit!(:projects, plan_owner: org, by: 1)
+
+        assert_equal false, result
+        assert_equal :forbidden, controller.rendered[:status]
       ensure
         PricingPlans.configuration.redirect_on_blocked_limit = original
       end
@@ -499,14 +494,11 @@ class ControllerGuardsTest < ActiveSupport::TestCase
     end.new
 
     PricingPlans::PlanResolver.stub(:effective_plan_for, plan) do
-      caught = catch(:abort) do
-        controller.enforce_plan_limit!(:projects, plan_owner: org, by: 1)
-        :no_abort
-      end
-      refute_equal :no_abort, caught
-      handled = controller.instance_variable_get(:@handled)
-      assert_match(/limit/i, handled.first)
-      assert_equal "/pricing", handled.last
+      result = controller.enforce_plan_limit!(:projects, plan_owner: org, by: 1)
+
+      assert_equal false, result
+      assert_match(/limit/i, controller.handled.first)
+      assert_equal "/pricing", controller.handled.last
     end
   end
 
@@ -517,16 +509,16 @@ class ControllerGuardsTest < ActiveSupport::TestCase
 
     controller = Class.new do
       include PricingPlans::ControllerGuards
+      attr_reader :redirected
       def pricing_path; "/pricing"; end
-      def redirect_to(*); end
+      def redirect_to(*); @redirected = true; end
     end.new
 
     PricingPlans::PlanResolver.stub(:effective_plan_for, plan) do
-      caught = catch(:abort) do
-        controller.enforce_projects_limit!(plan_owner: org, by: 1)
-        :no_abort
-      end
-      refute_equal :no_abort, caught
+      result = controller.enforce_projects_limit!(plan_owner: org, by: 1)
+
+      assert_equal false, result
+      assert controller.redirected
     end
   end
 
@@ -550,8 +542,8 @@ class ControllerGuardsTest < ActiveSupport::TestCase
         by: 1,
         allow_system_override: true
       )
-      assert result
-      refute controller.instance_variable_get(:@redirected)
+      assert_equal true, result
+      refute controller.redirected
     end
   end
 
@@ -567,15 +559,13 @@ class ControllerGuardsTest < ActiveSupport::TestCase
     end.new
 
     PricingPlans::PlanResolver.stub(:effective_plan_for, plan) do
-      caught = catch(:abort) do
-        controller.enforce_projects_limit!(plan_owner: org, by: 1, redirect_to: "/upgrade")
-        :no_abort
-      end
-      assert controller.instance_variable_get(:@redirect_target)
-      path, opts = controller.instance_variable_get(:@redirect_target)
+      result = controller.enforce_projects_limit!(plan_owner: org, by: 1, redirect_to: "/upgrade")
+
+      assert_equal false, result
+      assert controller.redirect_target
+      path, opts = controller.redirect_target
       assert_equal "/upgrade", path
       assert_equal :see_other, opts[:status]
-      assert caught != :no_abort
     end
   end
 
@@ -586,18 +576,18 @@ class ControllerGuardsTest < ActiveSupport::TestCase
 
     controller = Class.new do
       include PricingPlans::ControllerGuards
+      attr_reader :redirected
       def org_alias; @org; end
       def pricing_path; "/pricing"; end
-      def redirect_to(*); end
+      def redirect_to(*); @redirected = true; end
     end.new
     controller.instance_variable_set(:@org, org)
 
     PricingPlans::PlanResolver.stub(:effective_plan_for, plan) do
-      caught = catch(:abort) do
-        controller.enforce_projects_limit!(on: :org_alias)
-        :no_abort
-      end
-      refute_equal :no_abort, caught
+      result = controller.enforce_projects_limit!(on: :org_alias)
+
+      assert_equal false, result
+      assert controller.redirected
     end
   end
 
