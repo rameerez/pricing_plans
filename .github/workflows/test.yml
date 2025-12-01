@@ -12,7 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        rails_version: ["7.0", "7.1.0", "7.2.2", "8.0.1", "8.1.0"]
+        rails_version: ["7.0.10", "7.1.6", "7.2.3", "8.0.4", "8.1.1"]
         ruby_version: ["3.2", "3.3", "3.4"]
     steps:
       - uses: actions/checkout@v4
