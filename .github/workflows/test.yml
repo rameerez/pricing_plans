@@ -11,6 +11,7 @@ jobs:
   test:
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         rails_version: ["7.0.10", "7.1.6", "7.2.3", "8.0.4", "8.1.1"]
         ruby_version: ["3.2", "3.3", "3.4"]
