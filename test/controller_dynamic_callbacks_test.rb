@@ -71,11 +71,10 @@ class ControllerDynamicCallbacksTest < ActiveSupport::TestCase
     plan.limits :licenses, to: 0, after_limit: :block_usage
     PricingPlans::PlanResolver.stub(:effective_plan_for, plan) do
       DummyController.pricing_plans_redirect_on_blocked_limit = "/pricing"
-      caught = catch(:abort) do
-        controller.enforce_licenses_limit!(on: :current_organization)
-        :no_abort
-      end
-      refute_equal :no_abort, caught
+
+      result = controller.enforce_licenses_limit!(on: :current_organization)
+
+      assert_equal false, result
       path, opts = controller.redirected_to
       assert_equal "/pricing", path
       assert_equal :see_other, opts[:status]
@@ -93,11 +92,10 @@ class ControllerDynamicCallbacksTest < ActiveSupport::TestCase
     PricingPlans::PlanResolver.stub(:effective_plan_for, plan) do
       original = PricingPlans.configuration.redirect_on_blocked_limit
       PricingPlans.configuration.redirect_on_blocked_limit = "/global_pricing"
-      caught = catch(:abort) do
-        controller.enforce_licenses_limit!(on: :current_organization)
-        :no_abort
-      end
-      refute_equal :no_abort, caught
+
+      result = controller.enforce_licenses_limit!(on: :current_organization)
+
+      assert_equal false, result
       path, opts = controller.redirected_to
       assert_equal "/global_pricing", path
       assert_equal :see_other, opts[:status]
@@ -117,11 +115,9 @@ class ControllerDynamicCallbacksTest < ActiveSupport::TestCase
       PricingPlans.configuration.redirect_on_blocked_limit = "/global"
       DummyController.pricing_plans_redirect_on_blocked_limit = "/local"
 
-      caught = catch(:abort) do
-        controller.enforce_licenses_limit!(on: :current_organization, redirect_to: "/override")
-        :no_abort
-      end
-      refute_equal :no_abort, caught
+      result = controller.enforce_licenses_limit!(on: :current_organization, redirect_to: "/override")
+
+      assert_equal false, result
       path, opts = controller.redirected_to
       assert_equal "/override", path
       assert_equal :see_other, opts[:status]
@@ -148,11 +144,10 @@ class ControllerDynamicCallbacksTest < ActiveSupport::TestCase
       controller_class.pricing_plans_redirect_on_blocked_limit = :pricing_path
       # Provide plan_owner via common convention method
       controller.define_singleton_method(:current_organization) { org }
-      caught = catch(:abort) do
-        controller.enforce_licenses_limit!
-        :no_abort
-      end
-      refute_equal :no_abort, caught
+
+      result = controller.enforce_licenses_limit!
+
+      assert_equal false, result
       path, opts = controller.redirected_to
       assert_equal "/from_helper", path
       assert_equal :see_other, opts[:status]
@@ -169,11 +164,10 @@ class ControllerDynamicCallbacksTest < ActiveSupport::TestCase
     PricingPlans::PlanResolver.stub(:effective_plan_for, plan) do
       original = PricingPlans.configuration.redirect_on_blocked_limit
       PricingPlans.configuration.redirect_on_blocked_limit = ->(result) { "/base?limit=#{result.limit_key}" }
-      caught = catch(:abort) do
-        controller.enforce_licenses_limit!(on: :current_organization)
-        :no_abort
-      end
-      refute_equal :no_abort, caught
+
+      result = controller.enforce_licenses_limit!(on: :current_organization)
+
+      assert_equal false, result
       path, _opts = controller.redirected_to
       assert_match %r{^/base\?limit=licenses$}, path
     ensure
@@ -333,11 +327,10 @@ class ControllerWithPlanLimitSugarTest < ActiveSupport::TestCase
     plan.limits :licenses, to: 0, after_limit: :block_usage
     PricingPlans::PlanResolver.stub(:effective_plan_for, plan) do
       ctrl = build_controller
-      caught = catch(:abort) do
-        ctrl.with_plan_limit!(:licenses, plan_owner: @org, by: 1) { |_res| }
-        :no_abort
-      end
-      refute_equal :no_abort, caught
+
+      result = ctrl.with_plan_limit!(:licenses, plan_owner: @org, by: 1) { |_res| }
+
+      assert_equal false, result
       assert_equal "/pricing", ctrl.redirected_to
       assert_equal :see_other, ctrl.redirect_opts[:status]
     end
@@ -348,11 +341,10 @@ class ControllerWithPlanLimitSugarTest < ActiveSupport::TestCase
     plan.limits :licenses, to: 0, after_limit: :block_usage
     PricingPlans::PlanResolver.stub(:effective_plan_for, plan) do
       ctrl = build_controller
-      caught = catch(:abort) do
-        ctrl.with_licenses_limit!(plan_owner: @org, by: 1) { |_res| }
-        :no_abort
-      end
-      refute_equal :no_abort, caught
+
+      result = ctrl.with_licenses_limit!(plan_owner: @org, by: 1) { |_res| }
+
+      assert_equal false, result
       assert_equal "/pricing", ctrl.redirected_to
     end
   end
