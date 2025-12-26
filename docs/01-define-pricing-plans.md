@@ -328,6 +328,8 @@ You can mark a plan as `hidden!` to exclude it from public-facing plan lists (`P
 ```ruby
 PricingPlans.configure do |config|
   # Hidden default plan for users who haven't subscribed
+  # It won't appear on pricing page
+  # This is what users are on before they subscribe to any plan
   plan :unsubscribed do
     price 0
     hidden!  # Won't appear on pricing page
