@@ -18,8 +18,9 @@ class ControllerGuardsTest < ActiveSupport::TestCase
     PricingPlans::PlanResolver.stub(:effective_plan_for, plan) do
       result = require_plan_limit!(:non_existent, plan_owner: @org)
 
-      assert result.within?
-      assert_match(/no limit configured/i, result.message)
+      # BREAKING CHANGE: Undefined limits now block instead of allowing
+      assert result.blocked?
+      assert_match(/not configured/i, result.message)
     end
   end
 

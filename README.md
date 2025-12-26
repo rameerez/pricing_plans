@@ -7,10 +7,12 @@ Enforce pricing plan limits with one-liners that read like plain English. Avoid 
 For example, this is how you define pricing plans and their entitlements:
 ```ruby
 plan :pro do
-  allows :api_access
-  limits :projects, to: 5
+  allows :api_access      # Features: blocked by default unless explicitly allowed
+  limits :projects, to: 5 # Limits: 0 by default unless a limit is set explicitly
 end
 ```
+
+Plans are **secure by default**: features are disabled and limits are set to 0 unless explicitly configured.
 
 You can then gate features in your controllers:
 ```ruby

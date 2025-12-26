@@ -20,7 +20,9 @@ That's the basics! Let's dive in.
 
 ## Define what each plan gives
 
-At a high level, a plan needs to do **two** things:
+Plans are **secure by default**: features are disabled and limits are set to 0 unless explicitly configured.
+
+At a high level, a plan does **two** things:
   (1) Gate features
   (2) Enforce limits (quotas)
 
@@ -41,7 +43,7 @@ end
 We're just **defining** what the plan does now. Later, we'll see [all the methods we can use to enforce these limits and gate these features](#gate-features-in-controllers) very easily.
 
 
-All features are disabled by default unless explicitly made available with the `allows` keyword. However, for clarity we can explicitly say what the plan disallows:
+**Features and limits are secure by default**: features are disabled and limits are set to 0 unless explicitly allowed. For clarity, you can explicitly state what a plan disallows, but this is just cosmetic:
 
 ```ruby
 PricingPlans.configure do |config|
@@ -252,16 +254,15 @@ end
 
 (Assuming, of course, that your `Project` model has an `active` scope)
 
-You can also make something unlimited (again, just syntactic sugar to be explicit, everything is unlimited unless there's an actual limit):
+**Undefined limits default to 0 (blocked).** To explicitly allow unlimited access, use the `unlimited` helper:
 
 ```ruby
 PricingPlans.configure do |config|
-  plan :free do
-    price 0
-
+  plan :enterprise do
+    price 999
     allows :api_access
-
-    unlimited :projects
+    unlimited :projects  # Explicit unlimited
+    # :storage undefined → 0 (blocked)
   end
 end
 ```
@@ -331,9 +332,7 @@ PricingPlans.configure do |config|
     price 0
     hidden!  # Won't appear on pricing page
     default!
-
-    limit :projects, to: 0
-    limit :api_calls, to: 0, per: :month
+    # No limits defined - everything defaults to 0 (blocked)
   end
 
   # Visible plans for your pricing page
