@@ -258,7 +258,8 @@ class LimitCheckerTest < ActiveSupport::TestCase
 
     # Mock PlanResolver to return nil
     PricingPlans::PlanResolver.stub(:effective_plan_for, nil) do
-      assert_equal :unlimited, PricingPlans::LimitChecker.plan_limit_remaining(org, :projects)
+      # BREAKING CHANGE: Undefined limits now default to 0 (blocked) instead of :unlimited
+      assert_equal 0, PricingPlans::LimitChecker.plan_limit_remaining(org, :projects)
       assert_equal 0.0, PricingPlans::LimitChecker.plan_limit_percent_used(org, :projects)
       assert_equal :block_usage, PricingPlans::LimitChecker.after_limit_action(org, :projects)
     end

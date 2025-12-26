@@ -20,7 +20,9 @@ module PricingPlans
       def remaining(plan_owner, limit_key)
         plan = PlanResolver.effective_plan_for(plan_owner)
         limit_config = plan&.limit_for(limit_key)
-        return :unlimited unless limit_config
+        # BREAKING CHANGE: Undefined limits now default to 0 (blocked) instead of :unlimited
+        # This is secure-by-default: if a plan doesn't define a limit, access is blocked
+        return 0 unless limit_config
 
         limit_amount = limit_config[:to]
         return :unlimited if limit_amount == :unlimited
@@ -54,7 +56,8 @@ module PricingPlans
       def limit_amount(plan_owner, limit_key)
         plan = PlanResolver.effective_plan_for(plan_owner)
         limit_config = plan&.limit_for(limit_key)
-        return :unlimited unless limit_config
+        # BREAKING CHANGE: Undefined limits now default to 0 (blocked) instead of :unlimited
+        return 0 unless limit_config
 
         limit_config[:to]
       end

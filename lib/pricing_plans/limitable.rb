@@ -189,10 +189,17 @@ module PricingPlans
 
             return unless plan_owner_instance
 
-            # Skip validation if the plan_owner doesn't have limits configured
+            # BREAKING CHANGE: Block when limit is not configured (secure by default)
             plan = PlanResolver.effective_plan_for(plan_owner_instance)
             limit_config = plan&.limit_for(limit_key)
-            return unless limit_config
+
+            # If limit is not configured, block creation (secure by default)
+            unless limit_config
+              message = error_after_limit || "Cannot create #{self.class.name.downcase}: #{limit_key.to_s.humanize.downcase} limit not configured on this plan"
+              errors.add(:base, message)
+              return
+            end
+
             return if limit_config[:to] == :unlimited
 
             # For persistent caps, check if we'd exceed the limit

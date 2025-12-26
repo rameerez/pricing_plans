@@ -8,10 +8,11 @@ class LimitCheckerMoreTest < ActiveSupport::TestCase
     @org = create_organization
   end
 
-  def test_remaining_returns_unlimited_when_no_limit_configured
-    # For an unknown limit key, remaining should be :unlimited
-    assert_equal :unlimited, PricingPlans::LimitChecker.plan_limit_remaining(@org, :unknown_limit)
-    assert PricingPlans::LimitChecker.within_limit?(@org, :unknown_limit)
+  def test_remaining_returns_zero_when_no_limit_configured
+    # BREAKING CHANGE: For an unknown limit key, remaining should be 0 (blocked)
+    # This is secure-by-default: undefined limits block access
+    assert_equal 0, PricingPlans::LimitChecker.plan_limit_remaining(@org, :unknown_limit)
+    refute PricingPlans::LimitChecker.within_limit?(@org, :unknown_limit)
   end
 
   def test_after_limit_action_default_when_no_limit_configured

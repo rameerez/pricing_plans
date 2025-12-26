@@ -114,14 +114,17 @@ class LimitableTest < ActiveSupport::TestCase
     assert project.valid?, "Expected validation to pass when within limit"
   end
 
-  def test_validation_skips_when_no_plan_configured
+  def test_validation_blocks_when_no_plan_configured
+    # BREAKING CHANGE: Validation should block when no plan configured (secure by default)
     # Create an organization without a configured plan
     org = Organization.create!(name: "Test Org")
 
     # Mock PlanResolver to return nil
     PricingPlans::PlanResolver.stub(:effective_plan_for, nil) do
       project = org.projects.build(name: "Test Project")
-      assert project.valid?, "Expected validation to pass when no plan configured"
+      refute project.valid?, "Expected validation to fail when no plan configured (secure by default)"
+      assert project.errors.any?, "Should have validation errors"
+      assert_includes project.errors.full_messages.join.downcase, "projects", "Error should mention projects limit"
     end
   end
 

@@ -503,7 +503,7 @@ class HiddenPlansTest < ActiveSupport::TestCase
   # ========================================
 
   def test_real_world_use_case_unsubscribed_users_dont_see_hidden_plan_on_pricing_page
-    # This test simulates the iconprinter use case
+    # This test simulates the demobusiness use case
     PricingPlans.configure do |config|
       config.plan_owner_class = "Organization"
 

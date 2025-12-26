@@ -188,9 +188,10 @@ module PricingPlans
       plan = PlanResolver.effective_plan_for(plan_owner)
       limit_config = plan&.limit_for(limit_key)
 
-      # If no limit is configured, allow the action
+      # BREAKING CHANGE: If no limit is configured, block the action (secure by default)
+      # Previously this returned :within (allowed), now returns :blocked
       unless limit_config
-        return Result.within("No limit configured for #{limit_key}")
+        return Result.blocked("Limit #{limit_key.to_s.humanize.downcase} not configured on this plan")
       end
 
       # Check if unlimited
