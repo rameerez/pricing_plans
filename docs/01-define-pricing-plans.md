@@ -314,6 +314,49 @@ end
 
 You can also make a plan `default!`; and you can make a plan `highlighted!` to help you when building a pricing table.
 
+### Hide plans from public lists
+
+You can mark a plan as `hidden!` to exclude it from public-facing plan lists (`PricingPlans.plans`, `PricingPlans.for_pricing`, `PricingPlans.view_models`). Hidden plans are still accessible internally and can be assigned to users.
+
+**Use cases for hidden plans:**
+- **Default plan for unsubscribed users**: Create a `hidden!` plan with zero limits as your default for users who haven't subscribed yet. This is useful, for example, if you don't want free users in your app (everyone needs to pay) -- the `hidden!` plan would get assigned to every user by default (to implicitly block access to all features) until they subscribe
+- **Grandfathered plans**: Old plans you no longer offer to new customers, but existing users still have
+- **Internal/testing plans**: Plans for employees, beta testers, or special partnerships
+- **Deprecated plans**: Plans being phased out but still active for some users
+
+```ruby
+PricingPlans.configure do |config|
+  # Hidden default plan for users who haven't subscribed
+  plan :unsubscribed do
+    price 0
+    hidden!  # Won't appear on pricing page
+    default!
+
+    limit :projects, to: 0
+    limit :api_calls, to: 0, per: :month
+  end
+
+  # Visible plans for your pricing page
+  plan :starter do
+    price 10
+    limit :projects, to: 5
+  end
+
+  # Grandfathered plan (hidden from new customers)
+  plan :legacy_2020 do
+    price 15
+    hidden!  # Existing customers keep it, but won't show on pricing page
+    limit :projects, to: 100
+  end
+end
+```
+
+**Important notes:**
+- Hidden plans can be the `default!` plan (common pattern for "unsubscribed" users)
+- Hidden plans **cannot** be the `highlighted!` plan (validation error - highlighted plans must be visible)
+- Users can still be on hidden plans (via Pay subscription, manual assignment, or default)
+- Internal APIs (`Registry.plans`, `PlanResolver`) can still access hidden plans
+- Pay gem can still resolve subscriptions to hidden plans (useful for grandfathered customers)
 
 ## Link paid plans to Stripe prices (requires `pay`)
 

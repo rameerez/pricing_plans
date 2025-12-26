@@ -77,8 +77,10 @@ module PricingPlans
 
     # Zero-shim Plans API for host apps
     # Returns an array of Plan objects in a sensible order (free → paid → enterprise/contact)
+    # Excludes hidden plans (use Registry.plans to access all plans including hidden)
     def plans
       array = Registry.plans.values
+        .reject(&:hidden?)  # Filter out hidden plans from public API
       array.sort_by do |p|
         # Free first, then numeric price ascending, then price_string/stripe-price at the end
         if p.price && p.price.to_f.zero?
@@ -106,9 +108,10 @@ module PricingPlans
     end
 
     # Opinionated next-plan suggestion: pick the smallest plan that satisfies current usage
+    # Always suggests visible plans only (never suggests hidden plans)
     def suggest_next_plan_for(plan_owner, keys: nil)
       current_plan = PlanResolver.effective_plan_for(plan_owner)
-      sorted = plans
+      sorted = plans  # Only visible plans (hidden plans filtered out)
       keys ||= (current_plan&.limits&.keys || [])
       keys = keys.map(&:to_sym)
 
@@ -122,7 +125,9 @@ module PricingPlans
           limit[:to] == :unlimited || LimitChecker.current_usage_for(plan_owner, key, limit) <= limit[:to].to_i
         end
       end
-      candidate || current_plan || Registry.default_plan
+      # Fallback logic: never suggest hidden plans
+      # If current_plan is hidden (e.g., :unsubscribed), suggest first visible plan instead
+      candidate || (current_plan unless current_plan&.hidden?) || sorted.first
     end
 
     # Optional view-model decorator for UIs (pure data, no HTML)

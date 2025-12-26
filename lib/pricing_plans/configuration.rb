@@ -183,6 +183,11 @@ module PricingPlans
       if @highlighted_plan && !@plans.key?(@highlighted_plan)
         raise PricingPlans::ConfigurationError, "highlighted_plan #{@highlighted_plan} is not defined"
       end
+
+      # Highlighted plan cannot be hidden (would never appear in pricing pages)
+      if @highlighted_plan && @plans[@highlighted_plan]&.hidden?
+        raise PricingPlans::ConfigurationError, "highlighted_plan #{@highlighted_plan} cannot be hidden"
+      end
     end
 
     def validate_plans!

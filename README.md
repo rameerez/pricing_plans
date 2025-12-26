@@ -97,6 +97,7 @@ You can also display upgrade alerts to prompt users into upgrading to the next p
 
 ![pricing_plans Ruby on Rails gem - pricing plan upgrade prompt](/docs/images/pricing_plans_ruby_rails_gem_usage_alert_upgrade.jpg)
 
+You can also grandfather users into old plans (hidden to other users), assign plans manually without requiring a payment (for testing, gifts, or employees), and much more!
 
 ## 🤓 Read the docs!
 
