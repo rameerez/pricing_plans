@@ -24,6 +24,7 @@ module PricingPlans
       @cta_url = nil
       @default = false
       @highlighted = false
+      @hidden = false
     end
 
     # DSL methods for plan configuration
@@ -273,6 +274,14 @@ module PricingPlans
       rescue StandardError
       end
       false
+    end
+
+    def hidden!(value = true)
+      @hidden = !!value
+    end
+
+    def hidden?
+      !!@hidden
     end
 
     # Syntactic sugar for popular/highlighted
