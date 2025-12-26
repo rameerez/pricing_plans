@@ -9,6 +9,8 @@ module PricingPlans
     attr_accessor :default_plan, :highlighted_plan, :period_cycle
     # Optional ergonomics
     attr_accessor :default_cta_text, :default_cta_url
+    # Debug mode - set to true to enable debug output
+    attr_accessor :debug
     # Global controller ergonomics
       # Optional global resolver for controller plan owner. Per-controller settings still win.
       # Accepts:
@@ -70,6 +72,7 @@ module PricingPlans
       @free_price_caption = "Forever free"
       @interval_default_for_ui = :month
       @downgrade_policy = ->(from:, to:, plan_owner:) { [true, nil] }
+      @debug = false
       @plans = {}
       @event_handlers = {
         warning: {},
