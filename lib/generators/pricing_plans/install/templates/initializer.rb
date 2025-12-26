@@ -97,4 +97,8 @@ PricingPlans.configure do |config|
 
   # Downgrade policy hook used by CTA ergonomics helpers
   # config.downgrade_policy = ->(from:, to:, plan_owner:) { [true, nil] }
+
+  # Enable verbose debug logging for PricingPlans internals (Pay detection, plan resolution, etc).
+  # When set to true, detailed debug output will be printed to stdout, which can be helpful for troubleshooting.
+  # config.debug = false
 end
