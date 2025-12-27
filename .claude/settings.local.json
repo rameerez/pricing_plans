@@ -1,14 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "Bash(mkdir:*)",
-      "Bash(bundle install:*)",
-      "Bash(bundle exec rake:*)",
-      "Bash(bundle update:*)",
-      "Bash(bundle exec ruby:*)",
       "Bash(sed:*)",
       "Bash(grep:*)",
-      "Bash(ruby:*)",
       "Bash(find:*)",
       "mcp__context7__resolve-library-id",
       "mcp__context7__get-library-docs",
