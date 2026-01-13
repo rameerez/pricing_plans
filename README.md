@@ -2,7 +2,10 @@
 
 [![Gem Version](https://badge.fury.io/rb/pricing_plans.svg?x=1)](https://badge.fury.io/rb/pricing_plans)
 
-Enforce pricing plan limits with one-liners that read like plain English. Avoid scattering and entangling pricing logic everywhere in your Rails SaaS.
+> [!TIP]
+> **🚀 Ship your next Rails app 10x faster!** I've built **[RailsFast](https://railsfast.com)**, a production-ready Rails boilerplate template that comes with everything you need to launch a software business in days, not weeks.
+
+`pricing_plans` allows you to enforce pricing plan limits with one-liners that read like plain English. Avoid scattering and entangling pricing logic everywhere in your Rails SaaS.
 
 For example, this is how you define pricing plans and their entitlements:
 ```ruby
