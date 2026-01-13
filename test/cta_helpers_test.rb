@@ -40,7 +40,7 @@ class CtaHelpersTest < ActiveSupport::TestCase
         end
       end
 
-      if defined?(Rails)
+      if defined?(Rails) && Rails.respond_to?(:application)
         original_helpers = Rails.application.routes.url_helpers if Rails.application && Rails.application.routes
         Rails.application.routes.define_singleton_method(:url_helpers) { mod }
       else

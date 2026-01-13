@@ -169,7 +169,7 @@ module PricingPlans
       default = PricingPlans.configuration.default_cta_url
       return default if default
       # New default: if host app defines subscribe_path, prefer that
-      if defined?(Rails) && Rails.application.routes.url_helpers.respond_to?(:subscribe_path)
+      if defined?(Rails) && Rails.respond_to?(:application) && Rails.application && Rails.application.routes.url_helpers.respond_to?(:subscribe_path)
         return Rails.application.routes.url_helpers.subscribe_path(plan: key, interval: :month)
       end
       nil
