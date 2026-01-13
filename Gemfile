@@ -5,11 +5,20 @@ source "https://rubygems.org"
 # Specify your gem's dependencies in pricing_plans.gemspec
 gemspec
 
-rails_version = ENV.fetch("RAILS_VERSION", "7.1.0")
-
-gem "irb"
+# Tooling
 gem "rake", "~> 13.0"
-gem "ostruct"
-gem "activerecord", "~> #{rails_version}"
-gem "activesupport", "~> #{rails_version}"
-gem "simplecov", require: false
+
+group :development do
+  gem "appraisal"
+  gem "irb"
+  gem "rubocop", "~> 1.0"
+  gem "rubocop-minitest", "~> 0.35"
+  gem "rubocop-performance", "~> 1.0"
+end
+
+group :test do
+  gem "minitest", "~> 5.0"
+  gem "sqlite3", "~> 2.1"
+  gem "ostruct"
+  gem "simplecov", require: false
+end
