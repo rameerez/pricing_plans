@@ -15,7 +15,11 @@
 /node_modules/
 /.ruby-lsp/
 /.solargraph.yml
-/Gemfile.lock
+
+# For gems, ignore all lockfiles (root and appraisal) to allow flexible dependency resolution
+# But commit the Appraisal Gemfiles themselves (not the .lock files)
+Gemfile.lock
+gemfiles/*.lock
 
 .aux/
 .docs/
