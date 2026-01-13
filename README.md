@@ -1,6 +1,6 @@
 # 💵 `pricing_plans` - Define and enforce pricing plan limits in your Rails app (SaaS entitlements)
 
-[![Gem Version](https://badge.fury.io/rb/pricing_plans.svg?x=1)](https://badge.fury.io/rb/pricing_plans)
+[![Gem Version](https://badge.fury.io/rb/pricing_plans.svg)](https://badge.fury.io/rb/pricing_plans) [![Build Status](https://github.com/rameerez/pricing_plans/workflows/Tests/badge.svg)](https://github.com/rameerez/pricing_plans/actions)
 
 > [!TIP]
 > **🚀 Ship your next Rails app 10x faster!** I've built **[RailsFast](https://railsfast.com)**, a production-ready Rails boilerplate template that comes with everything you need to launch a software business in days, not weeks.
