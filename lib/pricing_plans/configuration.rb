@@ -12,11 +12,11 @@ module PricingPlans
     # Debug mode - set to true to enable debug output
     attr_accessor :debug
     # Global controller ergonomics
-      # Optional global resolver for controller plan owner. Per-controller settings still win.
-      # Accepts:
-      # - Symbol: a controller helper to call (e.g., :current_organization)
-      # - Proc: instance-exec'd in the controller (self is the controller)
-      attr_reader :controller_plan_owner_method, :controller_plan_owner_proc
+    # Optional global resolver for controller plan owner. Per-controller settings still win.
+    # Accepts:
+    # - Symbol: a controller helper to call (e.g., :current_organization)
+    # - Proc: instance-exec'd in the controller (self is the controller)
+    attr_reader :controller_plan_owner_method, :controller_plan_owner_proc
     # When a limit check blocks, controllers can redirect to a global default target.
     # Accepts:
     # - Symbol: a controller helper to call (e.g., :pricing_path)
