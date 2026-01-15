@@ -1,12 +1,39 @@
 # Using `pricing_plans` with `pay` and/or `usage_credits`
 
-`pricing_plans` is designed to work seamlessly with other complementary popular gems like `pay` (to handle actual subscriptions and payments), and `usage_credits` (to handle credit-like spending and refills)
+`pricing_plans` is designed to work seamlessly with other complementary popular gems like [`pay`](https://github.com/pay-rails/pay) (to handle actual subscriptions and payments), and `usage_credits` (to handle credit-like spending and refills)
 
-These gems are related but not overlapping. They're complementary. The boundaries are clear: billing is handled in Pay; metering (ledger-like) in usage_credits.
+These gems are related but not overlapping. They're complementary. The boundaries are:
+ - [`pay`](https://github.com/pay-rails/pay) handles billing
+ - [`usage_credits`](https://github.com/rameerez/usage_credits/) handles user credits (metered usage through credits, ledger-like)
 
-The integration with `pay` should be seamless and is documented throughout the entire docs; however, here's a brief note about using `usage_credits` alongside `pricing_plans`.
+## `pay` gem
 
-## Using `pricing_plans` with the `usage_credits` gem
+The integration with the `pay` gem should be seamless and is documented throughout the entire docs; however, to make it explicit:
+
+There's nothing to do on your end to make `pricing_plans` work with `pay`!
+
+As long as your `pricing_plans` config (`config/initializers/pricing_plans.rb`) contains a plan with the correct `stripe_price` ID, whenever a subscription to that Stripe price ID is found through the `pay` gem, `pricing_plans` will understand the user is subscribed to that plan automatically, and will start enforcing the corresponding limits.
+
+The way `pricing_plans` works doesn't require any data migration, or callback setup, or any manual action. You don't need to call `assign_pricing_plan!` at all at any point, unless you're trying to something like overriding a plan, gifting users access to plans without any payment, or things like that.
+
+As long as a matching `stripe_price` is found in the `pricing_plans.rb` initializer, the gem will know a user subscribed to that Stripe price ID is under the corresponding plan. Essentially, the gem just looks at the current `pay` subscriptions of your user. If a matching price ID is found in the `pricing_plans` configuration file, it enforces the corresponding limits.
+
+> [!TIP]
+> To make your `pricing_plans` gem config work across environments (production, development, etc.) instead of defining price IDs statically like this in the config:
+>
+> ```ruby
+> stripe_price month: "price_123", year: "price_456"
+> ```
+>
+> Try instead defining them dynamically using `Rails.env`, so the corresponding plan for each environment gets loaded automatically. A simple solution would be to define your plans in the credentials file, and then doing something like this in the `pricing_plans` config:
+>
+> ```ruby
+> stripe_price month: Rails.application.credentials.dig(Rails.env.to_sym, :stripe_plans, :plan_name, :monthly), year: Rails.application.credentials.dig(Rails.env.to_sym, :stripe_plans, :plan_name, :yearly)
+> ```
+>
+> You can come up with similar solutions, like adding that config to a plaintext `.yml` file if you don't want to store this info in the credentials file, but this is the overall idea.
+
+## `usage_credits` gem
 
 In the SaaS world, pricing plans and usage credits are related in so far credits are usually a part of a pricing plan. A plan would give you, say, 100 credits a month along other features, and users would find that information usually documented in the pricing table itself.
 
