@@ -300,6 +300,7 @@ PricingPlans.configure do |config|
     name "Free Plan" # optional, would default to "Free" as inferred from the :free key
     description "A plan to get you started"
     bullets "Basic features", "Community support"
+    metadata icon: "rocket", color: "bg-red-500"
 
     cta_text "Subscribe"
     # In initializers, prefer a string path/URL or set a global default CTA in config.
@@ -314,6 +315,18 @@ end
 ```
 
 You can also make a plan `default!`; and you can make a plan `highlighted!` to help you when building a pricing table.
+
+### Plan metadata for UI and presentation
+
+You can attach arbitrary `metadata` to a plan for presentation needs (for example, per-card icons or colors on a pricing page). This keeps plan UI details co-located in the same DSL rather than scattered elsewhere:
+
+```ruby
+plan :hobby do
+  metadata icon: "rocket", color: "bg-red-500"
+end
+
+plan.metadata[:icon] # => "rocket"
+```
 
 ### Hide plans from public lists
 

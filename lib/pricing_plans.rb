@@ -135,11 +135,13 @@ module PricingPlans
       is_current = plan_owner ? (PlanResolver.effective_plan_for(plan_owner)&.key == plan.key) : false
       is_popular = Registry.highlighted_plan&.key == plan.key
       price_label = plan_price_label_for(plan)
+      # Duplicate metadata to avoid mutating plan internals from view-layer code.
       {
         key: plan.key,
         name: plan.name,
         description: plan.description,
         bullets: plan.bullets,
+        metadata: plan.metadata.dup,
         price_label: price_label,
         is_current: is_current,
         is_popular: is_popular,
