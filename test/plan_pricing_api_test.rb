@@ -105,7 +105,7 @@ class PlanPricingApiTest < ActiveSupport::TestCase
       end
     end
     vm = PricingPlans::Registry.plan(:free).to_view_model
-    assert_equal %i[id key name description features highlighted default free currency monthly_price_cents yearly_price_cents monthly_price_id yearly_price_id price_label price_string limits].sort, vm.keys.sort
+    assert_equal %i[id key name description features highlighted default free currency monthly_price_cents yearly_price_cents monthly_price_id yearly_price_id price_label price_string limits metadata].sort, vm.keys.sort
   end
 
   def test_plan_comparison_and_downgrade_policy

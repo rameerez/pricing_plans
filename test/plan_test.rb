@@ -237,6 +237,22 @@ class PlanTest < ActiveSupport::TestCase
     assert_equal "99.9%", plan.meta[:sla]
   end
 
+  def test_plan_metadata_alias
+    plan = PricingPlans::Plan.new(:enterprise)
+
+    assert_equal({}, plan.metadata)
+
+    plan.metadata icon: "rocket"
+    plan.metadata color: "bg-red-500"
+
+    assert_equal "rocket", plan.meta[:icon]
+    assert_equal "bg-red-500", plan.metadata[:color]
+    assert_equal({ icon: "rocket", color: "bg-red-500" }, plan.metadata)
+
+    plan.meta support_tier: "dedicated"
+    assert_equal "dedicated", plan.metadata[:support_tier]
+  end
+
   def test_pricing_validation_multiple_pricing_fields
     plan = PricingPlans::Plan.new(:pro)
 

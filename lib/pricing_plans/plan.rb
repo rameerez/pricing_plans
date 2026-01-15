@@ -139,6 +139,9 @@ module PricingPlans
       end
     end
 
+    alias_method :set_metadata, :set_meta
+    alias_method :metadata, :meta
+
     # CTA helpers for pricing UI
     def set_cta_text(value)
       @cta_text = value&.to_s
@@ -480,6 +483,7 @@ module PricingPlans
         name: name,
         description: description,
         features: bullets, # alias in this gem
+        metadata: metadata.dup,
         highlighted: highlighted?,
         default: default?,
         free: free?,
