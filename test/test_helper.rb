@@ -2,18 +2,13 @@
 
 $LOAD_PATH.unshift File.expand_path("../lib", __dir__)
 
-begin
-  require "simplecov"
-  SimpleCov.start do
-    enable_coverage :branch
-    add_filter "/test/"
-  end
-rescue LoadError
-  # SimpleCov not available in some environments
-end
+# SimpleCov must be loaded BEFORE any application code
+# Configuration is auto-loaded from .simplecov file
+require "simplecov"
 
 require "pricing_plans"
 require "minitest/autorun"
+require "minitest/mock"
 require "minitest/pride" if ENV["PRIDE"]
 require "active_record"
 require "active_support"
