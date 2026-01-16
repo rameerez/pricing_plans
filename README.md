@@ -3,7 +3,7 @@
 [![Gem Version](https://badge.fury.io/rb/pricing_plans.svg)](https://badge.fury.io/rb/pricing_plans) [![Build Status](https://github.com/rameerez/pricing_plans/workflows/Tests/badge.svg)](https://github.com/rameerez/pricing_plans/actions)
 
 > [!TIP]
-> **🚀 Ship your next Rails app 10x faster!** I've built **[RailsFast](https://railsfast.com)**, a production-ready Rails boilerplate template that comes with everything you need to launch a software business in days, not weeks.
+> **🚀 Ship your next Rails app 10x faster!** I've built **[RailsFast](https://railsfast.com/?ref=pricing_plans)**, a production-ready Rails boilerplate template that comes with everything you need to launch a software business in days, not weeks. Go [check it out](https://railsfast.com/?ref=pricing_plans)!
 
 `pricing_plans` allows you to enforce pricing plan limits with one-liners that read like plain English. Avoid scattering and entangling pricing logic everywhere in your Rails SaaS.
 
