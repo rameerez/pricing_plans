@@ -39,6 +39,13 @@ class EnforcementStateTest < ActiveSupport::TestCase
 
     refute duplicate.valid?
     assert duplicate.errors[:limit_key].any?
+
+    different_limit_key = PricingPlans::EnforcementState.new(
+      plan_owner: @org,
+      limit_key: "members"
+    )
+
+    assert different_limit_key.valid?
   end
 
   def test_exceeded_scope_and_method

@@ -7,7 +7,7 @@ module PricingPlans
     belongs_to :plan_owner, polymorphic: true
 
     validates :limit_key, presence: true
-    validates :plan_owner_type, :plan_owner_id, :limit_key, uniqueness: { scope: [:plan_owner_type, :plan_owner_id] }
+    validates :limit_key, uniqueness: { scope: [:plan_owner_type, :plan_owner_id] }
 
     scope :exceeded, -> { where.not(exceeded_at: nil) }
     scope :blocked, -> { where.not(blocked_at: nil) }
