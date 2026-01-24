@@ -158,6 +158,29 @@ class PlanOwnerScopesTest < ActiveSupport::TestCase
     assert_equal 2, Organization.needing_attention.count
   end
 
+  test "scopes work correctly with multiple limits on same owner" do
+    org = Organization.create!(name: "Multi-limit Org")
+
+    # Create multiple enforcement states for different limits on the SAME owner
+    PricingPlans::EnforcementState.create!(
+      plan_owner: org,
+      limit_key: "projects",
+      exceeded_at: 1.day.ago
+    )
+    PricingPlans::EnforcementState.create!(
+      plan_owner: org,
+      limit_key: "api_calls",
+      exceeded_at: 2.days.ago,
+      blocked_at: 1.day.ago
+    )
+
+    # Should appear once despite having 2 enforcement states (distinct works)
+    assert_equal 1, Organization.with_exceeded_limits.count
+    assert_includes Organization.with_exceeded_limits, org
+    assert_equal 1, Organization.with_blocked_limits.count
+    assert_equal 1, Organization.needing_attention.count
+  end
+
   test "scopes are chainable with other ActiveRecord methods" do
     exceeded_org = Organization.create!(name: "Exceeded Org")
     PricingPlans::EnforcementState.create!(
