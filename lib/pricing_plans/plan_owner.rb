@@ -110,6 +110,51 @@ module PricingPlans
     end
 
     module ClassMethods
+      # === Class-level scopes for admin dashboards ===
+      # These scopes allow querying plan owners by their limits status.
+      # Useful for admin dashboards to find "organizations needing attention".
+
+      # Plan owners with any limit that has been exceeded (exceeded_at is set)
+      # Includes both those in grace period and those that are blocked.
+      def with_exceeded_limits
+        joins_enforcement_states.where.not(pricing_plans_enforcement_states: { exceeded_at: nil }).distinct
+      end
+
+      # Plan owners with any limit that is blocked (blocked_at is set)
+      def with_blocked_limits
+        joins_enforcement_states.where.not(pricing_plans_enforcement_states: { blocked_at: nil }).distinct
+      end
+
+      # Plan owners with limits in grace period (exceeded but not yet blocked)
+      def in_grace_period
+        joins_enforcement_states
+          .where.not(pricing_plans_enforcement_states: { exceeded_at: nil })
+          .where(pricing_plans_enforcement_states: { blocked_at: nil })
+          .distinct
+      end
+
+      # Plan owners with no exceeded limits (complement of with_exceeded_limits)
+      def within_all_limits
+        exceeded_ids = with_exceeded_limits.select(:id)
+        where.not(id: exceeded_ids)
+      end
+
+      # Alias for with_exceeded_limits - plan owners that need attention
+      # (either exceeded or blocked on any limit)
+      def needing_attention
+        with_exceeded_limits
+      end
+
+      private
+
+      # Helper to join with enforcement_states table using polymorphic association
+      def joins_enforcement_states
+        joins(
+          "INNER JOIN pricing_plans_enforcement_states ON " \
+          "pricing_plans_enforcement_states.plan_owner_id = #{table_name}.id AND " \
+          "pricing_plans_enforcement_states.plan_owner_type = '#{name}'"
+        )
+      end
     end
 
     def within_plan_limits?(limit_key, by: 1)
