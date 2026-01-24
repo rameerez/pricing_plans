@@ -316,3 +316,62 @@ user.pay_subscription_active?                # => true/false
 user.pay_on_trial?                           # => true/false
 user.pay_on_grace_period?                    # => true/false
 ```
+
+## Admin dashboard scopes
+
+The `PlanOwner` mixin provides class-level scopes for querying plan owners by their limits status. These are useful for building admin dashboards to find organizations that need attention.
+
+### Available scopes
+
+```ruby
+# Find plan owners with any exceeded limit (includes grace period and blocked)
+Organization.with_exceeded_limits
+
+# Find plan owners that are blocked (grace period expired)
+Organization.with_blocked_limits
+
+# Find plan owners in grace period (exceeded but not yet blocked)
+Organization.in_grace_period
+
+# Find plan owners with no exceeded limits
+Organization.within_all_limits
+
+# Alias for with_exceeded_limits - plan owners needing attention
+Organization.needing_attention
+```
+
+### Chainable with ActiveRecord
+
+These scopes are fully chainable with other ActiveRecord methods:
+
+```ruby
+# Find exceeded organizations created this month
+Organization.with_exceeded_limits.where(created_at: 1.month.ago..)
+
+# Paginate blocked organizations
+Organization.with_blocked_limits.order(:created_at).limit(10)
+
+# Count organizations in grace period
+Organization.in_grace_period.count
+```
+
+### Example: Admin dashboard
+
+```ruby
+# app/controllers/admin/dashboard_controller.rb
+def show
+  @orgs_needing_attention = Organization.needing_attention.count
+  @orgs_in_grace = Organization.in_grace_period.count
+  @orgs_blocked = Organization.with_blocked_limits.count
+  @orgs_healthy = Organization.within_all_limits.count
+end
+```
+
+### Performance note
+
+For large tables, ensure you have the composite index on `enforcement_states`:
+```ruby
+add_index :pricing_plans_enforcement_states,
+  [:plan_owner_type, :plan_owner_id, :exceeded_at],
+  name: 'index_enforcement_states_on_owner_and_exceeded'
+```
