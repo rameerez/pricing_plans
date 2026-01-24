@@ -147,12 +147,19 @@ module PricingPlans
 
       private
 
-      # Helper to join with enforcement_states table using polymorphic association
+      # Helper to join with enforcement_states table using polymorphic association.
+      # Uses Arel for clean, database-agnostic SQL construction.
       def joins_enforcement_states
+        enforcement_states = PricingPlans::EnforcementState.arel_table
+        owners = arel_table
+
         joins(
-          "INNER JOIN pricing_plans_enforcement_states ON " \
-          "pricing_plans_enforcement_states.plan_owner_id = #{table_name}.id AND " \
-          "pricing_plans_enforcement_states.plan_owner_type = '#{name}'"
+          owners.join(enforcement_states)
+            .on(
+              enforcement_states[:plan_owner_id].eq(owners[:id])
+              .and(enforcement_states[:plan_owner_type].eq(name))
+            )
+            .join_sources
         )
       end
     end
