@@ -133,10 +133,11 @@ module PricingPlans
           .distinct
       end
 
-      # Plan owners with no exceeded limits (complement of with_exceeded_limits)
+      # Plan owners with no exceeded limits (complement of with_exceeded_limits).
+      # Uses LEFT OUTER JOIN for better performance than subquery on large tables.
       def within_all_limits
-        exceeded_ids = with_exceeded_limits.select(:id)
-        where.not(id: exceeded_ids)
+        left_outer_joins_exceeded_enforcement_states
+          .where(pricing_plans_enforcement_states: { id: nil })
       end
 
       # Alias for with_exceeded_limits - plan owners that need attention
@@ -158,6 +159,23 @@ module PricingPlans
             .on(
               enforcement_states[:plan_owner_id].eq(owners[:id])
               .and(enforcement_states[:plan_owner_type].eq(name))
+            )
+            .join_sources
+        )
+      end
+
+      # LEFT OUTER JOIN with exceeded_at condition in the join clause.
+      # Returns all plan owners, with NULL for those without exceeded limits.
+      def left_outer_joins_exceeded_enforcement_states
+        enforcement_states = PricingPlans::EnforcementState.arel_table
+        owners = arel_table
+
+        joins(
+          owners.join(enforcement_states, Arel::Nodes::OuterJoin)
+            .on(
+              enforcement_states[:plan_owner_id].eq(owners[:id])
+              .and(enforcement_states[:plan_owner_type].eq(name))
+              .and(enforcement_states[:exceeded_at].not_eq(nil))
             )
             .join_sources
         )
