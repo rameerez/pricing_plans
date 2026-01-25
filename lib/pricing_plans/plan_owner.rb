@@ -110,6 +110,76 @@ module PricingPlans
     end
 
     module ClassMethods
+      # === Class-level scopes for admin dashboards ===
+      # These scopes allow querying plan owners by their limits status.
+      # Useful for admin dashboards to find "organizations needing attention".
+
+      # Plan owners with any limit that has been exceeded (exceeded_at is set)
+      # Includes both those in grace period and those that are blocked.
+      def with_exceeded_limits
+        joins_enforcement_states.where.not(pricing_plans_enforcement_states: { exceeded_at: nil }).distinct
+      end
+
+      # Plan owners with any limit that is blocked (blocked_at is set)
+      def with_blocked_limits
+        joins_enforcement_states.where.not(pricing_plans_enforcement_states: { blocked_at: nil }).distinct
+      end
+
+      # Plan owners with limits in grace period (exceeded but not yet blocked)
+      def in_grace_period
+        joins_enforcement_states
+          .where.not(pricing_plans_enforcement_states: { exceeded_at: nil })
+          .where(pricing_plans_enforcement_states: { blocked_at: nil })
+          .distinct
+      end
+
+      # Plan owners with no exceeded limits (complement of with_exceeded_limits).
+      # Uses LEFT OUTER JOIN for better performance than subquery on large tables.
+      def within_all_limits
+        left_outer_joins_exceeded_enforcement_states
+          .where(pricing_plans_enforcement_states: { id: nil })
+      end
+
+      # Alias for with_exceeded_limits - plan owners that need attention
+      # (either exceeded or blocked on any limit)
+      def needing_attention
+        with_exceeded_limits
+      end
+
+      private
+
+      # Helper to join with enforcement_states table using polymorphic association.
+      # Uses Arel for clean, database-agnostic SQL construction.
+      def joins_enforcement_states
+        enforcement_states = PricingPlans::EnforcementState.arel_table
+        owners = arel_table
+
+        joins(
+          owners.join(enforcement_states)
+            .on(
+              enforcement_states[:plan_owner_id].eq(owners[:id])
+              .and(enforcement_states[:plan_owner_type].eq(name))
+            )
+            .join_sources
+        )
+      end
+
+      # LEFT OUTER JOIN with exceeded_at condition in the join clause.
+      # Returns all plan owners, with NULL for those without exceeded limits.
+      def left_outer_joins_exceeded_enforcement_states
+        enforcement_states = PricingPlans::EnforcementState.arel_table
+        owners = arel_table
+
+        joins(
+          owners.join(enforcement_states, Arel::Nodes::OuterJoin)
+            .on(
+              enforcement_states[:plan_owner_id].eq(owners[:id])
+              .and(enforcement_states[:plan_owner_type].eq(name))
+              .and(enforcement_states[:exceeded_at].not_eq(nil))
+            )
+            .join_sources
+        )
+      end
     end
 
     def within_plan_limits?(limit_key, by: 1)
