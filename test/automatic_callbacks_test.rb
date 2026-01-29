@@ -283,6 +283,98 @@ class AutomaticCallbacksTest < ActiveSupport::TestCase
   # Wildcard callback tests - catch-all handlers for any limit
   # ==========================================================================
 
+  # ==========================================================================
+  # Backward compatibility tests - old callback signatures still work
+  # ==========================================================================
+
+  def test_old_callback_signature_with_arity_2_still_works
+    setup_plans_with_warning_thresholds
+
+    org = create_organization
+    org.assign_pricing_plan!(:pro_with_warnings)
+
+    received_plan_owner = nil
+    received_threshold = nil
+
+    # Old signature: (plan_owner, threshold) - should still work
+    PricingPlans.configuration.on_warning(:projects) do |plan_owner, threshold|
+      received_plan_owner = plan_owner
+      received_threshold = threshold
+    end
+
+    6.times { |i| org.projects.create!(name: "Project #{i + 1}") }
+
+    assert_equal org, received_plan_owner, "Old callback should receive plan_owner"
+    assert_equal 0.6, received_threshold, "Old callback should receive threshold (skipping limit_key)"
+  end
+
+  def test_old_grace_start_callback_signature_still_works
+    setup_plans_with_grace
+
+    org = create_organization
+    org.assign_pricing_plan!(:pro_with_grace)
+
+    received_plan_owner = nil
+    received_grace_ends_at = nil
+
+    # Old signature: (plan_owner, grace_ends_at) - should still work
+    PricingPlans.configuration.on_grace_start(:projects) do |plan_owner, grace_ends_at|
+      received_plan_owner = plan_owner
+      received_grace_ends_at = grace_ends_at
+    end
+
+    travel_to Time.parse("2025-01-01 12:00:00 UTC") do
+      6.times do |i|
+        begin
+          org.projects.create!(name: "Project #{i + 1}")
+        rescue ActiveRecord::RecordInvalid
+          # Expected
+        end
+      end
+    end
+
+    assert_equal org, received_plan_owner, "Old callback should receive plan_owner"
+    assert_instance_of Time, received_grace_ends_at, "Old callback should receive grace_ends_at"
+  end
+
+  def test_old_block_callback_signature_still_works
+    setup_plans_with_grace
+
+    org = create_organization
+    org.assign_pricing_plan!(:pro_with_grace)
+
+    received_plan_owner = nil
+
+    # Old signature: (plan_owner) - should still work
+    PricingPlans.configuration.on_block(:projects) do |plan_owner|
+      received_plan_owner = plan_owner
+    end
+
+    travel_to Time.parse("2025-01-01 12:00:00 UTC") do
+      6.times do |i|
+        begin
+          org.projects.create!(name: "Project #{i + 1}")
+        rescue ActiveRecord::RecordInvalid
+          # Expected
+        end
+      end
+    end
+
+    travel_to Time.parse("2025-01-09 12:00:00 UTC") do
+      begin
+        org.projects.create!(name: "Project after grace")
+      rescue ActiveRecord::RecordInvalid
+        # Expected
+      end
+    end
+
+    assert_equal org, received_plan_owner, "Old callback should receive plan_owner"
+  end
+
+  # ==========================================================================
+  # Wildcard callback tests - catch-all handlers for any limit
+  # ==========================================================================
+
   def test_wildcard_on_warning_fires_for_any_limit
     setup_plans_with_warning_thresholds
 

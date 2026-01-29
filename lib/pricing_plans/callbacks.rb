@@ -35,6 +35,10 @@ module PricingPlans
     # Execute callback with error isolation and arity handling.
     # Supports callbacks with varying argument counts for backwards compatibility.
     #
+    # Backward compatibility:
+    # - Arity 2 (old style): receives (plan_owner, last_arg) - skips limit_key
+    # - Arity 3+ (new style): receives (plan_owner, limit_key, ...rest)
+    #
     # @param handler [Proc] The callback to execute
     # @param event_type [Symbol] For logging purposes
     # @param limit_key [Symbol] For logging purposes
@@ -46,7 +50,9 @@ module PricingPlans
       when 1
         handler.call(args[0])
       when 2
-        handler.call(args[0], args[1])
+        # Backward compatibility: old callbacks expect (plan_owner, threshold/grace_ends_at)
+        # Skip limit_key (args[1]) and pass plan_owner + last arg
+        handler.call(args[0], args.last)
       when 3
         handler.call(args[0], args[1], args[2])
       when -1, -2, -3 # Variable arity (splat args)

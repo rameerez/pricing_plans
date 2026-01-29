@@ -254,12 +254,12 @@ end
 | `on_grace_start(limit_key)` | When limit is exceeded with `grace_then_block` | `plan_owner`, `limit_key`, `grace_ends_at` (Time) |
 | `on_block(limit_key)` | When grace expires or with `:block_usage` policy | `plan_owner`, `limit_key` |
 
-> **⚠️ Migration note:** If you're upgrading from an earlier version, callback signatures have changed. The `limit_key` is now passed as the second argument to all callbacks. Update your callbacks from:
+> **Note:** Callbacks now receive `limit_key` as the second argument. Both old and new signatures are supported for backward compatibility:
 > ```ruby
-> # Old signature
+> # Old signature (still works)
 > config.on_warning(:projects) { |plan_owner, threshold| ... }
 >
-> # New signature
+> # New signature (recommended)
 > config.on_warning(:projects) { |plan_owner, limit_key, threshold| ... }
 > ```
 
