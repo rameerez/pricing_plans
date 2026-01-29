@@ -205,38 +205,127 @@ travel_to(Time.parse("2025-02-01 12:00:00 UTC")) do
 end
 ```
 
-### Warn users when they cross a limit threshold
+### Callbacks
 
-We can also set thresholds to warn our users when they're halfway through their limit, approaching the limit, etc. To do that, we first set up trigger thresholds with `warn_at:`
+`pricing_plans` provides you with a few useful callbacks. Callbacks allow you to set thresholds to warn our users when important things happen. For example, when they're halfway through their limit, approaching the limit, etc.
+
+You can use callbacks for:
+
+- **Upsell emails**: "You've used 80% of your Pro plan - upgrade for more!"
+- **Usage alerts**: "You're approaching your API request limit"
+- **Grace period warnings**: "You've exceeded your limit. Upgrade within 7 days."
+- **Churn prevention**: Proactively reach out before users hit walls
+
+Callbacks fire **automatically** when limited models are created, you just need to define them like this:
 
 ```ruby
+# config/initializers/pricing_plans.rb
 PricingPlans.configure do |config|
-  plan :free do
-    price 0
+  plan :pro do
+    limits :licenses, to: 100, warn_at: [0.8, 0.95], after_limit: :grace_then_block, grace: 7.days
+    limits :activations, to: 300, warn_at: [0.8, 0.95], after_limit: :grace_then_block, grace: 7.days
+  end
 
-    allows :api_access
+  # Fires when usage crosses a warning threshold (80%, 95%, etc.)
+  config.on_warning(:licenses) do |plan_owner, limit_key, threshold|
+    # Example: "You've used 80% of your licenses"
+    UsageWarningMailer.approaching_limit(plan_owner, limit_key, threshold).deliver_later
+  end
 
-    limits :projects, to: 3, after_limit: :grace_then_block, grace: 7.days, warn_at: [0.5, 0.8, 0.95]
+  # Fires when limit is exceeded and grace period begins
+  config.on_grace_start(:licenses) do |plan_owner, limit_key, grace_ends_at|
+    # Example: "You've hit your license limit. Upgrade within 7 days or service will be interrupted."
+    GracePeriodMailer.limit_exceeded(plan_owner, limit_key, grace_ends_at).deliver_later
+  end
+
+  # Fires when grace period expires and user is blocked
+  config.on_block(:licenses) do |plan_owner, limit_key|
+    # Example: "Your grace period has ended. Please upgrade to continue creating licenses."
+    BlockedMailer.access_blocked(plan_owner, limit_key).deliver_later
   end
 end
 ```
 
-And then, for each threshold and for each limit, an event gets triggered, and we can configure its callback in the `pricing_plans.rb` initializer:
+### Available callbacks
+
+| Callback | When it fires | Arguments |
+|----------|---------------|-----------|
+| `on_warning(limit_key)` | When usage crosses a `warn_at` threshold | `plan_owner`, `limit_key`, `threshold` (e.g., 0.8) |
+| `on_grace_start(limit_key)` | When limit is exceeded with `grace_then_block` | `plan_owner`, `limit_key`, `grace_ends_at` (Time) |
+| `on_block(limit_key)` | When grace expires or with `:block_usage` policy | `plan_owner`, `limit_key` |
+
+> **Note:** Callbacks now receive `limit_key` as the second argument. Both old and new signatures are supported for backward compatibility:
+> ```ruby
+> # Old signature (still works)
+> config.on_warning(:projects) { |plan_owner, threshold| ... }
+>
+> # New signature (recommended)
+> config.on_warning(:projects) { |plan_owner, limit_key, threshold| ... }
+> ```
+
+### Wildcard callbacks
+
+You can also register a single callback that fires for **all** limits by omitting the `limit_key` argument:
 
 ```ruby
-config.on_warning(:projects) do |plan_owner, threshold|
-  # send a mail or a notification
-  # this fires when :projects crosses 50%, 80% and 95% of its limit
-end
-
-# Also available:
-config.on_grace_start(:projects) do |plan_owner, grace_ends_at|
-  # notify grace started; ends at `grace_ends_at`
-end
-config.on_block(:projects) do |plan_owner|
-  # notify usage is now blocked for :projects
+# Fires for ANY limit warning (projects, licenses, api_calls, etc.)
+config.on_warning do |plan_owner, limit_key, threshold|
+  Analytics.track(plan_owner, "limit_warning", limit: limit_key, threshold: threshold)
 end
 ```
+
+When both specific and wildcard handlers are registered, **both fire** (specific first, then wildcard). This is useful for combining per-limit emails with universal analytics:
+
+```ruby
+# Specific: send targeted email for projects
+config.on_warning(:projects) do |plan_owner, limit_key, threshold|
+  ProjectLimitMailer.warning(plan_owner, threshold).deliver_later
+end
+
+# Wildcard: log all warnings to analytics
+config.on_warning do |plan_owner, limit_key, threshold|
+  Analytics.track(plan_owner, "limit_warning", limit: limit_key, threshold: threshold)
+end
+```
+
+### Warning thresholds
+
+Configure warning thresholds to get notified before users hit their limits:
+
+```ruby
+limits :projects, to: 100, warn_at: [0.6, 0.8, 0.95]
+# Fires at 60%, 80%, and 95% usage
+```
+
+Each threshold fires only once per limit window (e.g., once per billing cycle for per-period limits).
+
+### Error isolation
+
+Callbacks are error-isolated, meaning that if your callback raises an exception, it won't break the model creation or any other operation. Errors are logged but don't propagate. This ensures your app keeps working even if your mailer or analytics service is down.
+
+### Transaction safety
+
+**Warning and grace callbacks** use `after_commit` hooks, so they only fire after the database transaction successfully commits. If a transaction rolls back, these callbacks won't fire.
+
+**Block callbacks** fire during validation (before commit) because they indicate a failed creation attempt. This means block emails may be sent even if the surrounding transaction rolls back - which is correct behavior since the user did experience being blocked from creating the record.
+
+### Performance considerations
+
+Automatic callbacks run on every model creation for limited models. For each limit key configured on a model, the callback:
+
+1. Resolves the plan owner
+2. Fetches the effective plan
+3. Calculates current usage (may involve a COUNT query)
+4. Checks warning thresholds
+5. Updates EnforcementState if needed
+
+For most applications, this overhead is negligible. However, if you're doing high-volume batch inserts of limited models, consider:
+
+- Using `insert_all` or raw SQL for bulk operations (bypasses callbacks)
+- Temporarily disabling callbacks with `Model.skip_callback` during batch jobs
+- Adding indexes on foreign keys used for counting (e.g., `add_index :projects, :organization_id`)
+
+**That's it!** When a Pro user creates their 20th project (80% of 25), they get an upsell email. At 25, grace starts. When grace expires, they're blocked. Per-month limits like file uploads reset each billing cycle. All completely automatic with zero maintenance overhead.
 
 If you only want a scope, like active projects, to count towards plan limits, you can do:
 

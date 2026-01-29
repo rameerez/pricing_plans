@@ -119,19 +119,31 @@ module PricingPlans
         end
       end
 
-    def on_warning(limit_key, &block)
+    # Register a callback for warning events.
+    # @param limit_key [Symbol, nil] The specific limit key, or omit for wildcard (all limits)
+    # @yield [plan_owner, limit_key, threshold] Block to execute when warning fires
+    def on_warning(limit_key = nil, &block)
       raise PricingPlans::ConfigurationError, "Block required for on_warning" unless block_given?
-      @event_handlers[:warning][limit_key] = block
+      key = limit_key || :_all
+      @event_handlers[:warning][key] = block
     end
 
-    def on_grace_start(limit_key, &block)
+    # Register a callback for grace period start events.
+    # @param limit_key [Symbol, nil] The specific limit key, or omit for wildcard (all limits)
+    # @yield [plan_owner, limit_key, grace_ends_at] Block to execute when grace starts
+    def on_grace_start(limit_key = nil, &block)
       raise PricingPlans::ConfigurationError, "Block required for on_grace_start" unless block_given?
-      @event_handlers[:grace_start][limit_key] = block
+      key = limit_key || :_all
+      @event_handlers[:grace_start][key] = block
     end
 
-    def on_block(limit_key, &block)
+    # Register a callback for block events.
+    # @param limit_key [Symbol, nil] The specific limit key, or omit for wildcard (all limits)
+    # @yield [plan_owner, limit_key] Block to execute when user is blocked
+    def on_block(limit_key = nil, &block)
       raise PricingPlans::ConfigurationError, "Block required for on_block" unless block_given?
-      @event_handlers[:block][limit_key] = block
+      key = limit_key || :_all
+      @event_handlers[:block][key] = block
     end
 
     def validate!

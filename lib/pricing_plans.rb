@@ -28,6 +28,7 @@ module PricingPlans
   autoload :LimitChecker, "pricing_plans/limit_checker"
   autoload :LimitableRegistry, "pricing_plans/limit_checker"
   autoload :GraceManager, "pricing_plans/grace_manager"
+  autoload :Callbacks, "pricing_plans/callbacks"
   autoload :PeriodCalculator, "pricing_plans/period_calculator"
   autoload :ControllerGuards, "pricing_plans/controller_guards"
   autoload :JobGuards, "pricing_plans/job_guards"

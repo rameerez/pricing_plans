@@ -125,19 +125,21 @@ class LimitCheckerTest < ActiveSupport::TestCase
     assert_nil PricingPlans::LimitChecker.should_warn?(org, :projects)
 
     # Create a project to be at 100% usage (1 out of 1)
+    # NOTE: This now triggers automatic warning emission via Limitable callback.
     org.projects.create!(name: "Test Project")
 
-    # At 100% usage, should warn at the 0.95 threshold (since we're over 95%)
-    assert_equal 0.95, PricingPlans::LimitChecker.should_warn?(org, :projects)
+    # After automatic callback, warning was already emitted, so should_warn? returns nil
+    # (The warning at 0.95 threshold was emitted during project creation)
+    assert_nil PricingPlans::LimitChecker.should_warn?(org, :projects)
 
-    # Create enforcement state with lower threshold
-    PricingPlans::EnforcementState.create!(
-      plan_owner: org,
-      limit_key: "projects",
-      last_warning_threshold: 0.8
-    )
+    # Verify the warning was recorded in enforcement state
+    state = PricingPlans::EnforcementState.find_by(plan_owner: org, limit_key: "projects")
+    assert_equal 0.95, state&.last_warning_threshold&.to_f
 
-    # Should warn at next threshold (0.95) since we already warned at 0.8
+    # If we manually reset the threshold to a lower value, should_warn? returns next threshold
+    state.update!(last_warning_threshold: 0.8)
+
+    # Should warn at next threshold (0.95) since we only recorded 0.8
     assert_equal 0.95, PricingPlans::LimitChecker.should_warn?(org, :projects)
   end
 

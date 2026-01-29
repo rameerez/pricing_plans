@@ -75,8 +75,8 @@ module PricingPlans
       end
 
       def emit_event(event_type, limit_key, *args)
-        handler = event_handlers.dig(event_type, limit_key)
-        handler&.call(*args)
+        # Delegate to Callbacks module for error-isolated execution
+        Callbacks.dispatch(event_type, limit_key, *args)
       end
 
       private
