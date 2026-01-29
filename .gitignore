@@ -31,3 +31,4 @@ gemfiles/*.lock
 TODO
 
 dist/
+.claude/
