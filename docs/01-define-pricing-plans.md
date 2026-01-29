@@ -294,6 +294,26 @@ Each threshold fires only once per limit window (e.g., once per billing cycle fo
 
 Callbacks are error-isolated, meaning that if your callback raises an exception, it won't break the model creation or any other operation. Errors are logged but don't propagate. This ensures your app keeps working even if your mailer or analytics service is down.
 
+### Transaction safety
+
+Callbacks use `after_commit` hooks, so they only fire after the database transaction successfully commits. If a transaction rolls back (e.g., due to a validation error elsewhere), callbacks won't fire and no emails will be sent for records that weren't actually saved.
+
+### Performance considerations
+
+Automatic callbacks run on every model creation for limited models. For each limit key configured on a model, the callback:
+
+1. Resolves the plan owner
+2. Fetches the effective plan
+3. Calculates current usage (may involve a COUNT query)
+4. Checks warning thresholds
+5. Updates EnforcementState if needed
+
+For most applications, this overhead is negligible. However, if you're doing high-volume batch inserts of limited models, consider:
+
+- Using `insert_all` or raw SQL for bulk operations (bypasses callbacks)
+- Temporarily disabling callbacks with `Model.skip_callback` during batch jobs
+- Ensuring your usage counting queries are indexed
+
 **That's it!** When a Pro user creates their 20th project (80% of 25), they get an upsell email. At 25, grace starts. When grace expires, they're blocked. Per-month limits like file uploads reset each billing cycle. All completely automatic with zero maintenance overhead.
 
 If you only want a scope, like active projects, to count towards plan limits, you can do:

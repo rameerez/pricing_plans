@@ -158,6 +158,33 @@ class AutomaticCallbacksTest < ActiveSupport::TestCase
     assert result.persisted?, "Model should be persisted despite callback error"
   end
 
+  def test_callbacks_do_not_fire_on_transaction_rollback
+    setup_plans_with_warning_thresholds
+
+    org = create_organization
+    org.assign_pricing_plan!(:pro_with_warnings)
+
+    callback_fired = false
+
+    PricingPlans.configuration.on_warning(:projects) do |_plan_owner, _limit_key, _threshold|
+      callback_fired = true
+    end
+
+    # Create enough projects to cross threshold, but rollback the transaction
+    ActiveRecord::Base.transaction do
+      6.times { |i| org.projects.create!(name: "Project #{i + 1}") }
+      raise ActiveRecord::Rollback
+    end
+
+    # Verify the projects were rolled back
+    assert_equal 0, org.projects.count, "Projects should have been rolled back"
+
+    # After rollback, callback should NOT have fired (because we use after_commit)
+    # Note: This test verifies the after_commit behavior - callbacks only fire
+    # after successful transaction commit, not on rollback
+    refute callback_fired, "Callback should not fire when transaction is rolled back"
+  end
+
   # ==========================================================================
   # Per-period limit callback tests
   # ==========================================================================

@@ -10,7 +10,7 @@ module PricingPlans
 
       # Callbacks for automatic tracking and event emission
       after_create :increment_per_period_counters
-      after_create :check_and_emit_limit_events
+      after_commit :check_and_emit_limit_events, on: :create
       after_destroy :decrement_persistent_counters
       # Add plan_owner-centric convenience methods to instances of the plan_owner class
       # when possible. These are no-ops if the model isn't the plan_owner itself.

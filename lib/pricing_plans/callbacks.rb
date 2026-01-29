@@ -55,7 +55,7 @@ module PricingPlans
         handler.call(*args.first(handler.arity.abs))
       end
     rescue StandardError => e
-      # Log but don't re-raise - callbacks should never break credit operations
+      # Log but don't re-raise - callbacks should never break model creation
       log_error("[PricingPlans] Callback error for #{event_type}:#{limit_key}: #{e.class}: #{e.message}")
       log_debug(e.backtrace&.join("\n"))
     end
