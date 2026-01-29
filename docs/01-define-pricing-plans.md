@@ -227,21 +227,21 @@ PricingPlans.configure do |config|
   end
 
   # Fires when usage crosses a warning threshold (80%, 95%, etc.)
-  config.on_warning(:licenses) do |plan_owner, threshold|
+  config.on_warning(:licenses) do |plan_owner, limit_key, threshold|
     # Example: "You've used 80% of your licenses"
-    UsageWarningMailer.approaching_limit(plan_owner, :licenses, threshold).deliver_later
+    UsageWarningMailer.approaching_limit(plan_owner, limit_key, threshold).deliver_later
   end
 
   # Fires when limit is exceeded and grace period begins
-  config.on_grace_start(:licenses) do |plan_owner, grace_ends_at|
+  config.on_grace_start(:licenses) do |plan_owner, limit_key, grace_ends_at|
     # Example: "You've hit your license limit. Upgrade within 7 days or service will be interrupted."
-    GracePeriodMailer.limit_exceeded(plan_owner, :licenses, grace_ends_at).deliver_later
+    GracePeriodMailer.limit_exceeded(plan_owner, limit_key, grace_ends_at).deliver_later
   end
 
   # Fires when grace period expires and user is blocked
-  config.on_block(:licenses) do |plan_owner|
+  config.on_block(:licenses) do |plan_owner, limit_key|
     # Example: "Your grace period has ended. Please upgrade to continue creating licenses."
-    BlockedMailer.access_blocked(plan_owner, :licenses).deliver_later
+    BlockedMailer.access_blocked(plan_owner, limit_key).deliver_later
   end
 end
 ```
@@ -250,9 +250,34 @@ end
 
 | Callback | When it fires | Arguments |
 |----------|---------------|-----------|
-| `on_warning(limit_key)` | When usage crosses a `warn_at` threshold | `plan_owner`, `threshold` (e.g., 0.8) |
-| `on_grace_start(limit_key)` | When limit is exceeded with `grace_then_block` | `plan_owner`, `grace_ends_at` (Time) |
-| `on_block(limit_key)` | When grace expires or with `:block_usage` policy | `plan_owner` |
+| `on_warning(limit_key)` | When usage crosses a `warn_at` threshold | `plan_owner`, `limit_key`, `threshold` (e.g., 0.8) |
+| `on_grace_start(limit_key)` | When limit is exceeded with `grace_then_block` | `plan_owner`, `limit_key`, `grace_ends_at` (Time) |
+| `on_block(limit_key)` | When grace expires or with `:block_usage` policy | `plan_owner`, `limit_key` |
+
+### Wildcard callbacks
+
+You can also register a single callback that fires for **all** limits by omitting the `limit_key` argument:
+
+```ruby
+# Fires for ANY limit warning (projects, licenses, api_calls, etc.)
+config.on_warning do |plan_owner, limit_key, threshold|
+  Analytics.track(plan_owner, "limit_warning", limit: limit_key, threshold: threshold)
+end
+```
+
+When both specific and wildcard handlers are registered, **both fire** (specific first, then wildcard). This is useful for combining per-limit emails with universal analytics:
+
+```ruby
+# Specific: send targeted email for projects
+config.on_warning(:projects) do |plan_owner, limit_key, threshold|
+  ProjectLimitMailer.warning(plan_owner, threshold).deliver_later
+end
+
+# Wildcard: log all warnings to analytics
+config.on_warning do |plan_owner, limit_key, threshold|
+  Analytics.track(plan_owner, "limit_warning", limit: limit_key, threshold: threshold)
+end
+```
 
 ### Warning thresholds
 

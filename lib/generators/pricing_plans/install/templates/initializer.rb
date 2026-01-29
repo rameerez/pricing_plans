@@ -87,19 +87,25 @@ PricingPlans.configure do |config|
   #
   # Example: Send upsell emails at 80% and 95% usage, then notify on grace/block
   #
-  # config.on_warning(:projects) do |plan_owner, threshold|
+  # config.on_warning(:projects) do |plan_owner, limit_key, threshold|
   #   # threshold is the crossed value, e.g., 0.8 for 80%
   #   percentage = (threshold * 100).to_i
-  #   UsageMailer.approaching_limit(plan_owner, :projects, percentage: percentage).deliver_later
+  #   UsageMailer.approaching_limit(plan_owner, limit_key, percentage: percentage).deliver_later
   # end
   #
-  # config.on_grace_start(:projects) do |plan_owner, grace_ends_at|
+  # config.on_grace_start(:projects) do |plan_owner, limit_key, grace_ends_at|
   #   # grace_ends_at is when the grace period expires
-  #   GraceMailer.limit_exceeded(plan_owner, :projects, grace_ends_at: grace_ends_at).deliver_later
+  #   GraceMailer.limit_exceeded(plan_owner, limit_key, grace_ends_at: grace_ends_at).deliver_later
   # end
   #
-  # config.on_block(:projects) do |plan_owner|
-  #   BlockedMailer.service_blocked(plan_owner, :projects).deliver_later
+  # config.on_block(:projects) do |plan_owner, limit_key|
+  #   BlockedMailer.service_blocked(plan_owner, limit_key).deliver_later
+  # end
+  #
+  # Wildcard callbacks - omit limit_key to catch all limits:
+  #
+  # config.on_warning do |plan_owner, limit_key, threshold|
+  #   Analytics.track(plan_owner, "limit_warning", limit: limit_key, threshold: threshold)
   # end
   #
   # Note: Callbacks are error-isolated - if your callback raises an exception,

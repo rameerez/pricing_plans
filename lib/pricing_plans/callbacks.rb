@@ -7,34 +7,49 @@ module PricingPlans
     module_function
 
     # Dispatch a callback event with error isolation.
+    # Fires specific handler first (if exists), then wildcard handler (if exists).
     # Callbacks should never break the main operation.
     #
     # @param event_type [Symbol] The event type (:warning, :grace_start, :block)
     # @param limit_key [Symbol] The limit key (e.g., :projects, :licenses)
-    # @param args [Array] Arguments to pass to the callback
+    # @param args [Array] Arguments to pass to the callback (plan_owner, plus event-specific args)
     def dispatch(event_type, limit_key, *args)
-      handler = Registry.event_handlers.dig(event_type, limit_key)
-      return unless handler.is_a?(Proc)
+      handlers = Registry.event_handlers[event_type] || {}
 
-      execute_safely(handler, event_type, limit_key, *args)
+      # Build full args with limit_key injected after plan_owner
+      # Input args: [plan_owner, ...event_specific_args]
+      # Output: [plan_owner, limit_key, ...event_specific_args]
+      plan_owner = args.first
+      event_args = args.drop(1)
+      full_args = [plan_owner, limit_key, *event_args]
+
+      # Fire specific handler first
+      specific_handler = handlers[limit_key]
+      execute_safely(specific_handler, event_type, limit_key, full_args) if specific_handler.is_a?(Proc)
+
+      # Fire wildcard handler second
+      wildcard_handler = handlers[:_all]
+      execute_safely(wildcard_handler, event_type, limit_key, full_args) if wildcard_handler.is_a?(Proc)
     end
 
     # Execute callback with error isolation and arity handling.
-    # Supports callbacks with 0, 1, 2, or variable arguments.
+    # Supports callbacks with varying argument counts for backwards compatibility.
     #
     # @param handler [Proc] The callback to execute
     # @param event_type [Symbol] For logging purposes
     # @param limit_key [Symbol] For logging purposes
-    # @param args [Array] Arguments to pass
-    def execute_safely(handler, event_type, limit_key, *args)
+    # @param args [Array] Full arguments array [plan_owner, limit_key, ...event_specific_args]
+    def execute_safely(handler, event_type, limit_key, args)
       case handler.arity
       when 0
         handler.call
       when 1
-        handler.call(args.first)
+        handler.call(args[0])
       when 2
-        handler.call(*args.first(2))
-      when -1, -2 # Variable arity (splat args)
+        handler.call(args[0], args[1])
+      when 3
+        handler.call(args[0], args[1], args[2])
+      when -1, -2, -3 # Variable arity (splat args)
         handler.call(*args)
       else
         handler.call(*args.first(handler.arity.abs))

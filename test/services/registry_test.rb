@@ -166,9 +166,9 @@ class RegistryTest < ActiveSupport::TestCase
         price 0
       end
 
-      config.on_warning :projects do |plan_owner, threshold|
+      config.on_warning :projects do |plan_owner, limit_key, threshold|
         handler_called = true
-        handler_args = [plan_owner, threshold]
+        handler_args = [plan_owner, limit_key, threshold]
       end
     end
 
@@ -176,7 +176,7 @@ class RegistryTest < ActiveSupport::TestCase
     PricingPlans::Registry.emit_event(:warning, :projects, org, 0.8)
 
     assert handler_called
-    assert_equal [org, 0.8], handler_args
+    assert_equal [org, :projects, 0.8], handler_args
   end
 
   def test_event_emission_with_no_handler

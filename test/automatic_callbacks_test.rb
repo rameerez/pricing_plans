@@ -253,6 +253,122 @@ class AutomaticCallbacksTest < ActiveSupport::TestCase
   end
 
   # ==========================================================================
+  # Wildcard callback tests - catch-all handlers for any limit
+  # ==========================================================================
+
+  def test_wildcard_on_warning_fires_for_any_limit
+    setup_plans_with_warning_thresholds
+
+    org = create_organization
+    org.assign_pricing_plan!(:pro_with_warnings)
+
+    wildcard_events = []
+
+    # Register wildcard callback (no limit_key argument)
+    PricingPlans.configuration.on_warning do |plan_owner, limit_key, threshold|
+      wildcard_events << { plan_owner: plan_owner, limit_key: limit_key, threshold: threshold }
+    end
+
+    # Create projects to cross threshold
+    6.times { |i| org.projects.create!(name: "Project #{i + 1}") }
+
+    assert wildcard_events.any?, "Wildcard callback should fire"
+    assert_equal :projects, wildcard_events.first[:limit_key], "Should receive limit_key"
+    assert_equal 0.6, wildcard_events.first[:threshold], "Should receive threshold"
+  end
+
+  def test_wildcard_and_specific_callbacks_both_fire
+    setup_plans_with_warning_thresholds
+
+    org = create_organization
+    org.assign_pricing_plan!(:pro_with_warnings)
+
+    specific_fired = false
+    wildcard_fired = false
+    fire_order = []
+
+    # Register specific callback
+    PricingPlans.configuration.on_warning(:projects) do |_plan_owner, _limit_key, _threshold|
+      specific_fired = true
+      fire_order << :specific
+    end
+
+    # Register wildcard callback
+    PricingPlans.configuration.on_warning do |_plan_owner, _limit_key, _threshold|
+      wildcard_fired = true
+      fire_order << :wildcard
+    end
+
+    6.times { |i| org.projects.create!(name: "Project #{i + 1}") }
+
+    assert specific_fired, "Specific callback should fire"
+    assert wildcard_fired, "Wildcard callback should also fire"
+    assert_equal [:specific, :wildcard], fire_order, "Specific should fire before wildcard"
+  end
+
+  def test_wildcard_on_grace_start_fires
+    setup_plans_with_grace
+
+    org = create_organization
+    org.assign_pricing_plan!(:pro_with_grace)
+
+    wildcard_events = []
+
+    PricingPlans.configuration.on_grace_start do |plan_owner, limit_key, grace_ends_at|
+      wildcard_events << { plan_owner: plan_owner, limit_key: limit_key, grace_ends_at: grace_ends_at }
+    end
+
+    travel_to Time.parse("2025-01-01 12:00:00 UTC") do
+      6.times do |i|
+        begin
+          org.projects.create!(name: "Project #{i + 1}")
+        rescue ActiveRecord::RecordInvalid
+          # Expected
+        end
+      end
+    end
+
+    assert wildcard_events.any?, "Wildcard grace_start callback should fire"
+    assert_equal :projects, wildcard_events.first[:limit_key]
+    assert_instance_of Time, wildcard_events.first[:grace_ends_at]
+  end
+
+  def test_wildcard_on_block_fires
+    setup_plans_with_grace
+
+    org = create_organization
+    org.assign_pricing_plan!(:pro_with_grace)
+
+    wildcard_events = []
+
+    PricingPlans.configuration.on_block do |plan_owner, limit_key|
+      wildcard_events << { plan_owner: plan_owner, limit_key: limit_key }
+    end
+
+    travel_to Time.parse("2025-01-01 12:00:00 UTC") do
+      6.times do |i|
+        begin
+          org.projects.create!(name: "Project #{i + 1}")
+        rescue ActiveRecord::RecordInvalid
+          # Expected
+        end
+      end
+    end
+
+    # Travel past grace period
+    travel_to Time.parse("2025-01-09 12:00:00 UTC") do
+      begin
+        org.projects.create!(name: "Project after grace")
+      rescue ActiveRecord::RecordInvalid
+        # Expected
+      end
+    end
+
+    assert wildcard_events.any?, "Wildcard block callback should fire"
+    assert_equal :projects, wildcard_events.first[:limit_key]
+  end
+
+  # ==========================================================================
   # Integration test: Full user scenario (License SaaS example)
   # ==========================================================================
 
@@ -269,16 +385,16 @@ class AutomaticCallbacksTest < ActiveSupport::TestCase
     emails_sent = []
 
     # Configure callbacks to track "emails" (using :projects key since we use Project model)
-    PricingPlans.configuration.on_warning(:projects) do |plan_owner, threshold|
-      emails_sent << { type: :warning, limit: :projects, threshold: threshold, owner_id: plan_owner.id }
+    PricingPlans.configuration.on_warning(:projects) do |plan_owner, limit_key, threshold|
+      emails_sent << { type: :warning, limit: limit_key, threshold: threshold, owner_id: plan_owner.id }
     end
 
-    PricingPlans.configuration.on_grace_start(:projects) do |plan_owner, grace_ends_at|
-      emails_sent << { type: :grace_start, limit: :projects, grace_ends_at: grace_ends_at, owner_id: plan_owner.id }
+    PricingPlans.configuration.on_grace_start(:projects) do |plan_owner, limit_key, grace_ends_at|
+      emails_sent << { type: :grace_start, limit: limit_key, grace_ends_at: grace_ends_at, owner_id: plan_owner.id }
     end
 
-    PricingPlans.configuration.on_block(:projects) do |plan_owner|
-      emails_sent << { type: :blocked, limit: :projects, owner_id: plan_owner.id }
+    PricingPlans.configuration.on_block(:projects) do |plan_owner, limit_key|
+      emails_sent << { type: :blocked, limit: limit_key, owner_id: plan_owner.id }
     end
 
     # Simulate creating licenses over time
@@ -311,37 +427,42 @@ class AutomaticCallbacksTest < ActiveSupport::TestCase
   # Test that callbacks work with the same signature as documented
   # ==========================================================================
 
-  def test_on_warning_callback_receives_plan_owner_and_threshold
+  def test_on_warning_callback_receives_plan_owner_limit_key_and_threshold
     setup_plans_with_warning_thresholds
 
     org = create_organization
     org.assign_pricing_plan!(:pro_with_warnings)
 
     received_plan_owner = nil
+    received_limit_key = nil
     received_threshold = nil
 
-    PricingPlans.configuration.on_warning(:projects) do |plan_owner, threshold|
+    PricingPlans.configuration.on_warning(:projects) do |plan_owner, limit_key, threshold|
       received_plan_owner = plan_owner
+      received_limit_key = limit_key
       received_threshold = threshold
     end
 
     6.times { |i| org.projects.create!(name: "Project #{i + 1}") }
 
     assert_equal org, received_plan_owner, "Callback should receive plan_owner"
+    assert_equal :projects, received_limit_key, "Callback should receive limit_key"
     assert_equal 0.6, received_threshold, "Callback should receive threshold"
   end
 
-  def test_on_grace_start_callback_receives_plan_owner_and_grace_ends_at
+  def test_on_grace_start_callback_receives_plan_owner_limit_key_and_grace_ends_at
     setup_plans_with_grace
 
     org = create_organization
     org.assign_pricing_plan!(:pro_with_grace)
 
     received_plan_owner = nil
+    received_limit_key = nil
     received_grace_ends_at = nil
 
-    PricingPlans.configuration.on_grace_start(:projects) do |plan_owner, grace_ends_at|
+    PricingPlans.configuration.on_grace_start(:projects) do |plan_owner, limit_key, grace_ends_at|
       received_plan_owner = plan_owner
+      received_limit_key = limit_key
       received_grace_ends_at = grace_ends_at
     end
 
@@ -356,19 +477,22 @@ class AutomaticCallbacksTest < ActiveSupport::TestCase
     end
 
     assert_equal org, received_plan_owner, "Callback should receive plan_owner"
+    assert_equal :projects, received_limit_key, "Callback should receive limit_key"
     assert_instance_of Time, received_grace_ends_at, "Callback should receive grace_ends_at time"
   end
 
-  def test_on_block_callback_receives_plan_owner
+  def test_on_block_callback_receives_plan_owner_and_limit_key
     setup_plans_with_grace
 
     org = create_organization
     org.assign_pricing_plan!(:pro_with_grace)
 
     received_plan_owner = nil
+    received_limit_key = nil
 
-    PricingPlans.configuration.on_block(:projects) do |plan_owner|
+    PricingPlans.configuration.on_block(:projects) do |plan_owner, limit_key|
       received_plan_owner = plan_owner
+      received_limit_key = limit_key
     end
 
     travel_to Time.parse("2025-01-01 12:00:00 UTC") do
@@ -391,21 +515,22 @@ class AutomaticCallbacksTest < ActiveSupport::TestCase
     end
 
     assert_equal org, received_plan_owner, "Callback should receive plan_owner"
+    assert_equal :projects, received_limit_key, "Callback should receive limit_key"
   end
 
   private
 
   def track_events_via_callbacks!(limit_key)
-    PricingPlans.configuration.on_warning(limit_key) do |plan_owner, threshold|
-      @emitted_events << { type: :warning, key: limit_key, plan_owner: plan_owner, threshold: threshold }
+    PricingPlans.configuration.on_warning(limit_key) do |plan_owner, key, threshold|
+      @emitted_events << { type: :warning, key: key, plan_owner: plan_owner, threshold: threshold }
     end
 
-    PricingPlans.configuration.on_grace_start(limit_key) do |plan_owner, grace_ends_at|
-      @emitted_events << { type: :grace_start, key: limit_key, plan_owner: plan_owner, grace_ends_at: grace_ends_at }
+    PricingPlans.configuration.on_grace_start(limit_key) do |plan_owner, key, grace_ends_at|
+      @emitted_events << { type: :grace_start, key: key, plan_owner: plan_owner, grace_ends_at: grace_ends_at }
     end
 
-    PricingPlans.configuration.on_block(limit_key) do |plan_owner|
-      @emitted_events << { type: :block, key: limit_key, plan_owner: plan_owner }
+    PricingPlans.configuration.on_block(limit_key) do |plan_owner, key|
+      @emitted_events << { type: :block, key: key, plan_owner: plan_owner }
     end
   end
 
