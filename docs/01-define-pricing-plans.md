@@ -254,6 +254,15 @@ end
 | `on_grace_start(limit_key)` | When limit is exceeded with `grace_then_block` | `plan_owner`, `limit_key`, `grace_ends_at` (Time) |
 | `on_block(limit_key)` | When grace expires or with `:block_usage` policy | `plan_owner`, `limit_key` |
 
+> **⚠️ Migration note:** If you're upgrading from an earlier version, callback signatures have changed. The `limit_key` is now passed as the second argument to all callbacks. Update your callbacks from:
+> ```ruby
+> # Old signature
+> config.on_warning(:projects) { |plan_owner, threshold| ... }
+>
+> # New signature
+> config.on_warning(:projects) { |plan_owner, limit_key, threshold| ... }
+> ```
+
 ### Wildcard callbacks
 
 You can also register a single callback that fires for **all** limits by omitting the `limit_key` argument:
@@ -296,7 +305,9 @@ Callbacks are error-isolated, meaning that if your callback raises an exception,
 
 ### Transaction safety
 
-Callbacks use `after_commit` hooks, so they only fire after the database transaction successfully commits. If a transaction rolls back (e.g., due to a validation error elsewhere), callbacks won't fire and no emails will be sent for records that weren't actually saved.
+**Warning and grace callbacks** use `after_commit` hooks, so they only fire after the database transaction successfully commits. If a transaction rolls back, these callbacks won't fire.
+
+**Block callbacks** fire during validation (before commit) because they indicate a failed creation attempt. This means block emails may be sent even if the surrounding transaction rolls back - which is correct behavior since the user did experience being blocked from creating the record.
 
 ### Performance considerations
 
@@ -312,7 +323,7 @@ For most applications, this overhead is negligible. However, if you're doing hig
 
 - Using `insert_all` or raw SQL for bulk operations (bypasses callbacks)
 - Temporarily disabling callbacks with `Model.skip_callback` during batch jobs
-- Ensuring your usage counting queries are indexed
+- Adding indexes on foreign keys used for counting (e.g., `add_index :projects, :organization_id`)
 
 **That's it!** When a Pro user creates their 20th project (80% of 25), they get an upsell email. At 25, grace starts. When grace expires, they're blocked. Per-month limits like file uploads reset each billing cycle. All completely automatic with zero maintenance overhead.
 
