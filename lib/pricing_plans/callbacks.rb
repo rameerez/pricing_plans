@@ -50,8 +50,10 @@ module PricingPlans
       when 1
         handler.call(args[0])
       when 2
-        # Backward compatibility: old callbacks expect (plan_owner, threshold/grace_ends_at)
-        # Skip limit_key (args[1]) and pass plan_owner + last arg
+        # Backward compatibility: old callbacks expect (plan_owner, event_arg)
+        # where event_arg is threshold for warnings, grace_ends_at for grace_start.
+        # Skip limit_key (args[1]) and pass plan_owner + last arg.
+        # For on_block (args = [plan_owner, limit_key]), this passes (plan_owner, limit_key).
         handler.call(args[0], args.last)
       when 3
         handler.call(args[0], args[1], args[2])

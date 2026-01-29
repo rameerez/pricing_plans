@@ -305,7 +305,10 @@ module PricingPlans
           send(config[:plan_owner_method])
         end
 
-        next unless plan_owner_instance
+        unless plan_owner_instance
+          Callbacks.log_debug("[PricingPlans] Skipping callback for #{self.class.name}##{id}: plan_owner is nil (#{config[:plan_owner_method]})")
+          next
+        end
 
         plan = PlanResolver.effective_plan_for(plan_owner_instance)
         limit_config = plan&.limit_for(limit_key)
