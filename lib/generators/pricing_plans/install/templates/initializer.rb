@@ -72,10 +72,38 @@ PricingPlans.configure do |config|
   #`config.message_builder` lets apps override human copy for `:over_limit`, `:grace`, `:feature_denied`, and overage report; used broadly across guards/UX.
 
 
-  # Optional event callbacks -- enqueue jobs here to send notifications or emails when certain events happen
-  # config.on_warning(:products)     { |org, threshold| PlanMailer.quota_warning(org, :products, threshold).deliver_later }
-  # config.on_grace_start(:products) { |org, ends_at|   PlanMailer.grace_started(org, :products, ends_at).deliver_later  }
-  # config.on_block(:products)       { |org|            PlanMailer.blocked(org, :products).deliver_later                 }
+  # ==========================================================================
+  # Automatic Callbacks (for upsell emails, analytics, etc.)
+  # ==========================================================================
+  #
+  # Callbacks fire AUTOMATICALLY when limited models are created - no manual
+  # intervention needed. Configure them to send emails when users approach
+  # or exceed their limits.
+  #
+  # Available callbacks:
+  # - on_warning(limit_key)     - fires when usage crosses a warn_at threshold
+  # - on_grace_start(limit_key) - fires when limit is exceeded (grace period starts)
+  # - on_block(limit_key)       - fires when grace expires or with :block_usage policy
+  #
+  # Example: Send upsell emails at 80% and 95% usage, then notify on grace/block
+  #
+  # config.on_warning(:projects) do |plan_owner, threshold|
+  #   # threshold is the crossed value, e.g., 0.8 for 80%
+  #   percentage = (threshold * 100).to_i
+  #   UsageMailer.approaching_limit(plan_owner, :projects, percentage: percentage).deliver_later
+  # end
+  #
+  # config.on_grace_start(:projects) do |plan_owner, grace_ends_at|
+  #   # grace_ends_at is when the grace period expires
+  #   GraceMailer.limit_exceeded(plan_owner, :projects, grace_ends_at: grace_ends_at).deliver_later
+  # end
+  #
+  # config.on_block(:projects) do |plan_owner|
+  #   BlockedMailer.service_blocked(plan_owner, :projects).deliver_later
+  # end
+  #
+  # Note: Callbacks are error-isolated - if your callback raises an exception,
+  # it won't break model creation. Errors are logged but don't propagate.
 
   # --- Pricing semantics (UI-agnostic) ---
   # Currency symbol to use when Stripe is absent

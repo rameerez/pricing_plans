@@ -8,8 +8,9 @@ module PricingPlans
       # Track all limited_by configurations for this model
       class_attribute :pricing_plans_limits, default: {}
 
-      # Callbacks for automatic tracking
+      # Callbacks for automatic tracking and event emission
       after_create :increment_per_period_counters
+      after_create :check_and_emit_limit_events
       after_destroy :decrement_persistent_counters
       # Add plan_owner-centric convenience methods to instances of the plan_owner class
       # when possible. These are no-ops if the model isn't the plan_owner itself.
@@ -213,6 +214,8 @@ module PricingPlans
                   return
                 when :block_usage, :grace_then_block
                   if limit_config[:after_limit] == :block_usage || GraceManager.should_block?(plan_owner_instance, limit_key)
+                    # Emit block event before failing validation
+                    GraceManager.mark_blocked!(plan_owner_instance, limit_key)
                     message = error_after_limit || "Cannot create #{self.class.name.downcase}: #{limit_key} limit exceeded"
                     errors.add(:base, message)
                   end
@@ -227,6 +230,8 @@ module PricingPlans
                   return
                 when :block_usage, :grace_then_block
                   if limit_config[:after_limit] == :block_usage || GraceManager.should_block?(plan_owner_instance, limit_key)
+                    # Emit block event before failing validation
+                    GraceManager.mark_blocked!(plan_owner_instance, limit_key)
                     message = error_after_limit || "Cannot create #{self.class.name.downcase}: #{limit_key} limit exceeded for this period"
                     errors.add(:base, message)
                   end
@@ -288,6 +293,35 @@ module PricingPlans
       # For persistent caps, we don't need to do anything on destroy
       # since the counter is computed live from the database
       # The record being destroyed will automatically reduce the count
+    end
+
+    # Automatically check warning thresholds and emit events after model creation.
+    # This ensures callbacks fire without requiring explicit controller guard calls.
+    def check_and_emit_limit_events
+      self.class.pricing_plans_limits.each do |limit_key, config|
+        plan_owner_instance = if config[:plan_owner_method] == :self
+          self
+        else
+          send(config[:plan_owner_method])
+        end
+
+        next unless plan_owner_instance
+
+        plan = PlanResolver.effective_plan_for(plan_owner_instance)
+        limit_config = plan&.limit_for(limit_key)
+
+        next unless limit_config
+        next if limit_config[:to] == :unlimited
+
+        limit_amount = limit_config[:to].to_i
+        current_usage = LimitChecker.current_usage_for(plan_owner_instance, limit_key, limit_config)
+
+        # Check and emit warning events for thresholds crossed
+        Callbacks.check_and_emit_warnings!(plan_owner_instance, limit_key, current_usage, limit_amount)
+
+        # Check and emit grace/block events if limit is exceeded
+        Callbacks.check_and_emit_limit_exceeded!(plan_owner_instance, limit_key, current_usage, limit_config)
+      end
     end
   end
 end
