@@ -53,17 +53,17 @@ class PlanResolverTest < ActiveSupport::TestCase
     assert_equal :free, plan.key
   end
 
-  def test_manual_assignment_overrides_pay_subscription
+  def test_effective_plan_prioritizes_pay_over_assignment
     org = create_organization(
       pay_subscription: { active: true, processor_plan: "price_pro_123" }
     )
 
-    # Manual assignment takes precedence over Pay subscription (admin override)
+    # Manual assignment should be ignored when Pay subscription is active
     PricingPlans::Assignment.assign_plan_to(org, :enterprise)
 
     plan = PricingPlans::PlanResolver.effective_plan_for(org)
 
-    assert_equal :enterprise, plan.key  # Manual assignment wins
+    assert_equal :pro, plan.key  # Pay subscription wins
   end
 
   def test_effective_plan_with_unknown_processor_plan
