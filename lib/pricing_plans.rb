@@ -40,6 +40,7 @@ module PricingPlans
   autoload :OverageReporter, "pricing_plans/overage_reporter"
   autoload :PriceComponents, "pricing_plans/price_components"
   autoload :ViewHelpers, "pricing_plans/view_helpers"
+  autoload :StatusContext, "pricing_plans/status_context"
 
   # Models
   autoload :EnforcementState, "pricing_plans/models/enforcement_state"
@@ -228,8 +229,12 @@ module PricingPlans
     )
 
     def status(plan_owner, limits: [])
+      # Use StatusContext to cache all computed values and eliminate N+1 queries.
+      # Each call to status() gets its own context - thread-safe by design.
+      ctx = StatusContext.new(plan_owner)
+
       items = Array(limits).map do |limit_key|
-        st = limit_status(limit_key, plan_owner: plan_owner)
+        st = ctx.limit_status(limit_key)
         if !st[:configured]
           StatusItem.new(
             key: limit_key,
@@ -258,7 +263,7 @@ module PricingPlans
             period_seconds_remaining: nil
           )
         else
-          sev = severity_for(plan_owner, limit_key)
+          sev = ctx.severity_for(limit_key)
           allowed = st[:limit_amount]
           current = st[:current_usage].to_i
           unlimited = (allowed == :unlimited)
@@ -267,7 +272,7 @@ module PricingPlans
           else
             nil
           end
-          warn_thresholds = LimitChecker.warning_thresholds(plan_owner, limit_key)
+          warn_thresholds = ctx.warning_thresholds(limit_key)
           percent = st[:percent_used].to_f
           next_warn = begin
             thresholds = warn_thresholds.map { |t| t.to_f * 100.0 }.uniq.sort
@@ -278,7 +283,7 @@ module PricingPlans
           period_seconds_remaining = nil
           if st[:per]
             begin
-              period_start, period_end = PeriodCalculator.window_for(plan_owner, limit_key)
+              period_start, period_end = ctx.period_window_for(limit_key)
               if period_end
                 period_seconds_remaining = [0, (period_end - Time.current).to_i].max
               end
@@ -313,8 +318,8 @@ module PricingPlans
                              when :blocked then 4
                              else 0
                              end,
-            message: (sev == :ok ? nil : message_for(plan_owner, limit_key)),
-            overage: overage_for(plan_owner, limit_key),
+            message: (sev == :ok ? nil : ctx.message_for(limit_key)),
+            overage: ctx.overage_for(limit_key),
             configured: true,
             unlimited: unlimited,
             remaining: remaining,
@@ -330,12 +335,12 @@ module PricingPlans
         end
       end
 
-      # Compute and attach overall helpers directly on the returned array
+      # Compute overall helpers using context (all values already cached)
       keys = items.map(&:key)
-      sev = highest_severity_for(plan_owner, *keys)
+      sev = ctx.highest_severity_for(*keys)
       title = summary_title_for(sev)
-      msg = summary_message_for(plan_owner, *keys, severity: sev)
-      highest_keys = keys.select { |k| severity_for(plan_owner, k) == sev }
+      msg = compute_summary_message_from_context(ctx, keys, sev)
+      highest_keys = keys.select { |k| ctx.severity_for(k) == sev }
       highest_limits = items.select { |it| highest_keys.include?(it.key) }
       human_keys = highest_keys.map { |k| k.to_s.humanize.downcase }
       keys_sentence = if human_keys.respond_to?(:to_sentence)
@@ -648,6 +653,40 @@ module PricingPlans
 
     def popular_plan_key
       highlighted_plan_key
+    end
+
+    private
+
+    # Helper for status() that builds summary message using cached context data
+    def compute_summary_message_from_context(ctx, keys, sev)
+      return nil if keys.empty?
+      return nil if sev == :ok
+
+      affected = keys.select { |k| ctx.severity_for(k) == sev }
+      human_keys = affected.map { |k| k.to_s.humanize.downcase }
+      keys_list = if human_keys.respond_to?(:to_sentence)
+        human_keys.to_sentence
+      else
+        if human_keys.length <= 2
+          human_keys.join(" and ")
+        else
+          human_keys[0..-2].join(", ") + " and " + human_keys[-1]
+        end
+      end
+      noun = affected.size == 1 ? "plan limit" : "plan limits"
+
+      case sev
+      when :blocked
+        "Your #{noun} for #{keys_list} #{affected.size == 1 ? "has" : "have"} been exceeded. Please upgrade to continue."
+      when :grace
+        grace_end = keys.map { |k| ctx.grace_ends_at(k) }.compact.min
+        suffix = grace_end ? ", grace active until #{grace_end}" : ""
+        "You are over your #{noun} for #{keys_list}#{suffix}. Please upgrade to avoid service disruption."
+      when :at_limit
+        "You have reached your #{noun} for #{keys_list}."
+      else # :warning
+        "You are approaching your #{noun} for #{keys_list}."
+      end
     end
   end
 end
