@@ -11,6 +11,12 @@ module PricingPlans
         calculate_window_for_period(plan_owner, period_type)
       end
 
+      # Calculate window with pre-resolved period_type to avoid redundant plan lookups.
+      # Used by StatusContext which has already resolved the limit config.
+      def window_for_period_type(plan_owner, period_type)
+        calculate_window_for_period(plan_owner, period_type)
+      end
+
       private
 
       # Backward-compatible shim for tests that stub pay_available?

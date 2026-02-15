@@ -71,12 +71,12 @@ module PricingPlans
       @grace_active_cache[key] = !state.grace_expired?
     end
 
-    # Cached grace ends at - implemented directly to avoid GraceManager's plan resolution
+    # Cached grace ends at - uses fresh_enforcement_state to avoid stale data
     def grace_ends_at(limit_key)
       key = limit_key.to_sym
       return @grace_ends_at_cache[key] if @grace_ends_at_cache.key?(key)
 
-      state = enforcement_state(limit_key)
+      state = fresh_enforcement_state(limit_key)
       @grace_ends_at_cache[key] = state&.grace_ends_at
     end
 
@@ -117,7 +117,8 @@ module PricingPlans
       @warning_thresholds_cache[key] = limit_config ? (limit_config[:warn_at] || []) : []
     end
 
-    # Cached period window calculation (avoids PeriodCalculator.window_for calling effective_plan_for again)
+    # Cached period window calculation - delegates to PeriodCalculator with pre-resolved period_type
+    # to avoid redundant effective_plan_for calls
     def period_window_for(limit_key)
       key = limit_key.to_sym
       @period_window_cache ||= {}
@@ -126,9 +127,8 @@ module PricingPlans
       limit_config = limit_config_for(limit_key)
       return @period_window_cache[key] = [nil, nil] unless limit_config && limit_config[:per]
 
-      # Inline the PeriodCalculator logic to avoid extra effective_plan_for call
       period_type = limit_config[:per] || PricingPlans::Registry.configuration.period_cycle
-      @period_window_cache[key] = calculate_period_window(period_type)
+      @period_window_cache[key] = PeriodCalculator.window_for_period_type(@plan_owner, period_type)
     end
 
     # Full limit status hash - cached, computed from other cached values
@@ -255,7 +255,8 @@ module PricingPlans
       )
     end
 
-    # Returns nil if state is stale for the current period window (for per-period limits)
+    # Returns nil if state is stale for the current period window (for per-period limits).
+    # Destroys stale states to prevent database accumulation over time.
     def fresh_enforcement_state(limit_key)
       key = limit_key.to_sym
       @fresh_enforcement_state_cache ||= {}
@@ -281,7 +282,8 @@ module PricingPlans
               (window_start_epoch && window_start_epoch != current_epoch)
 
       if stale
-        # State is stale, treat as nil (don't destroy - that's a side effect)
+        # State is stale - destroy it and return nil (consistent with GraceManager behavior)
+        state.destroy!
         @fresh_enforcement_state_cache[key] = nil
       else
         @fresh_enforcement_state_cache[key] = state
@@ -336,90 +338,6 @@ module PricingPlans
 
       highest_warn = warn_thresholds.max.to_f * 100.0
       (percent >= highest_warn && highest_warn.positive?) ? :warning : :ok
-    end
-
-    def calculate_period_window(period_type)
-      case period_type
-      when :billing_cycle
-        billing_cycle_window
-      when :calendar_month, :month
-        calendar_month_window
-      when :calendar_week, :week
-        calendar_week_window
-      when :calendar_day, :day
-        calendar_day_window
-      when ->(x) { x.respond_to?(:call) }
-        period_type.call(@plan_owner)
-      else
-        if period_type.respond_to?(:seconds)
-          duration_window(period_type)
-        else
-          [nil, nil]
-        end
-      end
-    end
-
-    def billing_cycle_window
-      return calendar_month_window unless PricingPlans::PaySupport.pay_available?
-
-      subscription = nil
-      if @plan_owner.respond_to?(:subscription)
-        subscription = @plan_owner.subscription
-      end
-      if subscription.nil? && @plan_owner.respond_to?(:subscriptions)
-        subscription = @plan_owner.subscriptions.find do |sub|
-          sub.respond_to?(:current_period_start) && sub.respond_to?(:current_period_end)
-        end
-        subscription ||= @plan_owner.subscriptions.find do |sub|
-          (sub.respond_to?(:active?) && sub.active?) ||
-            (sub.respond_to?(:on_trial?) && sub.on_trial?) ||
-            (sub.respond_to?(:on_grace_period?) && sub.on_grace_period?)
-        end
-      end
-      subscription ||= PricingPlans::PaySupport.current_subscription_for(@plan_owner)
-
-      return calendar_month_window unless subscription
-
-      if subscription.respond_to?(:current_period_start) && subscription.respond_to?(:current_period_end)
-        [subscription.current_period_start, subscription.current_period_end]
-      elsif subscription.respond_to?(:created_at)
-        monthly_window_from(subscription.created_at)
-      else
-        calendar_month_window
-      end
-    end
-
-    def calendar_month_window
-      now = Time.current
-      [now.beginning_of_month, now.end_of_month]
-    end
-
-    def calendar_week_window
-      now = Time.current
-      [now.beginning_of_week, now.end_of_week]
-    end
-
-    def calendar_day_window
-      now = Time.current
-      [now.beginning_of_day, now.end_of_day]
-    end
-
-    def duration_window(duration)
-      now = Time.current
-      start_time = now.beginning_of_day
-      [start_time, start_time + duration]
-    end
-
-    def monthly_window_from(anchor_date)
-      now = Time.current
-      months_since = ((now.year - anchor_date.year) * 12 + (now.month - anchor_date.month))
-      start_time = anchor_date + months_since.months
-      end_time = start_time + 1.month
-      if now >= end_time
-        start_time = end_time
-        end_time = start_time + 1.month
-      end
-      [start_time, end_time]
     end
   end
 end
