@@ -10,19 +10,7 @@ module PricingPlans
       def effective_plan_for(plan_owner)
         log_debug "[PricingPlans::PlanResolver] effective_plan_for called for #{plan_owner.class.name}##{plan_owner.respond_to?(:id) ? plan_owner.id : 'N/A'}"
 
-        # 1. Check Pay subscription status first (no app-specific gate required)
-        pay_available = PaySupport.pay_available?
-        log_debug "[PricingPlans::PlanResolver] PaySupport.pay_available? = #{pay_available}"
-        log_debug "[PricingPlans::PlanResolver] defined?(Pay) = #{defined?(Pay)}"
-
-        if pay_available
-          log_debug "[PricingPlans::PlanResolver] Calling resolve_plan_from_pay..."
-          plan_from_pay = resolve_plan_from_pay(plan_owner)
-          log_debug "[PricingPlans::PlanResolver] resolve_plan_from_pay returned: #{plan_from_pay ? plan_from_pay.key : 'nil'}"
-          return plan_from_pay if plan_from_pay
-        end
-
-        # 2. Check manual assignment
+        # 1. Check manual assignment FIRST (admin overrides take precedence)
         log_debug "[PricingPlans::PlanResolver] Checking for manual assignment..."
         if plan_owner.respond_to?(:id)
           assignment = Assignment.find_by(
@@ -35,6 +23,18 @@ module PricingPlans
           else
             log_debug "[PricingPlans::PlanResolver] No manual assignment found"
           end
+        end
+
+        # 2. Check Pay subscription status
+        pay_available = PaySupport.pay_available?
+        log_debug "[PricingPlans::PlanResolver] PaySupport.pay_available? = #{pay_available}"
+        log_debug "[PricingPlans::PlanResolver] defined?(Pay) = #{defined?(Pay)}"
+
+        if pay_available
+          log_debug "[PricingPlans::PlanResolver] Calling resolve_plan_from_pay..."
+          plan_from_pay = resolve_plan_from_pay(plan_owner)
+          log_debug "[PricingPlans::PlanResolver] resolve_plan_from_pay returned: #{plan_from_pay ? plan_from_pay.key : 'nil'}"
+          return plan_from_pay if plan_from_pay
         end
 
         # 3. Fall back to default plan
