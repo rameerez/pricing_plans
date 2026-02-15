@@ -164,7 +164,7 @@ The `pricing_plans` gem needs three new models in the schema in order to work: `
 
 - `PricingPlans::Assignment` allow manual plan overrides independent of billing system (or before you wire up Stripe/Pay). Great for admin toggles, trials, demos.
   - What: The arbitrary `plan_key` and a `source` label (default "manual"). Unique per plan_owner.
-  - How it’s used: `PlanResolver` checks Pay → manual assignment → default plan. You can call `assign_pricing_plan!` and `remove_pricing_plan!` on the plan_owner.
+  - How it's used: `PlanResolver` checks manual assignment → Pay → default plan. Manual assignments (admin overrides) take precedence over subscription-based plans. You can call `assign_pricing_plan!` and `remove_pricing_plan!` on the plan_owner.
 
 - `PricingPlans::EnforcementState` tracks per-plan_owner per-limit enforcement state for persistent caps and per-period allowances (grace/warnings/block state) in a race-safe way.
   - What: `exceeded_at`, `blocked_at`, last warning info, and a small JSON `data` column where we persist plan-derived parameters like grace period seconds.
