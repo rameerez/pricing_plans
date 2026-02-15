@@ -230,17 +230,17 @@ class CompleteWorkflowTest < ActiveSupport::TestCase
     # Should be on pro plan via subscription
     assert_equal :pro, PricingPlans::PlanResolver.effective_plan_for(org).key
 
-    # But subscription overrides manual assignment
+    # Manual assignment overrides subscription (admin override takes precedence)
     PricingPlans::Assignment.assign_plan_to(org, :enterprise)
 
-    # Still on pro plan (Pay takes precedence)
-    assert_equal :pro, PricingPlans::PlanResolver.effective_plan_for(org).key
-
-    # Remove subscription
-    org.pay_subscription = { active: false }
-
-    # Now manual assignment takes effect
+    # Now on enterprise plan (manual assignment wins)
     assert_equal :enterprise, PricingPlans::PlanResolver.effective_plan_for(org).key
+
+    # Remove manual assignment
+    PricingPlans::Assignment.remove_assignment_for(org)
+
+    # Back to subscription-based plan
+    assert_equal :pro, PricingPlans::PlanResolver.effective_plan_for(org).key
   end
 
   def test_grace_period_expiration_workflow
