@@ -1,3 +1,8 @@
+## [0.3.1] - 2026-02-16
+
+- **Add `has_plan_assignment?` helper**: Check if a plan owner has a manual assignment without full plan resolution
+- **Add `plan_assignment` helper**: Retrieve the assignment record directly for inspection
+
 ## [0.3.0] - 2026-02-15
 
 - **Manual assignments now override subscriptions**: Admin overrides take precedence over Pay/Stripe plans (was incorrectly reversed) -- current plan resolution order: manual assignment → Pay subscription → default plan
