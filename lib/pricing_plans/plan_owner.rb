@@ -203,6 +203,16 @@ module PricingPlans
       plan&.free? || false
     end
 
+    def has_plan_assignment?
+      return false unless respond_to?(:id) && id.present?
+      Assignment.exists?(plan_owner_type: self.class.name, plan_owner_id: id)
+    end
+
+    def plan_assignment
+      return nil unless respond_to?(:id) && id.present?
+      Assignment.find_by(plan_owner_type: self.class.name, plan_owner_id: id)
+    end
+
     def assign_pricing_plan!(plan_key, source: "manual")
       Assignment.assign_plan_to(self, plan_key, source: source)
     end
