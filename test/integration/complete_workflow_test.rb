@@ -282,11 +282,12 @@ class CompleteWorkflowTest < ActiveSupport::TestCase
         PricingPlans::PlanResolver.stub(:effective_plan_for, plan) do
           result = PricingPlans::ControllerGuards.require_plan_limit!(:projects, plan_owner: org)
         end
-        assert result.blocked?
+        assert result.grace?
 
-        # Should have emitted block event
+        # Block event is not emitted here because current usage remains at the
+        # limit; this check models the next create attempt.
         block_events = events.select { |e| e[:type] == :block }
-        assert_equal 1, block_events.size
+        assert_equal 0, block_events.size
       end
     end
   end

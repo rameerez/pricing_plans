@@ -67,6 +67,7 @@ class ViewHelpersTest < ActiveSupport::TestCase
     # No grace initially
     assert_equal :ok, org.limits_severity(:projects, :custom_models)
     # Simulate grace start for projects
+    org.projects.create!(name: "P1")
     PricingPlans::GraceManager.mark_exceeded!(org, :projects)
     assert_includes [:grace, :blocked], org.limits_severity(:projects, :custom_models)
   ensure
@@ -80,6 +81,7 @@ class ViewHelpersTest < ActiveSupport::TestCase
     assert_equal :ok, org.limit_severity(:projects)
 
     # Simulate grace → should be :grace unless strictly blocked
+    org.projects.create!(name: "P1")
     PricingPlans::GraceManager.mark_exceeded!(org, :projects)
     assert_includes [:grace, :blocked], org.limit_severity(:projects)
   ensure
@@ -156,17 +158,22 @@ class ViewHelpersTest < ActiveSupport::TestCase
 
   def test_at_limit_severity_and_message
     org = @org
-    # Simulate exactly at limit (1/1)
-    PricingPlans::LimitChecker.stub(:current_usage_for, 1) do
-      PricingPlans::LimitChecker.stub(:plan_limit_percent_used, 100.0) do
-        # No grace and not blocked (for free plan projects after_limit: :block_usage, severity should be :blocked at >= limit)
-        # For a limit with grace_then_block, at_limit should appear
-        # Switch to pro plan where :projects => 10; stub limit_status to mimic per plan
-        st = PricingPlans.limit_status(:projects, plan_owner: org)
-        # Baseline: ensure message exists when not OK
-        msg = org.limit_message(:projects)
-        assert_nil msg if org.limit_severity(:projects) == :ok
-      end
-    end
+    # Create exactly 1 project to hit the free plan limit (1/1)
+    org.projects.create!(name: "P1")
+
+    # At exact limit: severity should be :at_limit (not :blocked yet, since we're AT the limit)
+    severity = org.limit_severity(:projects)
+    assert_equal :at_limit, severity, "Expected :at_limit severity when exactly at limit (1/1)"
+
+    # Message should indicate user has reached their limit
+    msg = org.limit_message(:projects)
+    assert_not_nil msg, "Expected a message when at limit"
+    assert_match(/reached.*limit/i, msg, "Message should mention reaching the limit")
+
+    # Status should reflect at_limit state
+    st = PricingPlans.limit_status(:projects, plan_owner: org)
+    assert_equal true, st[:configured]
+    assert_equal 1, st[:current_usage]
+    assert_equal 1, st[:limit_amount]
   end
 end

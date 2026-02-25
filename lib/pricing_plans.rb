@@ -27,6 +27,7 @@ module PricingPlans
   autoload :PaySupport, "pricing_plans/pay_support"
   autoload :LimitChecker, "pricing_plans/limit_checker"
   autoload :LimitableRegistry, "pricing_plans/limit_checker"
+  autoload :ExceededStateUtils, "pricing_plans/exceeded_state_utils"
   autoload :GraceManager, "pricing_plans/grace_manager"
   autoload :Callbacks, "pricing_plans/callbacks"
   autoload :PeriodCalculator, "pricing_plans/period_calculator"

@@ -186,12 +186,14 @@ class ControllerGuardsTest < ActiveSupport::TestCase
       PricingPlans::PlanResolver.stub(:effective_plan_for, plan) do
         result = require_plan_limit!(:projects, plan_owner: @org, by: 1)
 
-        assert result.blocked?
-        assert_match(/reached your limit/i, result.message)
+        assert result.grace?
+        assert_match(/grace period/i, result.message)
 
-        # Should have marked as blocked
+        # Should still be in exceeded state, not blocked yet, because usage is
+        # at limit and this check models the next create attempt.
         state = PricingPlans::EnforcementState.find_by(plan_owner: @org, limit_key: "projects")
-        assert state&.blocked?
+        assert state&.exceeded?
+        refute state&.blocked?
       end
     end
   end
