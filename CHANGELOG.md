@@ -1,3 +1,10 @@
+## [0.3.2] - 2026-02-25
+
+- **Fix stale grace warnings after plan upgrades**: Grace/blocked flags now auto-clear when usage drops below limit (self-healing state)
+- **Fix grace triggering at exact limit**: `grace_then_block` now uses `>` (over limit) not `>=` (at limit)
+- **Add lazy grace creation**: Grace starts on-demand when checking status, even if callbacks were bypassed
+- **Add `ExceededStateUtils` module**: DRY extraction for shared exceeded/blocked logic
+
 ## [0.3.1] - 2026-02-16
 
 - **Add `has_plan_assignment?` helper**: Check if a plan owner has a manual assignment without full plan resolution
