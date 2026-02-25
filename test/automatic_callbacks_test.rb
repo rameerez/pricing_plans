@@ -81,6 +81,24 @@ class AutomaticCallbacksTest < ActiveSupport::TestCase
     assert grace_events.any?, "Expected on_grace_start to fire when exceeding limit"
   end
 
+  def test_on_grace_start_does_not_fire_at_exact_limit
+    setup_plans_with_grace
+
+    org = create_organization
+    org.assign_pricing_plan!(:pro_with_grace)
+
+    track_events_via_callbacks!(:projects)
+
+    # Reach the limit exactly; grace should only start once usage goes over limit.
+    5.times { |i| org.projects.create!(name: "Project #{i + 1}") }
+
+    grace_events = @emitted_events.select { |e| e[:type] == :grace_start && e[:key] == :projects }
+    assert_equal 0, grace_events.count
+
+    state = PricingPlans::EnforcementState.find_by(plan_owner: org, limit_key: "projects")
+    assert_nil state&.exceeded_at
+  end
+
   def test_on_block_fires_automatically_when_grace_expires
     setup_plans_with_grace
 

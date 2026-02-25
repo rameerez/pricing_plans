@@ -180,9 +180,13 @@ Enforcing pricing plans is one of those boring plumbing problems that look easy 
 
 - Safe under load: we use row locks and retries when setting grace/blocked/warning state, and we avoid firing the same event twice. See [grace_manager.rb](lib/pricing_plans/grace_manager.rb).
 
+- Self-healing state: when usage drops below the limit (e.g., user deletes resources, upgrades plan, or reduces usage), stale exceeded/blocked flags are automatically cleared. Methods like `grace_active?` and `should_block?` will clear outdated enforcement state as a side effect. This prevents users from remaining incorrectly flagged after remediation.
+
 - Accurate counting: persistent limits count live current rows (using `COUNT(*)`, make sure to index your foreign keys to make it fast at scale); per‑period limits record usage for the current window only. You can filter what counts with `count_scope` (Symbol/Hash/Proc/Array), and plan settings override model defaults. See [limitable.rb](lib/pricing_plans/limitable.rb) and [limit_checker.rb](lib/pricing_plans/limit_checker.rb).
 
 - Clear rules: default is to block when you hit the cap; grace periods are opt‑in. In status/UI, 0 of 0 isn’t shown as blocked. See [plan.rb](lib/pricing_plans/plan.rb), [grace_manager.rb](lib/pricing_plans/grace_manager.rb), and [view_helpers.rb](lib/pricing_plans/view_helpers.rb).
+
+- Semantic enforcement: for `grace_then_block`, grace periods start when usage goes *over* the limit (e.g., 6/5), not when it *reaches* the limit (5/5). This allows users to use their full allocation before grace begins. For `block_usage`, blocking occurs at or over the limit (e.g., at 5/5, the next creation is blocked).
 
 - Simple controllers: one‑liners to guard actions, predictable redirect order (per‑call → per‑controller → global → pricing_path), and an optional central handler. See [controller_guards.rb](lib/pricing_plans/controller_guards.rb).
 

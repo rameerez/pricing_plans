@@ -3,6 +3,7 @@
 module PricingPlans
   class GraceManager
     class << self
+      include ExceededStateUtils
       def mark_exceeded!(plan_owner, limit_key, grace_period: nil)
         with_lock(plan_owner, limit_key) do |state|
           # Ensure state is for the current window for per-period limits
@@ -36,6 +37,14 @@ module PricingPlans
       def grace_active?(plan_owner, limit_key)
         state = fresh_state_or_nil(plan_owner, limit_key)
         return false unless state&.exceeded?
+
+        plan = PlanResolver.effective_plan_for(plan_owner)
+        limit_config = plan&.limit_for(limit_key)
+        unless currently_exceeded?(plan_owner, limit_key, limit_config)
+          clear_exceeded_flags!(state)
+          return false
+        end
+
         !state.grace_expired?
       end
 
@@ -51,11 +60,16 @@ module PricingPlans
         limit_amount = limit_config[:to]
         return false if limit_amount == :unlimited
         current_usage = LimitChecker.current_usage_for(plan_owner, limit_key, limit_config)
-        exceeded = current_usage >= limit_amount.to_i
-        # Treat 0-of-0 as not blocked for UX/severity/status purposes
-        exceeded = false if limit_amount.to_i.zero? && current_usage.to_i.zero?
+        exceeded = exceeded_now?(current_usage, limit_amount, after_limit: after_limit)
 
-        return exceeded if after_limit == :block_usage
+        unless exceeded
+          if (state = fresh_state_or_nil(plan_owner, limit_key))
+            clear_exceeded_flags!(state)
+          end
+          return false
+        end
+
+        return true if after_limit == :block_usage
 
         # For :grace_then_block, check if grace period expired
         state = fresh_state_or_nil(plan_owner, limit_key)
@@ -119,7 +133,7 @@ module PricingPlans
       end
 
       def grace_ends_at(plan_owner, limit_key)
-        state = find_state(plan_owner, limit_key)
+        state = fresh_state_or_nil(plan_owner, limit_key)
         state&.grace_ends_at
       end
 
@@ -156,6 +170,17 @@ module PricingPlans
 
       def find_state(plan_owner, limit_key)
         EnforcementState.find_by(plan_owner: plan_owner, limit_key: limit_key.to_s)
+      end
+
+      def currently_exceeded?(plan_owner, limit_key, limit_config = nil)
+        limit_config ||= PlanResolver.effective_plan_for(plan_owner)&.limit_for(limit_key)
+        return false unless limit_config
+
+        limit_amount = limit_config[:to]
+        return false if limit_amount == :unlimited
+
+        current_usage = LimitChecker.current_usage_for(plan_owner, limit_key, limit_config)
+        exceeded_now?(current_usage, limit_amount, after_limit: limit_config[:after_limit])
       end
 
       # Returns nil if state is stale for the current period window for per-period limits

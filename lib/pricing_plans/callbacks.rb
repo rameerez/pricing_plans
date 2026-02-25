@@ -106,17 +106,24 @@ module PricingPlans
       return if limit_config[:to] == :unlimited
 
       limit_amount = limit_config[:to].to_i
-      return unless current_usage >= limit_amount
+      after_limit = limit_config[:after_limit]
 
-      case limit_config[:after_limit]
+      case after_limit
       when :just_warn
+        return unless current_usage >= limit_amount
+
         # Just emit warning, don't track grace/block
         check_and_emit_warnings!(plan_owner, limit_key, current_usage, limit_amount)
       when :block_usage
+        return unless current_usage >= limit_amount
+
         # Do NOT mark as blocked here - this callback runs after SUCCESSFUL creation.
         # Block events are emitted from validation when creation is actually blocked.
         nil
       when :grace_then_block
+        # Grace semantics are for over-limit usage, not exact-at-limit.
+        return unless current_usage > limit_amount
+
         # Start grace period if not already in grace/blocked
         unless GraceManager.grace_active?(plan_owner, limit_key) || GraceManager.should_block?(plan_owner, limit_key)
           GraceManager.mark_exceeded!(plan_owner, limit_key, grace_period: limit_config[:grace])

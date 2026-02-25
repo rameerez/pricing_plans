@@ -323,6 +323,44 @@ class StatusContextTest < ActiveSupport::TestCase
     end
   end
 
+  def test_grace_active_returns_false_when_state_exists_but_usage_is_below_limit
+    state = PricingPlans::EnforcementState.create!(
+      plan_owner: @org,
+      limit_key: "projects",
+      exceeded_at: Time.current,
+      data: { "grace_period" => 1.week.to_i }
+    )
+
+    # Projects limit is 1 and usage is 0 in this test.
+    ctx = PricingPlans::StatusContext.new(@org)
+    refute ctx.grace_active?(:projects)
+    assert_nil ctx.grace_ends_at(:projects)
+    assert_equal :ok, ctx.severity_for(:projects)
+    assert_nil state.reload.exceeded_at
+    assert_nil state.reload.blocked_at
+  end
+
+  def test_grace_active_returns_false_at_exact_limit_for_grace_then_block
+    free = PricingPlans::Registry.plan(:free)
+    free.limits[:projects][:after_limit] = :grace_then_block
+    free.limits[:projects][:grace] = 1.week
+
+    @org.projects.create!(name: "P1") # at limit (1/1), not over
+
+    state = PricingPlans::EnforcementState.find_or_initialize_by(
+      plan_owner: @org,
+      limit_key: "projects"
+    )
+    state.exceeded_at = Time.current
+    state.data = state.data.to_h.merge("grace_period" => 1.week.to_i)
+    state.save!
+
+    ctx = PricingPlans::StatusContext.new(@org)
+    refute ctx.grace_active?(:projects)
+    assert_equal :at_limit, ctx.severity_for(:projects)
+    assert_nil state.reload.exceeded_at
+  end
+
   def test_grace_active_returns_false_when_grace_expired
     # Create expired grace state
     PricingPlans::EnforcementState.create!(
@@ -451,9 +489,10 @@ class StatusContextTest < ActiveSupport::TestCase
     )
 
     ctx = PricingPlans::StatusContext.new(@org)
-    # Should return the state without checking staleness
-    assert ctx.grace_active?(:projects)
-    # State should still exist
+    # Should keep the state record (non-per-period staleness logic doesn't apply),
+    # but grace is not considered active unless usage is currently over the limit.
+    refute ctx.grace_active?(:projects)
     assert PricingPlans::EnforcementState.find_by(id: state.id)
+    assert_nil state.reload.exceeded_at
   end
 end

@@ -7,6 +7,8 @@ module PricingPlans
   #
   # Thread-safe by design: each call to status() gets its own context instance.
   class StatusContext
+    include ExceededStateUtils
+
     attr_reader :plan_owner
 
     def initialize(plan_owner)
@@ -67,7 +69,26 @@ module PricingPlans
       return @grace_active_cache[key] if @grace_active_cache.key?(key)
 
       state = fresh_enforcement_state(limit_key)
-      return @grace_active_cache[key] = false unless state&.exceeded?
+
+      # If no state exists but we're over limit for grace_then_block, lazily create grace
+      unless state&.exceeded?
+        if should_lazily_start_grace?(limit_key)
+          limit_config = limit_config_for(limit_key)
+          GraceManager.mark_exceeded!(@plan_owner, limit_key, grace_period: limit_config[:grace])
+          # Clear caches to get fresh state
+          @fresh_enforcement_state_cache&.delete(key)
+          @enforcement_state_cache&.delete(key)
+          state = fresh_enforcement_state(limit_key)
+        else
+          return @grace_active_cache[key] = false
+        end
+      end
+
+      unless currently_exceeded?(limit_key)
+        clear_exceeded_flags!(state)
+        return @grace_active_cache[key] = false
+      end
+
       @grace_active_cache[key] = !state.grace_expired?
     end
 
@@ -77,7 +98,10 @@ module PricingPlans
       return @grace_ends_at_cache[key] if @grace_ends_at_cache.key?(key)
 
       state = fresh_enforcement_state(limit_key)
-      @grace_ends_at_cache[key] = state&.grace_ends_at
+      return @grace_ends_at_cache[key] = nil unless state&.exceeded?
+      return @grace_ends_at_cache[key] = nil unless grace_active?(limit_key)
+
+      @grace_ends_at_cache[key] = state.grace_ends_at
     end
 
     # Cached should block check - implemented directly to avoid GraceManager's plan resolution
@@ -95,13 +119,16 @@ module PricingPlans
       return @should_block_cache[key] = false if limit_amount == :unlimited
 
       current_usage = current_usage_for(limit_key)
-      exceeded = current_usage >= limit_amount.to_i
-      exceeded = false if limit_amount.to_i.zero? && current_usage.to_i.zero?
+      exceeded = exceeded_now?(current_usage, limit_amount, after_limit: after_limit)
 
       return @should_block_cache[key] = exceeded if after_limit == :block_usage
 
       # For :grace_then_block, check if grace period expired
-      return @should_block_cache[key] = false unless exceeded
+      unless exceeded
+        state = fresh_enforcement_state(limit_key)
+        clear_exceeded_flags!(state) if state
+        return @should_block_cache[key] = false
+      end
 
       state = fresh_enforcement_state(limit_key)
       return @should_block_cache[key] = false unless state&.exceeded?
@@ -339,5 +366,32 @@ module PricingPlans
       highest_warn = warn_thresholds.max.to_f * 100.0
       (percent >= highest_warn && highest_warn.positive?) ? :warning : :ok
     end
+
+    def currently_exceeded?(limit_key)
+      limit_config = limit_config_for(limit_key)
+      return false unless limit_config
+
+      limit_amount = limit_config[:to]
+      return false if limit_amount == :unlimited
+
+      current_usage = current_usage_for(limit_key)
+      exceeded_now?(current_usage, limit_amount, after_limit: limit_config[:after_limit])
+    end
+
+    # Check if we should lazily start grace for this limit.
+    # This handles edge cases where usage increased without triggering callbacks
+    # (e.g., status changes, bulk imports, manual DB updates).
+    def should_lazily_start_grace?(limit_key)
+      limit_config = limit_config_for(limit_key)
+      return false unless limit_config
+      return false unless limit_config[:after_limit] == :grace_then_block
+
+      limit_amount = limit_config[:to]
+      return false if limit_amount == :unlimited
+
+      current_usage = current_usage_for(limit_key)
+      current_usage > limit_amount.to_i
+    end
+
   end
 end

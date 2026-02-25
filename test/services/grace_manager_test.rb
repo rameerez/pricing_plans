@@ -44,6 +44,7 @@ class GraceManagerTest < ActiveSupport::TestCase
     org = create_organization
 
     travel_to_time(Time.parse("2025-01-01 12:00:00 UTC")) do
+      org.projects.create!(name: "P1")
       PricingPlans::GraceManager.mark_exceeded!(org, :projects, grace_period: 5.days)
 
       # Should be active immediately after exceeding
@@ -59,6 +60,35 @@ class GraceManagerTest < ActiveSupport::TestCase
     travel_to_time(Time.parse("2025-01-06 12:00:01 UTC")) do
       refute PricingPlans::GraceManager.grace_active?(org, :projects)
     end
+  end
+
+  def test_grace_active_clears_state_when_usage_is_below_limit
+    org = create_organization
+
+    # Projects limit is 1 on the free plan; usage is currently 0.
+    state = PricingPlans::GraceManager.mark_exceeded!(org, :projects, grace_period: 5.days)
+    assert state.exceeded?
+
+    refute PricingPlans::GraceManager.grace_active?(org, :projects)
+
+    state.reload
+    assert_nil state.exceeded_at
+    assert_nil state.blocked_at
+  end
+
+  def test_should_block_clears_stale_block_flags_when_usage_is_below_limit
+    org = create_organization
+
+    state = PricingPlans::GraceManager.mark_exceeded!(org, :projects, grace_period: 5.days)
+    PricingPlans::GraceManager.mark_blocked!(org, :projects)
+    state.reload
+    assert state.blocked?
+
+    refute PricingPlans::GraceManager.should_block?(org, :projects)
+
+    state.reload
+    assert_nil state.exceeded_at
+    assert_nil state.blocked_at
   end
 
   def test_should_block_with_different_policies
@@ -81,14 +111,19 @@ class GraceManagerTest < ActiveSupport::TestCase
     # Reset for grace_then_block test
     PricingPlans::GraceManager.reset_state!(org, :projects)
     plan.limits[:projects][:after_limit] = :grace_then_block
+    plan.limits[:projects][:grace] = 5.days
 
     travel_to_time(Time.parse("2025-01-01 12:00:00 UTC")) do
-      PricingPlans::GraceManager.mark_exceeded!(org, :projects, grace_period: 5.days)
-      refute PricingPlans::GraceManager.should_block?(org, :projects)
+      # Move usage over the limit (2/1) so grace semantics apply.
+      org.projects.create!(name: "Over Limit")
+      state = PricingPlans::GraceManager.mark_exceeded!(org, :projects, grace_period: 5.days)
+      assert state.exceeded?
     end
 
     travel_to_time(Time.parse("2025-01-06 12:00:01 UTC")) do
-      assert PricingPlans::GraceManager.should_block?(org, :projects)
+      PricingPlans::LimitChecker.stub(:current_usage_for, 2) do
+        assert PricingPlans::GraceManager.should_block?(org, :projects)
+      end
     end
   end
 
@@ -193,6 +228,7 @@ class GraceManagerTest < ActiveSupport::TestCase
     org = create_organization
 
     travel_to_time(Time.parse("2025-01-01 12:00:00 UTC")) do
+      org.projects.create!(name: "P1")
       PricingPlans::GraceManager.mark_exceeded!(org, :projects, grace_period: 5.days)
 
       grace_ends_at = PricingPlans::GraceManager.grace_ends_at(org, :projects)
@@ -214,8 +250,11 @@ class GraceManagerTest < ActiveSupport::TestCase
     # Ensure per-period limit uses grace semantics for this test
     free = PricingPlans::Registry.plan(:free)
     free.limits[:custom_models][:after_limit] = :grace_then_block
+    free.limits[:custom_models][:to] = 1
 
     travel_to_time(Time.parse("2025-01-15 12:00:00 UTC")) do
+      org.custom_models.create!(name: "M1")
+      org.custom_models.create!(name: "M2")
       # Exceed per-period limit and start grace
       state = PricingPlans::GraceManager.mark_exceeded!(org, :custom_models, grace_period: 3.days)
       assert state.exceeded?

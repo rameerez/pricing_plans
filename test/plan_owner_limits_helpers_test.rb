@@ -133,7 +133,7 @@ class PlanOwnerLimitsHelpersTest < ActiveSupport::TestCase
     assert result.grace? || result.blocked? || result.warning?
 
     sev = @org.limits_severity(:projects, :custom_models)
-    assert_includes [:warning, :grace, :blocked], sev
+    assert_includes [:warning, :at_limit, :grace, :blocked], sev
 
     msg = @org.limits_message(:projects, :custom_models)
     assert msg.nil? || msg.is_a?(String)
@@ -283,6 +283,8 @@ class PlanOwnerLimitsHelpersTest < ActiveSupport::TestCase
     end
     org3 = create_organization
     Project.send(:limited_by_pricing_plans, :projects, plan_owner: :organization)
+    org3.projects.create!(name: "P1")
+    org3.projects.create!(name: "P2")
     PricingPlans::GraceManager.mark_exceeded!(org3, :projects)
     msg = PricingPlans.message_for(org3, :projects)
     assert_includes msg, "You’re currently over your limit"
