@@ -3,12 +3,16 @@
 require "test_helper"
 
 class PlanResolutionTest < ActiveSupport::TestCase
+  PlanStub = Struct.new(:key, keyword_init: true)
+  AssignmentStub = Struct.new(:source, keyword_init: true)
+  SubscriptionStub = Struct.new(:processor_plan, keyword_init: true)
+
   def test_plan_resolution_is_frozen
     resolution = PricingPlans::PlanResolution.new(
-      plan: OpenStruct.new(key: :pro),
+      plan: PlanStub.new(key: :pro),
       source: :subscription,
       assignment: nil,
-      subscription: OpenStruct.new(processor_plan: "price_pro_123")
+      subscription: SubscriptionStub.new(processor_plan: "price_pro_123")
     )
 
     assert resolution.frozen?
@@ -16,11 +20,11 @@ class PlanResolutionTest < ActiveSupport::TestCase
   end
 
   def test_plan_resolution_to_h_includes_struct_and_derived_fields
-    assignment = OpenStruct.new(source: "admin")
-    subscription = OpenStruct.new(processor_plan: "price_pro_123")
+    assignment = AssignmentStub.new(source: "admin")
+    subscription = SubscriptionStub.new(processor_plan: "price_pro_123")
 
     resolution = PricingPlans::PlanResolution.new(
-      plan: OpenStruct.new(key: :enterprise),
+      plan: PlanStub.new(key: :enterprise),
       source: :assignment,
       assignment: assignment,
       subscription: subscription

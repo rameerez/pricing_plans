@@ -97,6 +97,9 @@ module PricingPlans
 
         return nil unless pay_available
 
+        # This intentionally delegates the active/trial/grace filtering contract
+        # to PaySupport.current_subscription_for so resolution_for can preserve
+        # the same billing context wherever it is called.
         subscription = PaySupport.current_subscription_for(plan_owner)
         log_debug "[PricingPlans::PlanResolver] current_subscription_for returned: #{subscription ? subscription.class.name : 'nil'}"
         subscription

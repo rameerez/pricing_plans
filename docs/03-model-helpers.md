@@ -317,6 +317,8 @@ resolution.subscription                      # => Pay subscription | nil
 
 This distinction matters: the **effective pricing plan** is what controls entitlements and limits inside your app. The **Pay/Stripe subscription state** is billing-facing. A manual assignment may intentionally override the subscription-backed plan while still leaving the underlying subscription present for billing operations.
 
+`resolution.to_h` is handy for inspection and tests, but it preserves the raw `plan`, `assignment`, and `subscription` objects. If you need a JSON-safe payload, build one explicitly from the scalar fields you care about.
+
 ### Misc
 
 ```ruby

@@ -34,7 +34,8 @@ module PricingPlans
       assignment&.source
     end
 
-    # Extends Struct#to_h with derived fields commonly useful in serialization.
+    # Extends Struct#to_h with derived fields.
+    # Note: this preserves the raw plan / assignment / subscription objects.
     def to_h
       super.merge(
         plan_key: plan_key,
