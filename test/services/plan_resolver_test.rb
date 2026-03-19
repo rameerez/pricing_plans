@@ -163,6 +163,18 @@ class PlanResolverTest < ActiveSupport::TestCase
     assert_equal :enterprise, plan.key
   end
 
+  def test_inactive_subscription_falls_back_to_default_resolution
+    org = create_organization(
+      pay_subscription: { active: false, processor_plan: "price_pro_123" }
+    )
+
+    resolution = PricingPlans::PlanResolver.resolution_for(org)
+
+    assert_equal :free, resolution.plan_key
+    assert_equal :default, resolution.source
+    assert_nil resolution.subscription
+  end
+
   def test_plan_key_for_convenience_method
     org = create_organization(
       pay_subscription: { active: true, processor_plan: "price_pro_123" }

@@ -32,6 +32,7 @@ module PricingPlans
       assignment&.source
     end
 
+    # Extends Struct#to_h with derived fields commonly useful in serialization.
     def to_h
       {
         plan: plan,
