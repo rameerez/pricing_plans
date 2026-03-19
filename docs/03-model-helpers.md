@@ -301,7 +301,7 @@ user.assign_pricing_plan!(:pro)              # manual assignment override
 user.remove_pricing_plan!                    # remove manual override (fallback to default)
 ```
 
-If you need both the plan and its provenance, prefer calling `current_pricing_plan_resolution` once and reading both values from that object.
+**Performance note:** Each call to `current_pricing_plan`, `current_pricing_plan_source`, or `current_pricing_plan_resolution` performs a fresh database lookup. If you need both the plan and its provenance, call `current_pricing_plan_resolution` once and read both values from that object — this avoids duplicate queries.
 
 If you need the full provenance, use the resolution object:
 
@@ -316,6 +316,8 @@ resolution.subscription                      # => Pay subscription | nil
 ```
 
 This distinction matters: the **effective pricing plan** is what controls entitlements and limits inside your app. The **Pay/Stripe subscription state** is billing-facing. A manual assignment may intentionally override the subscription-backed plan while still leaving the underlying subscription present for billing operations.
+
+**Edge case:** `source` can be `:default` even when `subscription` is non-nil. This happens when a Pay subscription exists but its `processor_plan` (Stripe price ID) doesn't map to any plan in your registry. The subscription is preserved for billing context, but the effective plan falls back to your configured default.
 
 `resolution.to_h` is handy for inspection and tests, but it preserves the raw `plan`, `assignment`, and `subscription` objects. If you need a JSON-safe payload, build one explicitly from the scalar fields you care about.
 
