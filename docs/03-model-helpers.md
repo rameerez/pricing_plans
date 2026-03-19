@@ -301,6 +301,8 @@ user.assign_pricing_plan!(:pro)              # manual assignment override
 user.remove_pricing_plan!                    # remove manual override (fallback to default)
 ```
 
+If you need both the plan and its provenance, prefer calling `current_pricing_plan_resolution` once and reading both values from that object.
+
 If you need the full provenance, use the resolution object:
 
 ```ruby

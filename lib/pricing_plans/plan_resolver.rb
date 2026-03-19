@@ -94,7 +94,6 @@ module PricingPlans
 
         pay_available = pay_available?
         log_debug "[PricingPlans::PlanResolver] PaySupport.pay_available? = #{pay_available}"
-        log_debug "[PricingPlans::PlanResolver] defined?(Pay) = #{defined?(Pay)}"
 
         return nil unless pay_available
 

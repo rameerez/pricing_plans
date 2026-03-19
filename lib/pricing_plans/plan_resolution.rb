@@ -10,6 +10,8 @@ module PricingPlans
       unless SOURCES.include?(source)
         raise ArgumentError, "Invalid source: #{source.inspect}. Must be one of: #{SOURCES.inspect}"
       end
+
+      freeze
     end
 
     def assignment?
@@ -34,14 +36,10 @@ module PricingPlans
 
     # Extends Struct#to_h with derived fields commonly useful in serialization.
     def to_h
-      {
-        plan: plan,
+      super.merge(
         plan_key: plan_key,
-        source: source,
-        assignment: assignment,
-        assignment_source: assignment_source,
-        subscription: subscription
-      }
+        assignment_source: assignment_source
+      )
     end
   end
 end
