@@ -295,9 +295,25 @@ You can also use the top-level equivalents if you prefer: `PricingPlans.severity
 You can also check and override the current pricing plan for any user, which comes handy as an admin:
 ```ruby
 user.current_pricing_plan                    # => PricingPlans::Plan
+user.current_pricing_plan_source             # => :assignment, :subscription, :default
+user.current_pricing_plan_resolution         # => PricingPlans::PlanResolution
 user.assign_pricing_plan!(:pro)              # manual assignment override
 user.remove_pricing_plan!                    # remove manual override (fallback to default)
 ```
+
+If you need the full provenance, use the resolution object:
+
+```ruby
+resolution = user.current_pricing_plan_resolution
+
+resolution.plan.key                          # => :enterprise
+resolution.source                            # => :assignment
+resolution.assignment                        # => PricingPlans::Assignment | nil
+resolution.assignment_source                 # => "admin" | "manual" | nil
+resolution.subscription                      # => Pay subscription | nil
+```
+
+This distinction matters: the **effective pricing plan** is what controls entitlements and limits inside your app. The **Pay/Stripe subscription state** is billing-facing. A manual assignment may intentionally override the subscription-backed plan while still leaving the underlying subscription present for billing operations.
 
 ### Misc
 
@@ -311,7 +327,8 @@ And finally, you get very thin convenient wrappers if you're using the `pay` gem
 ```ruby
 # Pay (Stripe) convenience (returns false/nil when Pay is absent)
 # Note: this is billing-facing state, distinct from our in-app
-# enforcement grace which is tracked per-limit.
+# enforcement grace which is tracked per-limit, and distinct from
+# the effective plan resolved by current_pricing_plan.
 user.pay_subscription_active?                # => true/false
 user.pay_on_trial?                           # => true/false
 user.pay_on_grace_period?                    # => true/false

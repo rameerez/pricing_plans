@@ -3,6 +3,80 @@
 require "test_helper"
 
 class PlanResolverTest < ActiveSupport::TestCase
+  def test_resolution_for_manual_assignment_includes_provenance
+    org = create_organization
+
+    assignment = PricingPlans::Assignment.assign_plan_to(org, :enterprise, source: "admin")
+
+    resolution = PricingPlans::PlanResolver.resolution_for(org)
+
+    assert_equal :enterprise, resolution.plan_key
+    assert_equal :assignment, resolution.source
+    assert_equal assignment, resolution.assignment
+    assert_nil resolution.subscription
+    assert resolution.assignment?
+    refute resolution.subscription?
+    refute resolution.default?
+    assert_equal "admin", resolution.assignment_source
+  end
+
+  def test_resolution_for_subscription_includes_subscription_object
+    org = create_organization(
+      pay_subscription: { active: true, processor_plan: "price_pro_123" }
+    )
+
+    resolution = PricingPlans::PlanResolver.resolution_for(org)
+
+    assert_equal :pro, resolution.plan_key
+    assert_equal :subscription, resolution.source
+    assert_nil resolution.assignment
+    assert_equal "price_pro_123", resolution.subscription.processor_plan
+    refute resolution.assignment?
+    assert resolution.subscription?
+    refute resolution.default?
+  end
+
+  def test_resolution_for_default_plan_keeps_default_source
+    org = create_organization
+
+    resolution = PricingPlans::PlanResolver.resolution_for(org)
+
+    assert_equal :free, resolution.plan_key
+    assert_equal :default, resolution.source
+    assert_nil resolution.assignment
+    assert_nil resolution.subscription
+    refute resolution.assignment?
+    refute resolution.subscription?
+    assert resolution.default?
+  end
+
+  def test_resolution_for_manual_assignment_keeps_underlying_subscription
+    org = create_organization(
+      pay_subscription: { active: true, processor_plan: "price_pro_123" }
+    )
+
+    PricingPlans::Assignment.assign_plan_to(org, :enterprise, source: "admin")
+
+    resolution = PricingPlans::PlanResolver.resolution_for(org)
+
+    assert_equal :enterprise, resolution.plan_key
+    assert_equal :assignment, resolution.source
+    assert_equal "admin", resolution.assignment_source
+    assert_equal "price_pro_123", resolution.subscription.processor_plan
+  end
+
+  def test_resolution_for_unknown_subscription_plan_falls_back_to_default_but_keeps_subscription
+    org = create_organization(
+      pay_subscription: { active: true, processor_plan: "price_unknown_999" }
+    )
+
+    resolution = PricingPlans::PlanResolver.resolution_for(org)
+
+    assert_equal :free, resolution.plan_key
+    assert_equal :default, resolution.source
+    assert_equal "price_unknown_999", resolution.subscription.processor_plan
+  end
+
   def test_effective_plan_with_active_subscription
     org = create_organization(
       pay_subscription: { active: true, processor_plan: "price_pro_123" }

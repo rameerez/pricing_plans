@@ -11,6 +11,10 @@ class PlanOwnerHelpersTest < ActiveSupport::TestCase
       config.plan :free do
         limits :projects, to: 1
       end
+      config.plan :pro do
+        stripe_price "price_pro_123"
+        allows :api_access
+      end
     end
     # Re-register counters after reset
     Project.send(:limited_by_pricing_plans, :projects, plan_owner: :organization) if Project.respond_to?(:limited_by_pricing_plans)
@@ -23,6 +27,8 @@ class PlanOwnerHelpersTest < ActiveSupport::TestCase
     assert_respond_to org, :plan_limit_remaining
     assert_respond_to org, :plan_limit_percent_used
     assert_respond_to org, :current_pricing_plan
+    assert_respond_to org, :current_pricing_plan_resolution
+    assert_respond_to org, :current_pricing_plan_source
     assert_respond_to org, :assign_pricing_plan!
     assert_respond_to org, :remove_pricing_plan!
     assert_respond_to org, :plan_allows?
@@ -37,6 +43,42 @@ class PlanOwnerHelpersTest < ActiveSupport::TestCase
 
     # Smoke check a real call path
     assert_equal :free, org.current_pricing_plan.key
+  end
+
+  def test_current_pricing_plan_resolution_for_default_plan
+    org = create_organization
+
+    resolution = org.current_pricing_plan_resolution
+
+    assert_equal :free, resolution.plan_key
+    assert_equal :default, org.current_pricing_plan_source
+    assert resolution.default?
+  end
+
+  def test_current_pricing_plan_resolution_for_manual_assignment
+    org = create_organization
+
+    org.assign_pricing_plan!(:pro, source: "admin")
+
+    resolution = org.current_pricing_plan_resolution
+
+    assert_equal :pro, resolution.plan_key
+    assert_equal :assignment, org.current_pricing_plan_source
+    assert_equal "admin", resolution.assignment_source
+    assert resolution.assignment?
+  end
+
+  def test_current_pricing_plan_resolution_for_subscription
+    org = create_organization(
+      pay_subscription: { active: true, processor_plan: "price_pro_123" }
+    )
+
+    resolution = org.current_pricing_plan_resolution
+
+    assert_equal :pro, resolution.plan_key
+    assert_equal :subscription, org.current_pricing_plan_source
+    assert_equal "price_pro_123", resolution.subscription.processor_plan
+    assert resolution.subscription?
   end
 
   def test_englishy_sugar_methods_defined_from_associations
@@ -66,12 +108,7 @@ class PlanOwnerHelpersTest < ActiveSupport::TestCase
     # Default plan does not allow :api_access
     refute org.plan_allows_api_access?
 
-    # Add a pro plan that allows the feature and assign it
-    PricingPlans.configure do |config|
-      config.plan :pro do
-        allows :api_access
-      end
-    end
+    # Assign the preconfigured pro plan, which allows :api_access
     PricingPlans::Assignment.assign_plan_to(org, :pro)
     assert org.plan_allows_api_access?
     assert_equal org.plan_allows?(:api_access), org.plan_allows_api_access?

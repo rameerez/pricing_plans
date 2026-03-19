@@ -1,3 +1,9 @@
+## [0.3.3] - 2026-03-19
+
+- **Add plan provenance helpers**: `current_pricing_plan_resolution`, `current_pricing_plan_source`, and `PlanResolver.resolution_for(plan_owner)` now expose whether the effective plan comes from a manual assignment, a Pay subscription, or the default plan
+- **Preserve underlying billing context**: resolution objects include the current subscription when present, even when a manual assignment overrides it for entitlements
+- **Clarify effective plan vs billing state**: docs now explicitly distinguish the effective pricing plan from Pay/Stripe subscription status
+
 ## [0.3.2] - 2026-02-25
 
 - **Fix stale grace warnings after plan upgrades**: Grace/blocked flags now auto-clear when usage drops below limit (self-healing state)

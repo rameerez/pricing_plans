@@ -8,43 +8,52 @@ module PricingPlans
       end
 
       def effective_plan_for(plan_owner)
-        log_debug "[PricingPlans::PlanResolver] effective_plan_for called for #{plan_owner.class.name}##{plan_owner.respond_to?(:id) ? plan_owner.id : 'N/A'}"
-
-        # 1. Check manual assignment FIRST (admin overrides take precedence)
-        log_debug "[PricingPlans::PlanResolver] Checking for manual assignment..."
-        if plan_owner.respond_to?(:id)
-          assignment = Assignment.find_by(
-            plan_owner_type: plan_owner.class.name,
-            plan_owner_id: plan_owner.id
-          )
-          if assignment
-            log_debug "[PricingPlans::PlanResolver] Found manual assignment: #{assignment.plan_key}"
-            return Registry.plan(assignment.plan_key)
-          else
-            log_debug "[PricingPlans::PlanResolver] No manual assignment found"
-          end
-        end
-
-        # 2. Check Pay subscription status
-        pay_available = PaySupport.pay_available?
-        log_debug "[PricingPlans::PlanResolver] PaySupport.pay_available? = #{pay_available}"
-        log_debug "[PricingPlans::PlanResolver] defined?(Pay) = #{defined?(Pay)}"
-
-        if pay_available
-          log_debug "[PricingPlans::PlanResolver] Calling resolve_plan_from_pay..."
-          plan_from_pay = resolve_plan_from_pay(plan_owner)
-          log_debug "[PricingPlans::PlanResolver] resolve_plan_from_pay returned: #{plan_from_pay ? plan_from_pay.key : 'nil'}"
-          return plan_from_pay if plan_from_pay
-        end
-
-        # 3. Fall back to default plan
-        default = Registry.default_plan
-        log_debug "[PricingPlans::PlanResolver] Returning default plan: #{default ? default.key : 'nil'}"
-        default
+        resolution_for(plan_owner).plan
       end
 
       def plan_key_for(plan_owner)
-        effective_plan_for(plan_owner)&.key
+        resolution_for(plan_owner).plan_key
+      end
+
+      def resolution_for(plan_owner)
+        log_debug "[PricingPlans::PlanResolver] resolution_for called for #{plan_owner.class.name}##{plan_owner.respond_to?(:id) ? plan_owner.id : 'N/A'}"
+
+        assignment = assignment_for(plan_owner)
+        subscription = current_subscription_for(plan_owner)
+
+        if assignment
+          log_debug "[PricingPlans::PlanResolver] Returning assignment-backed resolution: #{assignment.plan_key}"
+          return PlanResolution.new(
+            plan: Registry.plan(assignment.plan_key),
+            source: :assignment,
+            assignment: assignment,
+            subscription: subscription
+          )
+        end
+
+        if subscription
+          processor_plan = subscription.processor_plan
+          log_debug "[PricingPlans::PlanResolver] resolution_for subscription processor_plan = #{processor_plan.inspect}"
+
+          if processor_plan && (plan = plan_from_processor_plan(processor_plan))
+            log_debug "[PricingPlans::PlanResolver] Returning subscription-backed resolution: #{plan.key}"
+            return PlanResolution.new(
+              plan: plan,
+              source: :subscription,
+              assignment: nil,
+              subscription: subscription
+            )
+          end
+        end
+
+        default = Registry.default_plan
+        log_debug "[PricingPlans::PlanResolver] Returning default-backed resolution: #{default ? default.key : 'nil'}"
+        PlanResolution.new(
+          plan: default,
+          source: :default,
+          assignment: nil,
+          subscription: subscription
+        )
       end
 
       def assign_plan_manually!(plan_owner, plan_key, source: "manual")
@@ -62,46 +71,36 @@ module PricingPlans
         PaySupport.pay_available?
       end
 
-      def resolve_plan_from_pay(plan_owner)
-        log_debug "[PricingPlans::PlanResolver] resolve_plan_from_pay: checking if plan_owner has payment_processor or Pay methods..."
+      def assignment_for(plan_owner)
+        log_debug "[PricingPlans::PlanResolver] Checking for manual assignment..."
+        return nil unless plan_owner.respond_to?(:id)
 
-        # Check if plan_owner has payment_processor (preferred) or Pay methods directly (fallback)
-        has_payment_processor = plan_owner.respond_to?(:payment_processor)
-        has_pay_methods = plan_owner.respond_to?(:subscribed?) ||
-                          plan_owner.respond_to?(:on_trial?) ||
-                          plan_owner.respond_to?(:on_grace_period?) ||
-                          plan_owner.respond_to?(:subscriptions)
+        assignment = Assignment.find_by(
+          plan_owner_type: plan_owner.class.name,
+          plan_owner_id: plan_owner.id
+        )
 
-        log_debug "[PricingPlans::PlanResolver] has_payment_processor? #{has_payment_processor}"
-        log_debug "[PricingPlans::PlanResolver] has_pay_methods? #{has_pay_methods}"
-
-        # PaySupport will handle both payment_processor and direct Pay methods
-        return nil unless has_payment_processor || has_pay_methods
-
-        # Check if plan_owner has active subscription, trial, or grace period
-        log_debug "[PricingPlans::PlanResolver] Calling PaySupport.subscription_active_for?..."
-        is_active = PaySupport.subscription_active_for?(plan_owner)
-        log_debug "[PricingPlans::PlanResolver] subscription_active_for? returned: #{is_active}"
-
-        if is_active
-          log_debug "[PricingPlans::PlanResolver] Calling PaySupport.current_subscription_for..."
-          subscription = PaySupport.current_subscription_for(plan_owner)
-          log_debug "[PricingPlans::PlanResolver] current_subscription_for returned: #{subscription ? subscription.class.name : 'nil'}"
-          return nil unless subscription
-
-          # Map processor plan to our plan
-          processor_plan = subscription.processor_plan
-          log_debug "[PricingPlans::PlanResolver] subscription.processor_plan = #{processor_plan.inspect}"
-
-          if processor_plan
-            matched_plan = plan_from_processor_plan(processor_plan)
-            log_debug "[PricingPlans::PlanResolver] plan_from_processor_plan returned: #{matched_plan ? matched_plan.key : 'nil'}"
-            return matched_plan
-          end
+        if assignment
+          log_debug "[PricingPlans::PlanResolver] Found manual assignment: #{assignment.plan_key}"
+        else
+          log_debug "[PricingPlans::PlanResolver] No manual assignment found"
         end
 
-        log_debug "[PricingPlans::PlanResolver] resolve_plan_from_pay returning nil"
-        nil
+        assignment
+      end
+
+      def current_subscription_for(plan_owner)
+        return nil unless plan_owner
+
+        pay_available = pay_available?
+        log_debug "[PricingPlans::PlanResolver] PaySupport.pay_available? = #{pay_available}"
+        log_debug "[PricingPlans::PlanResolver] defined?(Pay) = #{defined?(Pay)}"
+
+        return nil unless pay_available
+
+        subscription = PaySupport.current_subscription_for(plan_owner)
+        log_debug "[PricingPlans::PlanResolver] current_subscription_for returned: #{subscription ? subscription.class.name : 'nil'}"
+        subscription
       end
 
       def plan_from_processor_plan(processor_plan)

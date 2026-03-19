@@ -67,6 +67,20 @@ class PlanResolverPaymentProcessorTest < ActiveSupport::TestCase
     assert_equal :pro, plan.key, "Should detect subscription regardless of its name"
   end
 
+  def test_resolution_for_exposes_payment_processor_subscription
+    user = create_user_with_payment_processor(
+      subscription_name: "pro",
+      processor_plan: "price_pro_monthly",
+      active: true
+    )
+
+    resolution = PricingPlans::PlanResolver.resolution_for(user)
+
+    assert_equal :pro, resolution.plan_key
+    assert_equal :subscription, resolution.source
+    assert_equal "price_pro_monthly", resolution.subscription.processor_plan
+  end
+
   def test_finds_active_subscription_among_multiple
     # Users often have multiple subscriptions (old canceled ones + current active)
     # The fix ensures we iterate through ALL subscriptions to find the active one
