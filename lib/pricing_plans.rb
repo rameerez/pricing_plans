@@ -21,6 +21,7 @@ module PricingPlans
   autoload :Configuration, "pricing_plans/configuration"
   autoload :Registry, "pricing_plans/registry"
   autoload :Plan, "pricing_plans/plan"
+  autoload :PlanResolution, "pricing_plans/plan_resolution"
   autoload :DSL, "pricing_plans/dsl"
   autoload :IntegerRefinements, "pricing_plans/integer_refinements"
   autoload :PlanResolver, "pricing_plans/plan_resolver"

@@ -198,6 +198,14 @@ module PricingPlans
       PlanResolver.effective_plan_for(self)
     end
 
+    def current_pricing_plan_resolution
+      PlanResolver.resolution_for(self)
+    end
+
+    def current_pricing_plan_source
+      current_pricing_plan_resolution.source
+    end
+
     def on_free_plan?
       plan = current_pricing_plan || PricingPlans::Registry.default_plan
       plan&.free? || false

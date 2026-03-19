@@ -15,7 +15,8 @@ module PricingPlans
     def subscription_active_for?(plan_owner)
       return false unless plan_owner
 
-      log_debug "[PricingPlans::PaySupport] subscription_active_for? called for #{plan_owner.class.name}##{plan_owner.id}"
+      owner_id = plan_owner.respond_to?(:id) ? plan_owner.id : "N/A"
+      log_debug "[PricingPlans::PaySupport] subscription_active_for? called for #{plan_owner.class.name}##{owner_id}"
 
       # Prefer Pay's official API on the payment_processor
       if plan_owner.respond_to?(:payment_processor) && (pp = plan_owner.payment_processor)
@@ -66,7 +67,8 @@ module PricingPlans
     def current_subscription_for(plan_owner)
       return nil unless pay_available?
 
-      log_debug "[PricingPlans::PaySupport] current_subscription_for called for #{plan_owner.class.name}##{plan_owner.id}"
+      owner_id = plan_owner.respond_to?(:id) ? plan_owner.id : "N/A"
+      log_debug "[PricingPlans::PaySupport] current_subscription_for called for #{plan_owner.class.name}##{owner_id}"
 
       # Prefer Pay's payment_processor API
       if plan_owner.respond_to?(:payment_processor) && (pp = plan_owner.payment_processor)
