@@ -301,9 +301,11 @@ module PricingPlans
 
     # Human label to display price in UIs. Prefers explicit string, then numeric, else contact.
     def price_label
-      # Auto-fetch from processor (Stripe) if enabled and plan has stripe_price
+      # Auto-fetch from processor (Stripe) if enabled and plan has stripe_price.
+      # A locally declared numeric price wins: it is the source of truth for
+      # display, and honoring it keeps rendering off the network entirely.
       cfg = PricingPlans.configuration
-      if cfg&.auto_price_labels_from_processor && stripe_price
+      if cfg&.auto_price_labels_from_processor && stripe_price && price.nil?
         begin
           if defined?(::Stripe)
             price_id = stripe_price.is_a?(Hash) ? (stripe_price[:id] || stripe_price[:month] || stripe_price[:year]) : stripe_price
@@ -443,7 +445,9 @@ module PricingPlans
     end
 
     def currency_symbol
-      if stripe_price
+      # A locally declared numeric price is rendered in the configured currency
+      # (see #price_components), so don't ask Stripe when we have one.
+      if stripe_price && price.nil?
         # Try to derive from Stripe API/cache; fall back to default
         begin
           pr = fetch_stripe_price_record(preferred_price_id(:month) || preferred_price_id(:year))
@@ -548,8 +552,12 @@ module PricingPlans
     end
 
     def validate_pricing!
-      pricing_fields = [@price, @price_string, @stripe_price].compact
-      if pricing_fields.size > 1
+      # `price` and `stripe_price` are not alternatives: the number is the local
+      # source of truth for display and plan comparison (resolved with no network
+      # call), while the Stripe id stays the billing identity used by checkout and
+      # by subscription -> plan matching. Only `price_string` remains exclusive,
+      # since it is a label that cannot be compared numerically.
+      if @price_string && (@price || @stripe_price)
         raise ConfigurationError, "Plan #{@key} can only have one of: price, price_string, or stripe_price"
       end
     end

@@ -15,7 +15,7 @@ Each `PricingPlans::Plan` responds to:
   - `plan.name`
   - `plan.description`
   - `plan.bullets` → Array of strings
-  - `plan.price_label` → The `price` or `price_string` you've defined for the plan. If `stripe_price` is set and the Stripe gem is available, it auto-fetches the live price from Stripe. You can override or disable this.
+  - `plan.price_label` → The `price` or `price_string` you've defined for the plan. If `stripe_price` is set (and no numeric `price` is declared) and the Stripe gem is available, it auto-fetches the live price from Stripe. You can override or disable this.
   - `plan.cta_text`
   - `plan.cta_url`
   - `plan.metadata` → Optional hash for UI/presentation attributes (icons, colors, badges)

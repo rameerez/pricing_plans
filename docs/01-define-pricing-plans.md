@@ -493,6 +493,26 @@ end
 
 `stripe_price` accepts String or Hash (e.g., `{ month:, year:, id: }`) and the `pricing_plans` PlanResolver maps against Pay's `subscription.processor_plan`.
 
+### Declaring both a `price` and a `stripe_price`
+
+You can declare both, and it's recommended for paid plans:
+
+```ruby
+plan :pro do
+  price 29
+  stripe_price month: "price_123abc", year: "price_456def"
+end
+```
+
+They answer different questions, so they're not alternatives:
+
+- `stripe_price` is the **billing identity**: what checkout charges, and what a Pay subscription is matched against.
+- `price` is the **local source of truth for display and plan comparison**.
+
+When both are set, the number wins for `price_label`, `price_components`, `currency_symbol` and upgrade/downgrade comparisons, so pricing pages and upgrade CTAs render without a single Stripe API call. Without a numeric price, all of that depends on a live `Stripe::Price.retrieve`; if that fails (Stripe unreachable, missing API key, cold cache), every paid plan compares as $0 and upgrade prompts silently vanish.
+
+`price_string` remains exclusive with both: it's a label ("Contact us"), not a number, so it can't be compared.
+
 
 ## Example: define an enterprise plan
 

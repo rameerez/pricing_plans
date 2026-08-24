@@ -114,6 +114,39 @@ class PriceComponentsTest < ActiveSupport::TestCase
     end
   end
 
+  def configure_with_price_and_stripe_ids
+    PricingPlans.configure do |config|
+      config.default_plan = :starter
+      config.plan :starter do
+        price 9
+        stripe_price month: "price_starter_month", year: "price_starter_year"
+      end
+      config.plan :pro do
+        price 29
+        stripe_price month: "price_month_123", year: "price_year_456"
+      end
+    end
+  end
+
+  # Fails loudly on any Stripe access so tests can assert "no network at all".
+  def with_forbidden_stripe_stub
+    calls = []
+    stripe_mod = Module.new
+    price_class = Class.new do
+      define_singleton_method(:retrieve) do |id|
+        calls << id
+        raise StandardError, "Stripe must not be called"
+      end
+    end
+    stripe_mod.const_set(:Price, price_class)
+    Object.const_set(:Stripe, stripe_mod)
+    yield
+    assert_equal [], calls, "expected no Stripe::Price.retrieve calls"
+  ensure
+    Object.send(:remove_const, :Stripe) if defined?(Stripe)
+  end
+
+  # Simulates Stripe being unreachable / unconfigured for a plan that has ONLY a Stripe price id.
   def with_raising_stripe_stub
     stripe_mod = Module.new
     price_class = Class.new do
@@ -133,6 +166,33 @@ class PriceComponentsTest < ActiveSupport::TestCase
     plan = PricingPlans::Registry.plan(:pro)
     with_raising_stripe_stub do
       assert_equal PricingPlans.configuration.default_currency_symbol, plan.currency_symbol
+    end
+  end
+
+  def test_price_components_prefer_numeric_price_over_stripe_id
+    configure_with_price_and_stripe_ids
+    plan = PricingPlans::Registry.plan(:pro)
+    with_forbidden_stripe_stub do
+      pc = plan.monthly_price_components
+      assert_equal true, pc.present?
+      assert_equal 2900, pc.amount_cents
+      assert_equal "$", pc.currency
+      assert_equal 2900, plan.monthly_price_cents
+      assert_equal "$", plan.currency_symbol
+      assert_equal "$29/mo", plan.price_label
+      # Stripe id remains the billing identity
+      assert_equal "price_month_123", plan.monthly_price_id
+    end
+  end
+
+  def test_plan_comparison_needs_no_stripe_call_when_numeric_price_declared
+    configure_with_price_and_stripe_ids
+    starter = PricingPlans::Registry.plan(:starter)
+    pro = PricingPlans::Registry.plan(:pro)
+    with_forbidden_stripe_stub do
+      assert pro.upgrade_from?(starter)
+      refute starter.upgrade_from?(pro)
+      assert starter.downgrade_from?(pro)
     end
   end
 
@@ -164,5 +224,3 @@ class PriceComponentsTest < ActiveSupport::TestCase
     PricingPlans.configuration.price_cache = nil
   end
 end
-
-
