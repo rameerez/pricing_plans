@@ -42,6 +42,7 @@ plan.currency_symbol                       # "$" or derived from Stripe
 Notes:
 
 - If `stripe_price` is configured, we derive cents, currency, and interval from the Stripe Price (and cache it).
+- If a numeric `price` is declared alongside `stripe_price`, the local number wins and no Stripe call is made (the yearly interval is then derived as 12× the monthly number; use `price_components_resolver` if your yearly price is discounted).
 - If `price 0` (free), we return components with `present? == true`, amount 0 and the configured default currency symbol.
 - If only `price_string` is set (e.g., "Contact us"), components return `present? == false`, `label == price_string`.
 
@@ -138,6 +139,8 @@ end
 ## Stripe price labels in `plan.price_label`
 
 By default, if a plan has `stripe_price` configured and the `stripe` gem is present, we auto-fetch the Stripe Price and render a friendly label (e.g., `$29/mo`). This mirrors Pay’s use of Stripe Prices.
+
+Declaring a numeric `price` next to `stripe_price` opts that plan out: the local number is rendered and no Stripe call is made.
 
 
 To disable auto-fetching globally:

@@ -265,6 +265,27 @@ class PlanTest < ActiveSupport::TestCase
     assert_match(/can only have one of: price, price_string, or stripe_price/, error.message)
   end
 
+  def test_pricing_validation_rejects_price_string_with_stripe_price
+    plan = PricingPlans::Plan.new(:enterprise)
+
+    assert_raises(PricingPlans::ConfigurationError) do
+      plan.price_string "Contact us"
+      plan.stripe_price "price_123"
+      plan.validate!
+    end
+  end
+
+  def test_pricing_validation_allows_price_with_stripe_price
+    plan = PricingPlans::Plan.new(:pro)
+    plan.price 29
+    plan.stripe_price month: "price_month_123"
+
+    plan.validate!
+
+    assert_equal 29, plan.price
+    assert_equal "price_month_123", plan.monthly_price_id
+  end
+
   def test_integer_max_refinement
     plan = PricingPlans::Plan.new(:pro)
 
