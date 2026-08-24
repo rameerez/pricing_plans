@@ -1,3 +1,10 @@
+## [0.4.1] - 2026-08-24
+
+- **Never 500 a pricing page when Stripe is unreachable**: `Plan#currency_symbol` was the one Stripe lookup without a rescue — a Stripe outage, rate limit, or missing API key (any test/CI environment) raised straight through the pricing page. It now degrades to `default_currency_symbol` like every other presentation method (#24)
+- **`price` and `stripe_price` can be declared together**: the numeric price is the local source of truth for display and plan comparison (no network in the request path); the Stripe id stays the billing identity for checkout and subscription matching. Previously `validate_pricing!` forced a choice, which meant Stripe-priced plans had no local number — and when the live lookup failed, `comparable_price_cents` silently became 0 for every paid plan, so `upgrade_from?` and `next_upgrade_plan` stopped offering upgrades with no error and no log line (#25)
+- Only `price_string` remains exclusive, since a label cannot be compared numerically
+- Known edge: for a both-declared plan the yearly figure derives as 12x monthly; a discounted yearly Stripe price needs `price_components_resolver`
+
 ## [0.4.0] - 2026-03-19
 
 - **Add plan provenance helpers**: `current_pricing_plan_resolution`, `current_pricing_plan_source`, and `PlanResolver.resolution_for(plan_owner)` now expose whether the effective plan comes from a manual assignment, a Pay subscription, or the default plan
