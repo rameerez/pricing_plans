@@ -445,9 +445,13 @@ module PricingPlans
     def currency_symbol
       if stripe_price
         # Try to derive from Stripe API/cache; fall back to default
-        pr = fetch_stripe_price_record(preferred_price_id(:month) || preferred_price_id(:year))
-        if pr
-          return currency_symbol_from(pr)
+        begin
+          pr = fetch_stripe_price_record(preferred_price_id(:month) || preferred_price_id(:year))
+          if pr
+            return currency_symbol_from(pr)
+          end
+        rescue StandardError
+          # Stripe unreachable, rate-limited or unconfigured: never take down a pricing page
         end
       end
       PricingPlans.configuration.default_currency_symbol

@@ -114,6 +114,28 @@ class PriceComponentsTest < ActiveSupport::TestCase
     end
   end
 
+  def with_raising_stripe_stub
+    stripe_mod = Module.new
+    price_class = Class.new do
+      def self.retrieve(_id)
+        raise StandardError, "No API key provided"
+      end
+    end
+    stripe_mod.const_set(:Price, price_class)
+    Object.const_set(:Stripe, stripe_mod)
+    yield
+  ensure
+    Object.send(:remove_const, :Stripe) if defined?(Stripe)
+  end
+
+  def test_currency_symbol_falls_back_when_stripe_lookup_raises
+    configure_with_stripe_ids
+    plan = PricingPlans::Registry.plan(:pro)
+    with_raising_stripe_stub do
+      assert_equal PricingPlans.configuration.default_currency_symbol, plan.currency_symbol
+    end
+  end
+
   class MemoryCache
     attr_reader :writes
     def initialize
