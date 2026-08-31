@@ -70,7 +70,7 @@ class LimitCheckerMoreTest < ActiveSupport::TestCase
   def test_persistent_count_scope_via_plan
     org = @org
     # Create two projects; we'll scope count to 1 via a custom relation
-    PricingPlans::Assignment.assign_plan_to(org, :enterprise)
+    PricingPlans::Assignment.create_or_update_pricing_plan_override_for!(org, :enterprise, source: "test")
     org.projects.create!(name: "A")
     org.projects.create!(name: "B")
 
@@ -96,9 +96,9 @@ class LimitCheckerMoreTest < ActiveSupport::TestCase
     Project.class_eval do
       scope :with_name_a, -> { where(name: 'A') }
     end
-    PricingPlans::Assignment.assign_plan_to(org, :enterprise)
-    PricingPlans::Assignment.assign_plan_to(org, :enterprise)
-    PricingPlans::Assignment.assign_plan_to(org, :enterprise)
+    PricingPlans::Assignment.create_or_update_pricing_plan_override_for!(org, :enterprise, source: "test")
+    PricingPlans::Assignment.create_or_update_pricing_plan_override_for!(org, :enterprise, source: "test")
+    PricingPlans::Assignment.create_or_update_pricing_plan_override_for!(org, :enterprise, source: "test")
     org.projects.create!(name: 'A')
     org.projects.create!(name: 'B')
 
@@ -114,7 +114,7 @@ class LimitCheckerMoreTest < ActiveSupport::TestCase
 
   def test_persistent_count_scope_hash_where
     org = @org
-    PricingPlans::Assignment.assign_plan_to(org, :enterprise)
+    PricingPlans::Assignment.create_or_update_pricing_plan_override_for!(org, :enterprise, source: "test")
     org.projects.create!(name: 'A')
     org.projects.create!(name: 'B')
 
@@ -133,7 +133,7 @@ class LimitCheckerMoreTest < ActiveSupport::TestCase
     Project.class_eval do
       scope :named_a, -> { where(name: 'A') }
     end
-    PricingPlans::Assignment.assign_plan_to(org, :enterprise)
+    PricingPlans::Assignment.create_or_update_pricing_plan_override_for!(org, :enterprise, source: "test")
     org.projects.create!(name: 'A')
     org.projects.create!(name: 'B')
 
@@ -160,7 +160,7 @@ class LimitCheckerMoreTest < ActiveSupport::TestCase
       self
     end
 
-    PricingPlans::Assignment.assign_plan_to(org, :enterprise)
+    PricingPlans::Assignment.create_or_update_pricing_plan_override_for!(org, :enterprise, source: "test")
     org.projects.create!(name: 'A')
     org.projects.create!(name: 'B')
 
@@ -185,7 +185,7 @@ class LimitCheckerMoreTest < ActiveSupport::TestCase
     end
     Project.send(:limited_by_pricing_plans, :projects, plan_owner: :organization, count_scope: :named_a)
 
-    PricingPlans::Assignment.assign_plan_to(org, :enterprise)
+    PricingPlans::Assignment.create_or_update_pricing_plan_override_for!(org, :enterprise, source: "test")
     org.projects.create!(name: 'A')
     org.projects.create!(name: 'B')
 
@@ -202,8 +202,8 @@ class LimitCheckerMoreTest < ActiveSupport::TestCase
   def test_persistent_count_scope_proc_with_plan_owner_param
     org1 = create_organization
     org2 = create_organization
-    PricingPlans::Assignment.assign_plan_to(org1, :enterprise)
-    PricingPlans::Assignment.assign_plan_to(org2, :enterprise)
+    PricingPlans::Assignment.create_or_update_pricing_plan_override_for!(org1, :enterprise, source: "test")
+    PricingPlans::Assignment.create_or_update_pricing_plan_override_for!(org2, :enterprise, source: "test")
 
     # Records for both orgs
     org1.projects.create!(name: 'A')

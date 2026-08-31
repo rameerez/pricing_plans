@@ -18,6 +18,10 @@ module PricingPlans
       source == :assignment
     end
 
+    def pricing_plan_overridden?
+      assignment?
+    end
+
     def subscription?
       source == :subscription
     end
@@ -34,12 +38,23 @@ module PricingPlans
       assignment&.source
     end
 
+    def pricing_plan_override
+      assignment
+    end
+
+    def pricing_plan_override_source
+      assignment_source
+    end
+
     # Extends Struct#to_h with derived fields.
     # Note: this preserves the raw plan / assignment / subscription objects.
     def to_h
       super.merge(
         plan_key: plan_key,
-        assignment_source: assignment_source
+        assignment_source: assignment_source,
+        pricing_plan_overridden: pricing_plan_overridden?,
+        pricing_plan_override: pricing_plan_override,
+        pricing_plan_override_source: pricing_plan_override_source
       )
     end
   end

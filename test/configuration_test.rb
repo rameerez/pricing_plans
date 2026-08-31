@@ -25,6 +25,43 @@ class ConfigurationTest < ActiveSupport::TestCase
     config = PricingPlans.configuration
     assert_equal :free, config.default_plan
     assert_equal :pro, config.highlighted_plan
+    assert_equal :warn, config.legacy_default_plan_assignment_behavior
+  end
+
+  def test_legacy_default_plan_assignment_behavior_accepts_every_supported_value
+    [:allow, :warn, :raise].each do |behavior|
+      PricingPlans.reset_configuration!
+
+      assert_nothing_raised do
+        PricingPlans.configure do |config|
+          config.default_plan = :free
+          config.legacy_default_plan_assignment_behavior = behavior
+          config.plan(:free) { price 0 }
+        end
+      end
+
+      assert_equal behavior, PricingPlans.configuration.legacy_default_plan_assignment_behavior
+    end
+  end
+
+  def test_legacy_default_plan_assignment_behavior_description_comes_from_the_supported_values
+    assert_equal(
+      ":allow, :warn, or :raise",
+      PricingPlans::Configuration.legacy_default_plan_assignment_behaviors_description
+    )
+  end
+
+  def test_legacy_default_plan_assignment_behavior_rejects_unknown_values
+    error = assert_raises(PricingPlans::ConfigurationError) do
+      PricingPlans.configure do |config|
+        config.default_plan = :free
+        config.legacy_default_plan_assignment_behavior = :silently_guess_the_callers_intent
+        config.plan(:free) { price 0 }
+      end
+    end
+
+    assert_includes error.message, "legacy_default_plan_assignment_behavior"
+    assert_includes error.message, ":allow, :warn, or :raise"
   end
 
   # plan_owner_class is now optional; we infer via common conventions in controllers/models
@@ -267,10 +304,10 @@ class ConfigurationTest < ActiveSupport::TestCase
     # default free
     assert_equal :free, org.current_pricing_plan.key
     # assign pro
-    org.assign_pricing_plan!(:pro)
+    org.override_pricing_plan!(:pro, source: "test")
     assert_equal :pro, org.current_pricing_plan.key
     # remove assignment -> back to default
-    org.remove_pricing_plan!
+    org.clear_pricing_plan_override!
     assert_equal :free, org.current_pricing_plan.key
   end
 

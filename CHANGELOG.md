@@ -1,3 +1,14 @@
+## [0.5.0] - 2026-08-31
+
+- Add intention-revealing pricing plan override APIs: `override_pricing_plan!`, `clear_pricing_plan_override!`, `pricing_plan_overridden?`, `pricing_plan_override`, and `pricing_plan_override_source`
+- Require explicit `source:` provenance when creating overrides through the new API
+- Remove the implicit `"manual"` source default from newly generated assignment tables; legacy APIs still supply it explicitly for compatibility
+- Add matching explicit `PlanResolver` and `Assignment` entry points, plus symmetric `override_pricing_plan_for!` and `clear_pricing_plan_override_for!` helpers on `Limitable` models, for lower-level use cases
+- Add override-oriented provenance readers to `PlanResolution` while preserving its assignment-oriented compatibility readers
+- Deprecate the ambiguous `assign_pricing_plan!`, `remove_pricing_plan!`, `assign_plan_manually!`, `remove_manual_assignment!`, `assign_plan_to`, and `remove_assignment_for` APIs through a gem-specific Active Support deprecator
+- Guard legacy assignments of the configured default plan with configurable `:allow`, `:warn`, or `:raise` behavior; upgraded applications default to `:warn`, while newly generated initializers choose the safer `:raise`
+- Clarify that ordinary free/default accounts should remain unassigned and that intentional default-tier pinning remains supported through the explicit override API
+
 ## [0.4.1] - 2026-08-24
 
 - **Never 500 a pricing page when Stripe is unreachable**: `Plan#currency_symbol` was the one Stripe lookup without a rescue — a Stripe outage, rate limit, or missing API key (any test/CI environment) raised straight through the pricing page. It now degrades to `default_currency_symbol` like every other presentation method (#24)

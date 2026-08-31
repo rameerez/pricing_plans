@@ -33,8 +33,21 @@ module PricingPlans
         PlanResolver.effective_plan_for(self)
       end
 
+      define_singleton_method :override_pricing_plan_for! do |plan_owner, plan_key, source:|
+        PlanResolver.override_pricing_plan_for!(plan_owner, plan_key, source: source)
+      end
+
+      define_singleton_method :clear_pricing_plan_override_for! do |plan_owner|
+        PlanResolver.clear_pricing_plan_override_for!(plan_owner)
+      end
+
       define_singleton_method :assign_pricing_plan! do |plan_owner, plan_key, source: "manual"|
-        Assignment.assign_plan_to(plan_owner, plan_key, source: source)
+        LegacyPlanAssignmentApi.create_or_update_override!(
+          plan_owner,
+          plan_key,
+          source: source,
+          called_method_name: "#{name}.assign_pricing_plan!"
+        )
       end
     end
 

@@ -257,7 +257,7 @@ class HiddenPlansTest < ActiveSupport::TestCase
     org = Organization.create!(name: "Legacy Org")
 
     # Manually assign org to hidden grandfathered plan
-    PricingPlans::PlanResolver.assign_plan_manually!(org, :legacy_2023, source: "admin_override")
+    PricingPlans::PlanResolver.override_pricing_plan_for!(org, :legacy_2023, source: "admin_override")
 
     current_plan = PricingPlans::PlanResolver.effective_plan_for(org)
     assert_equal :legacy_2023, current_plan.key
@@ -324,7 +324,7 @@ class HiddenPlansTest < ActiveSupport::TestCase
     org = Organization.create!(name: "Test Org")
 
     # Manually assign to :pro and create some projects
-    PricingPlans::PlanResolver.assign_plan_manually!(org, :pro)
+    PricingPlans::PlanResolver.override_pricing_plan_for!(org, :pro, source: "test")
     3.times { |i| org.projects.create!(name: "Project #{i}") }
 
     # Now suggest next plan based on current usage
@@ -356,9 +356,9 @@ class HiddenPlansTest < ActiveSupport::TestCase
     org = Organization.create!(name: "Test Org")
 
     # Start on starter, create many projects, then manually move to hidden plan
-    PricingPlans::PlanResolver.assign_plan_manually!(org, :starter)
+    PricingPlans::PlanResolver.override_pricing_plan_for!(org, :starter, source: "test")
     100.times { |i| org.projects.create!(name: "Project #{i}") }
-    PricingPlans::PlanResolver.assign_plan_manually!(org, :unsubscribed)
+    PricingPlans::PlanResolver.override_pricing_plan_for!(org, :unsubscribed, source: "test")
 
     suggested = PricingPlans.suggest_next_plan_for(org, keys: [:projects])
 

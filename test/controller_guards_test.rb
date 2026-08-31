@@ -200,7 +200,7 @@ class ControllerGuardsTest < ActiveSupport::TestCase
 
   def test_require_feature_allows_when_feature_enabled
     # Assign to pro plan which allows api_access
-    PricingPlans::Assignment.assign_plan_to(@org, :pro)
+    PricingPlans::Assignment.create_or_update_pricing_plan_override_for!(@org, :pro, source: "test")
 
     assert_nothing_raised do
       require_feature!(:api_access, plan_owner: @org)
@@ -236,7 +236,7 @@ class ControllerGuardsTest < ActiveSupport::TestCase
   end
 
   def test_require_feature_returns_true_when_allowed
-    PricingPlans::Assignment.assign_plan_to(@org, :pro)
+    PricingPlans::Assignment.create_or_update_pricing_plan_override_for!(@org, :pro, source: "test")
 
     result = require_feature!(:api_access, plan_owner: @org)
     assert_equal true, result
@@ -608,7 +608,7 @@ class ControllerGuardsTest < ActiveSupport::TestCase
     end
 
     # Assign pro which allows api_access; should pass
-    PricingPlans::Assignment.assign_plan_to(org, :pro)
+    PricingPlans::Assignment.create_or_update_pricing_plan_override_for!(org, :pro, source: "test")
     assert_equal true, controller.enforce_api_access!(on: :current_organization)
   end
 
@@ -638,7 +638,7 @@ class ControllerGuardsTest < ActiveSupport::TestCase
         controller.enforce_api_access!
       end
 
-      PricingPlans::Assignment.assign_plan_to(org, :pro)
+      PricingPlans::Assignment.create_or_update_pricing_plan_override_for!(org, :pro, source: "test")
       assert_equal true, controller.enforce_api_access!
     ensure
       PricingPlans.instance_variable_set(:@configuration, original_cfg)
@@ -671,7 +671,7 @@ class ControllerGuardsTest < ActiveSupport::TestCase
         controller.enforce_api_access!
       end
 
-      PricingPlans::Assignment.assign_plan_to(org, :pro)
+      PricingPlans::Assignment.create_or_update_pricing_plan_override_for!(org, :pro, source: "test")
       assert_equal true, controller.enforce_api_access!
     ensure
       PricingPlans.instance_variable_set(:@configuration, original_cfg)

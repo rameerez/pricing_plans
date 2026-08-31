@@ -4,6 +4,10 @@ module PricingPlans
   class Engine < ::Rails::Engine
     isolate_namespace PricingPlans
 
+    initializer "pricing_plans.deprecator" do |app|
+      app.deprecators[:pricing_plans] = PricingPlans.deprecator if app.respond_to?(:deprecators)
+    end
+
     initializer "pricing_plans.active_record" do
       ActiveSupport.on_load(:active_record) do
         # Make models available

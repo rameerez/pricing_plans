@@ -41,7 +41,7 @@ class SecureByDefaultTest < ActiveSupport::TestCase
     end
 
     org = Organization.create!(name: "Test Org")
-    PricingPlans::PlanResolver.assign_plan_manually!(org, :starter)
+    PricingPlans::PlanResolver.override_pricing_plan_for!(org, :starter, source: "test")
 
     # SECURITY: Undefined limits are BLOCKED (0), not unlimited
     assert_equal 0, org.plan_limit_remaining(:projects)
@@ -68,7 +68,7 @@ class SecureByDefaultTest < ActiveSupport::TestCase
     end
 
     org = Organization.create!(name: "Test Org")
-    PricingPlans::PlanResolver.assign_plan_manually!(org, :basic)
+    PricingPlans::PlanResolver.override_pricing_plan_for!(org, :basic, source: "test")
 
     # CONSISTENCY: Both features and limits are fail-closed (blocked by default)
 
@@ -99,7 +99,7 @@ class SecureByDefaultTest < ActiveSupport::TestCase
     end
 
     org = Organization.create!(name: "Enterprise Org")
-    PricingPlans::PlanResolver.assign_plan_manually!(org, :enterprise)
+    PricingPlans::PlanResolver.override_pricing_plan_for!(org, :enterprise, source: "test")
 
     # Explicit unlimited works
     assert_equal :unlimited, org.plan_limit_remaining(:projects)
@@ -180,7 +180,7 @@ class SecureByDefaultTest < ActiveSupport::TestCase
     refute pricing_plans.any? { |p| p[:key] == :unsubscribed }
 
     # After subscribing to starter, limits become available
-    PricingPlans::PlanResolver.assign_plan_manually!(new_user_org, :starter)
+    PricingPlans::PlanResolver.override_pricing_plan_for!(new_user_org, :starter, source: "test")
     assert_equal 10, new_user_org.plan_limit_remaining(:projects)
     assert_equal 1000, new_user_org.plan_limit_remaining(:downloads)
     assert new_user_org.within_plan_limits?(:projects)
@@ -203,7 +203,7 @@ class SecureByDefaultTest < ActiveSupport::TestCase
     end
 
     org = Organization.create!(name: "Premium Org")
-    PricingPlans::PlanResolver.assign_plan_manually!(org, :premium)
+    PricingPlans::PlanResolver.override_pricing_plan_for!(org, :premium, source: "test")
 
     # Defined limits work
     assert_equal 50, org.plan_limit_remaining(:projects)
@@ -231,7 +231,7 @@ class SecureByDefaultTest < ActiveSupport::TestCase
     end
 
     org = Organization.create!(name: "Test Org")
-    PricingPlans::PlanResolver.assign_plan_manually!(org, :basic)
+    PricingPlans::PlanResolver.override_pricing_plan_for!(org, :basic, source: "test")
 
     # Simulate controller context
     controller = MockController.new
@@ -264,7 +264,7 @@ class SecureByDefaultTest < ActiveSupport::TestCase
     end
 
     org = Organization.create!(name: "Trial Org")
-    PricingPlans::PlanResolver.assign_plan_manually!(org, :trial)
+    PricingPlans::PlanResolver.override_pricing_plan_for!(org, :trial, source: "test")
 
     # Try to create a project (which has limited_by_pricing_plans validation)
     # When limit is undefined (0), attempting to create should be blocked
@@ -290,7 +290,7 @@ class SecureByDefaultTest < ActiveSupport::TestCase
     end
 
     org = Organization.create!(name: "Trial Org")
-    PricingPlans::PlanResolver.assign_plan_manually!(org, :trial)
+    PricingPlans::PlanResolver.override_pricing_plan_for!(org, :trial, source: "test")
 
     # Should succeed when limit is defined and not exceeded
     project = org.projects.create!(name: "Test Project")
@@ -316,7 +316,7 @@ class SecureByDefaultTest < ActiveSupport::TestCase
     end
 
     org = Organization.create!(name: "Mixed Org")
-    PricingPlans::PlanResolver.assign_plan_manually!(org, :mixed)
+    PricingPlans::PlanResolver.override_pricing_plan_for!(org, :mixed, source: "test")
 
     # Defined limit works
     assert_equal 10, org.plan_limit_remaining(:projects)
@@ -414,7 +414,7 @@ class SecureByDefaultTest < ActiveSupport::TestCase
     end
 
     org = Organization.create!(name: "Comprehensive Org")
-    PricingPlans::PlanResolver.assign_plan_manually!(org, :comprehensive)
+    PricingPlans::PlanResolver.override_pricing_plan_for!(org, :comprehensive, source: "test")
 
     # FEATURES
     assert org.plan_allows?(:feature_a), "Defined allowed feature = true"
@@ -470,7 +470,7 @@ class SecureByDefaultTest < ActiveSupport::TestCase
     end
 
     org = Organization.create!(name: "Legacy Org")
-    PricingPlans::PlanResolver.assign_plan_manually!(org, :legacy)
+    PricingPlans::PlanResolver.override_pricing_plan_for!(org, :legacy, source: "test")
 
     # After migration, :api_calls is still unlimited (but explicit)
     assert_equal :unlimited, org.plan_limit_remaining(:api_calls)
@@ -494,7 +494,7 @@ class SecureByDefaultTest < ActiveSupport::TestCase
     end
 
     org = Organization.create!(name: "Restrictive Org")
-    PricingPlans::PlanResolver.assign_plan_manually!(org, :restrictive)
+    PricingPlans::PlanResolver.override_pricing_plan_for!(org, :restrictive, source: "test")
 
     # Defined limit works
     assert_equal 1, org.plan_limit_remaining(:projects)

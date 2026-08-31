@@ -188,7 +188,7 @@ Callback timing:
 
 ```ruby
 # pro allows 3 custom models per month
-PricingPlans::Assignment.assign_plan_to(org, :pro)
+org.override_pricing_plan!(:pro, source: "test_setup")
 
 travel_to(Time.parse("2025-01-15 12:00:00 UTC")) do
   3.times { org.custom_models.create!(name: "Model") }
@@ -457,7 +457,7 @@ end
 **Important notes:**
 - Hidden plans can be the `default!` plan (common pattern for "unsubscribed" users)
 - Hidden plans **cannot** be the `highlighted!` plan (validation error - highlighted plans must be visible)
-- Users can still be on hidden plans (via Pay subscription, manual assignment, or default)
+- Users can still be on hidden plans (via Pay subscription, an explicit pricing plan override, or the configured default)
 - Internal APIs (`Registry.plans`, `PlanResolver`) can still access hidden plans
 - Pay gem can still resolve subscriptions to hidden plans (useful for grandfathered customers)
 
