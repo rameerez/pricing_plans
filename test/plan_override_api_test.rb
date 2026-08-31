@@ -209,6 +209,34 @@ class PlanOverrideApiTest < ActiveSupport::TestCase
     assert_equal organization, override.plan_owner
     assert_equal "pro", override.plan_key
     assert_equal "test_setup", override.source
+
+    removed_overrides = Project.clear_pricing_plan_override_for!(organization)
+
+    assert_equal [override], removed_overrides
+    refute organization.pricing_plan_overridden?
+  end
+
+  def test_override_uniqueness_is_scoped_to_both_polymorphic_owner_type_and_id
+    shared_id = 9_999_999
+    organization = Organization.create!(id: shared_id, name: "Organization owner")
+    project = Project.create!(id: shared_id, organization: organization, name: "Project owner")
+
+    organization_override = PricingPlans::Assignment.create_or_update_pricing_plan_override_for!(
+      organization,
+      :pro,
+      source: "organization_override"
+    )
+    project_override = PricingPlans::Assignment.create_or_update_pricing_plan_override_for!(
+      project,
+      :enterprise,
+      source: "project_override"
+    )
+
+    assert_equal shared_id, organization_override.plan_owner_id
+    assert_equal shared_id, project_override.plan_owner_id
+    assert_equal "Organization", organization_override.plan_owner_type
+    assert_equal "Project", project_override.plan_owner_type
+    assert_equal 2, PricingPlans::Assignment.where(plan_owner_id: shared_id).count
   end
 
   def test_legacy_plan_owner_assignment_api_warns_and_preserves_its_existing_behavior
@@ -381,6 +409,6 @@ class PlanOverrideApiTest < ActiveSupport::TestCase
 
     yield messages
   ensure
-    deprecator.instance_variable_set(:@behavior, original_behavior)
+    deprecator.behavior = original_behavior
   end
 end
