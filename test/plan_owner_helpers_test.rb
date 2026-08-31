@@ -68,6 +68,23 @@ class PlanOwnerHelpersTest < ActiveSupport::TestCase
     assert resolution.assignment?
   end
 
+  def test_assigning_the_default_plan_is_still_a_manual_override
+    org = create_organization
+
+    org.assign_pricing_plan!(:free)
+
+    assert_equal :free, org.current_pricing_plan.key
+    assert_equal :assignment, org.current_pricing_plan_source
+    assert_equal "manual", org.current_pricing_plan_resolution.assignment_source
+    assert org.has_plan_assignment?
+
+    org.remove_pricing_plan!
+
+    assert_equal :free, org.current_pricing_plan.key
+    assert_equal :default, org.current_pricing_plan_source
+    refute org.has_plan_assignment?
+  end
+
   def test_current_pricing_plan_resolution_for_subscription
     org = create_organization(
       pay_subscription: { active: true, processor_plan: "price_pro_123" }

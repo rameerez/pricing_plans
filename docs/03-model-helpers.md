@@ -301,6 +301,14 @@ user.assign_pricing_plan!(:pro)              # manual assignment override
 user.remove_pricing_plan!                    # remove manual override (fallback to default)
 ```
 
+> [!WARNING]
+> Assigning the configured default plan is still a manual override. For example,
+> `user.assign_pricing_plan!(:free)` creates an assignment row, reports
+> `current_pricing_plan_source == :assignment`, and takes precedence over a future
+> Pay subscription. For an ordinary free/default account, create no assignment at
+> all. If an override already exists and the account should return to normal plan
+> resolution, call `user.remove_pricing_plan!`.
+
 **Performance note:** Each call to `current_pricing_plan`, `current_pricing_plan_source`, or `current_pricing_plan_resolution` performs a fresh database lookup. If you need both the plan and its provenance, call `current_pricing_plan_resolution` once and read both values from that object — this avoids duplicate queries.
 
 If you need the full provenance, use the resolution object:

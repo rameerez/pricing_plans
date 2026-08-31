@@ -1,3 +1,7 @@
+## Unreleased
+
+- Clarify that assigning the configured default plan still creates a manual override, and document that ordinary free/default accounts should remain unassigned
+
 ## [0.4.1] - 2026-08-24
 
 - **Never 500 a pricing page when Stripe is unreachable**: `Plan#currency_symbol` was the one Stripe lookup without a rescue — a Stripe outage, rate limit, or missing API key (any test/CI environment) raised straight through the pricing page. It now degrades to `default_currency_symbol` like every other presentation method (#24)
