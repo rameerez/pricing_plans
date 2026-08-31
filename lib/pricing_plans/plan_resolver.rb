@@ -19,7 +19,7 @@ module PricingPlans
         log_debug "[PricingPlans::PlanResolver] resolution_for called for #{plan_owner.class.name}##{plan_owner.respond_to?(:id) ? plan_owner.id : 'N/A'}"
 
         assignment = pricing_plan_override_for(plan_owner)
-        subscription = current_subscription_for(plan_owner)
+        subscription = current_subscription_for(plan_owner, preferred_plan_key: assignment&.plan_key)
 
         if assignment
           log_debug "[PricingPlans::PlanResolver] Returning explicit-override resolution: #{assignment.plan_key}"
@@ -31,20 +31,8 @@ module PricingPlans
           )
         end
 
-        if subscription
-          processor_plan = subscription.processor_plan
-          log_debug "[PricingPlans::PlanResolver] resolution_for subscription processor_plan = #{processor_plan.inspect}"
-
-          if processor_plan && (plan = plan_from_processor_plan(processor_plan))
-            log_debug "[PricingPlans::PlanResolver] Returning subscription-backed resolution: #{plan.key}"
-            return PlanResolution.new(
-              plan: plan,
-              source: :subscription,
-              assignment: nil,
-              subscription: subscription
-            )
-          end
-        end
+        subscription_resolution = subscription_resolution_for(subscription)
+        return subscription_resolution if subscription_resolution
 
         default = Registry.default_plan
         log_debug "[PricingPlans::PlanResolver] Returning default-backed resolution: #{default ? default.key : 'nil'}"
@@ -84,6 +72,20 @@ module PricingPlans
         )
       end
 
+      # Resolve a processor price identifier to the configured plan that owns
+      # it. Public so entitlement provenance can verify that an underlying
+      # subscription belongs to the same plan as a manual override.
+      def plan_for_processor_plan(processor_plan)
+        return nil if processor_plan.blank?
+
+        Registry.plans.values.find do |plan|
+          stripe_price = plan.stripe_price
+          next unless stripe_price
+
+          stripe_price.is_a?(Hash) ? stripe_price.value?(processor_plan) : stripe_price == processor_plan
+        end
+      end
+
       private
 
       # Backward-compatible shim for tests that stub pay_available?
@@ -96,8 +98,7 @@ module PricingPlans
         return nil unless plan_owner.respond_to?(:id)
 
         assignment = Assignment.find_by(
-          plan_owner_type: plan_owner.class.name,
-          plan_owner_id: plan_owner.id
+          PlanOwnerIdentity.conditions_for(plan_owner)
         )
 
         if assignment
@@ -109,7 +110,24 @@ module PricingPlans
         assignment
       end
 
-      def current_subscription_for(plan_owner)
+      def subscription_resolution_for(subscription)
+        return nil unless subscription.respond_to?(:processor_plan)
+
+        processor_plan = subscription.processor_plan
+        log_debug "[PricingPlans::PlanResolver] resolution_for subscription processor_plan = #{processor_plan.inspect}"
+        plan = plan_for_processor_plan(processor_plan)
+        return nil unless plan
+
+        log_debug "[PricingPlans::PlanResolver] Returning subscription-backed resolution: #{plan.key}"
+        PlanResolution.new(
+          plan: plan,
+          source: :subscription,
+          assignment: nil,
+          subscription: subscription
+        )
+      end
+
+      def current_subscription_for(plan_owner, preferred_plan_key: nil)
         return nil unless plan_owner
 
         pay_available = pay_available?
@@ -117,32 +135,30 @@ module PricingPlans
 
         return nil unless pay_available
 
-        # This intentionally delegates the active/trial/grace filtering contract
-        # to PaySupport.current_subscription_for so resolution_for can preserve
-        # the same billing context wherever it is called.
-        subscription = PaySupport.current_subscription_for(plan_owner)
+        subscriptions = PaySupport.current_subscriptions_for(plan_owner)
+        subscription = select_subscription(subscriptions, preferred_plan_key: preferred_plan_key)
         log_debug "[PricingPlans::PlanResolver] current_subscription_for returned: #{subscription ? subscription.class.name : 'nil'}"
         subscription
       end
 
-      def plan_from_processor_plan(processor_plan)
-        # Look through all plans to find one matching this Stripe price
-        Registry.plans.values.find do |plan|
-          stripe_price = plan.stripe_price
-          next unless stripe_price
+      def select_subscription(subscriptions, preferred_plan_key: nil)
+        subscriptions = Array(subscriptions)
 
-          case stripe_price
-          when String
-            stripe_price == processor_plan
-          when Hash
-            stripe_price[:id] == processor_plan ||
-            stripe_price[:month] == processor_plan ||
-            stripe_price[:year] == processor_plan ||
-            stripe_price.values.include?(processor_plan)
-          else
-            false
+        if preferred_plan_key
+          preferred = subscriptions.find do |subscription|
+            subscription_plan = plan_for_subscription(subscription)
+            subscription_plan&.key == preferred_plan_key.to_sym
           end
+          return preferred if preferred
         end
+
+        subscriptions.find { |subscription| plan_for_subscription(subscription) } || subscriptions.first
+      end
+
+      def plan_for_subscription(subscription)
+        return nil unless subscription.respond_to?(:processor_plan)
+
+        plan_for_processor_plan(subscription.processor_plan)
       end
     end
   end

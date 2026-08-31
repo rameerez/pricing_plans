@@ -5,6 +5,7 @@ $LOAD_PATH.unshift File.expand_path("../lib", __dir__)
 # SimpleCov must be loaded BEFORE any application code
 # Configuration is auto-loaded from .simplecov file
 require "simplecov"
+SimpleCov.start
 
 require "pricing_plans"
 require "minitest/autorun"
@@ -142,19 +143,27 @@ class Organization < ActiveRecord::Base
     pay_grace_period.present?
   end
 
+  def past_due?
+    pay_subscription.present? && pay_subscription[:past_due]
+  end
+
   def subscription
-    return nil unless subscribed? || on_trial? || on_grace_period?
+    return nil unless subscribed? || on_trial? || on_grace_period? || past_due?
 
     OpenStruct.new(
       processor_plan: pay_subscription&.dig(:processor_plan),
       active?: subscribed?,
       on_trial?: on_trial?,
       on_grace_period?: on_grace_period?,
+      past_due?: past_due?,
       current_period_start: 1.month.ago,
       current_period_end: 1.day.from_now,
       created_at: pay_subscription_created_at
     )
   end
+end
+
+class EnterpriseOrganization < Organization
 end
 
 class Project < ActiveRecord::Base
@@ -226,6 +235,7 @@ class ActiveSupport::TestCase
     PricingPlans::EnforcementState.destroy_all
     PricingPlans::Usage.destroy_all
     PricingPlans::Assignment.destroy_all
+    PricingPlans::FeatureGrant.destroy_all
     Organization.destroy_all
   end
 

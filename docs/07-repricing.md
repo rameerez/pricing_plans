@@ -24,14 +24,16 @@ plan :starter do
 end
 ```
 
-That's the entire repricing migration. Owners whose tenure on `:indie` began before the cutoff keep `:distribution`; everyone who arrives later sees your upgrade gate. Your initializer stays the single, git-versioned record of what changed and when — future-you can read the whole pricing history in one file.
+That's the entire repricing migration. Owners whose qualifying pricing relationship predates the cutoff keep `:distribution`; everyone who arrives later sees your upgrade gate. Your initializer stays the single, git-versioned record of what changed and when — future-you can read the whole pricing policy in one file.
 
 ### The semantics, precisely
 
-- **Tenure** is when the owner's current subscription (or manual plan assignment, if they have one) was created. If both exist, the **older** one wins — so an assignment added later by support can never strip an entitlement the subscription already earned.
-- Grandfathering **rides a continuous subscription**. If a customer cancels and comes back later, they re-enter at current pricing — the standard SaaS deal. If you promised someone the feature *forever*, that's a grant (below).
-- Cutoffs accept a `Time`, `Date`, or `String`. Date-only values are read as **midnight UTC**.
-- Owners on the default (free) plan have no tenure and are never grandfathered.
+- **Eligibility time** is the older of the current manual assignment and a current subscription whose processor price maps to the same resolved plan. A subscription on another plan is ignored, so it cannot manufacture grandfather rights for a new override.
+- Pay updates the same subscription row during an in-place price swap, preserving its original `created_at`; changing the plan key on an existing assignment also keeps that row's age. Grandfathering therefore measures a **continuous pricing relationship**, not the exact date that the current plan or price was selected. If your policy needs an exact historical plan-enrollment cohort, materialize that cohort with grants instead.
+- Grandfathering rides that continuous relationship. Cancel and re-subscribe, or clear and later recreate an assignment, and the customer re-enters at current pricing. If you promised someone the feature *forever*, that's a grant (below).
+- `active`, trialing, grace-period, and `past_due` subscriptions remain entitlement-bearing; canceled and unpaid subscriptions do not. This keeps access stable while a processor retries a failed payment.
+- Cutoffs accept a `Time`, `ActiveSupport::TimeWithZone`, `Date`, or `String`. Date-only values are read as **midnight UTC**.
+- Owners on the default (free) plan have no qualifying relationship timestamp and are never grandfathered.
 - Declaring `grandfather` for a feature the plan still `allows` raises a `ConfigurationError` at boot — one of those two lines is a mistake.
 
 > [!TIP]
@@ -49,7 +51,7 @@ org.plan_allows?(:sso)          # => true
 org.feature_granted?(:sso)      # => true (an active grant row exists)
 
 org.revoke_feature!(:sso, note: "eval over")
-org.feature_grants              # full audit trail, revocations included
+org.feature_grants              # retained grant/revocation history
 ```
 
 Use grants for:
@@ -58,9 +60,9 @@ Use grants for:
 - **Beta access** — grant a feature to a handful of owners before it's on any plan.
 - **Sales promises** — "you'll get X while you evaluate", with `expires_at`.
 - **Support remediation** — "we broke your week, here's X until renewal".
-- **A grandfather that must survive cancellation** — grants attach to the owner, not the plan, so they persist through plan changes and cancellation until you revoke them.
+- **A grandfather that must survive cancellation** — grants attach to the owner, not the plan, so they persist through plan changes and cancellation until expiry or revocation.
 
-Grants are **never deleted** by the API: revoking stamps `revoked_at` and keeps the row, so "why does this customer have this?" always has an answer.
+Grants are **never deleted** by the API: revoking stamps `revoked_at` and keeps the row, preserving each grant/revocation lifecycle. Updating an active grant changes that row; this is not an event-by-event audit log of every field edit.
 
 Granting the same feature twice updates the active grant instead of stacking; revoking and granting again creates a fresh row (history preserved).
 
@@ -81,12 +83,12 @@ When you're debugging or answering a support ticket, ask the owner directly:
 ```ruby
 org.feature_entitlement_source(:distribution)
 # => :plan         (the resolved plan allows it)
-# => :grandfather  (plan tenure predates the cutoff)
+# => :grandfather  (qualifying pricing relationship predates the cutoff)
 # => :grant        (an active per-owner grant)
 # => nil           (not entitled)
 
-org.plan_tenure_started_at
-# => when their current subscription / assignment began (nil on the default plan)
+org.pricing_relationship_started_at
+# => qualifying same-plan subscription / assignment timestamp (or nil)
 ```
 
 ## A real-world example

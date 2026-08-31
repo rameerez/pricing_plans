@@ -37,6 +37,7 @@ module PricingPlans
   autoload :DSL, "pricing_plans/dsl"
   autoload :IntegerRefinements, "pricing_plans/integer_refinements"
   autoload :PlanResolver, "pricing_plans/plan_resolver"
+  autoload :PlanOwnerIdentity, "pricing_plans/plan_owner_identity"
   autoload :LegacyPlanAssignmentApi, "pricing_plans/legacy_plan_assignment_api"
   autoload :PaySupport, "pricing_plans/pay_support"
   autoload :LimitChecker, "pricing_plans/limit_checker"

@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-require:
+plugins:
   - rubocop-minitest
   - rubocop-performance
 
@@ -11,6 +11,7 @@ AllCops:
     - 'bin/**/*'
     - 'vendor/**/*'
     - 'test/dummy/**/*'
+    - 'tmp/**/*'
     - 'db/migrate/**/*'  # Generated migrations
     - 'lib/generators/**/templates/**/*'  # Generator templates
 
@@ -42,7 +43,7 @@ Style/FrozenStringLiteralComment:
   EnforcedStyle: always
 
 Style/ClassAndModuleChildren:
-  EnforcedStyle: compact
+  EnforcedStyle: nested
 
 Style/GuardClause:
   MinBodyLength: 3
@@ -82,7 +83,7 @@ Metrics/PerceivedComplexity:
   Max: 10
 
 # Naming
-Naming/PredicateName:
+Naming/PredicatePrefix:
   ForbiddenPrefixes:
     - 'is_'
   AllowedMethods:
@@ -101,10 +102,6 @@ Minitest/MultipleAssertions:
 
 Minitest/AssertTruthy:
   Enabled: false  # Allow assert instead of assert_equal true
-
-# Rails-specific (even though we don't have full Rails)
-Style/Rails/HttpStatus:
-  Enabled: false
 
 # Custom overrides for this gem
 Style/AccessorGrouping:

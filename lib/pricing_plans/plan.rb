@@ -204,10 +204,10 @@ module PricingPlans
       @features.include?(feature_key.to_sym)
     end
 
-    # Grandfathering: declare that owners whose tenure on this plan began
-    # before the cutoff keep a feature the plan no longer carries. Pure
-    # config — no database state, no backfill, no rake task. The pricing
-    # history stays readable in the initializer forever:
+    # Grandfathering: declare that owners whose qualifying pricing
+    # relationship predates the cutoff keep a feature the plan no longer
+    # carries. Pure config — no database state, no backfill, no rake task.
+    # The pricing history stays readable in the initializer forever:
     #
     #   plan :indie do
     #     allows :api_access                # :distribution removed 2026-08-31
@@ -215,10 +215,11 @@ module PricingPlans
     #   end
     #
     # The cutoff accepts a Time, Date, or String; date-only values are read
-    # as midnight UTC. "Tenure" is when the owner's current subscription (or
-    # manual plan assignment) was created — so grandfathering rides a
-    # continuous subscription, and lapsing and re-subscribing re-enters at
-    # current pricing. For a promise that must survive anything, use an
+    # as midnight UTC. The relationship timestamp comes from the current
+    # assignment and/or same-plan subscription. Those records keep created_at
+    # across in-place plan/price changes, so this models a continuous pricing
+    # relationship rather than unavailable plan-change history. For an exact
+    # materialized cohort or a promise that must survive anything, use an
     # explicit per-owner grant instead: `owner.grant_feature!(:distribution)`.
     def grandfather(feature_key, subscribed_before:)
       @grandfathers[feature_key.to_sym] = normalize_grandfather_cutoff(subscribed_before)
@@ -232,11 +233,11 @@ module PricingPlans
       @grandfathers[feature_key.to_sym]
     end
 
-    def grandfathers_feature?(feature_key, tenure_started_at:)
+    def grandfathers_feature?(feature_key, relationship_started_at:)
       cutoff = grandfather_cutoff_for(feature_key)
-      return false unless cutoff && tenure_started_at
+      return false unless cutoff && relationship_started_at
 
-      tenure_started_at < cutoff
+      relationship_started_at < cutoff
     end
 
     # Limit methods
@@ -552,12 +553,17 @@ module PricingPlans
 
     def normalize_grandfather_cutoff(value)
       cutoff =
-        case value
-        when Time then value
-        when Date, String then value.to_time(:utc)
+        if defined?(ActiveSupport::TimeWithZone) && value.is_a?(ActiveSupport::TimeWithZone)
+          value.utc.to_time
         else
-          raise ConfigurationError,
-            "grandfather cutoff must be a Time, Date, or String (got #{value.class})"
+          case value
+          when Time then value
+          when Date, String then value.to_time(:utc)
+          else
+            raise ConfigurationError,
+                  "grandfather cutoff must be a Time, ActiveSupport::TimeWithZone, Date, or String " \
+                  "(got #{value.class})"
+          end
         end
 
       unless cutoff.is_a?(Time)
@@ -579,6 +585,7 @@ module PricingPlans
         "carries — remove them from `allows` (everyone has them) or from " \
         "`grandfather` (nobody needs the exception)."
     end
+
     def validate_limits!
       @limits.each do |key, limit|
         validate_limit_options!(limit)

@@ -17,9 +17,10 @@ module PricingPlans
     validates :plan_owner, presence: true
     validates :feature_key, presence: true
     validates :source, presence: true
+    validate :expires_at_must_be_parseable
 
     scope :for_feature, ->(feature_key) { where(feature_key: feature_key.to_s) }
-    scope :active, -> {
+    scope :active, lambda {
       where(revoked_at: nil).where("expires_at IS NULL OR expires_at > ?", Time.current)
     }
 
@@ -39,28 +40,38 @@ module PricingPlans
       # exists, otherwise creates it. Revoked grants stay behind as history.
       def grant_to!(plan_owner, feature_key, source: "manual", note: nil, expires_at: nil)
         ensure_table!
+        ensure_persisted_owner!(plan_owner)
 
-        grant = active.find_by(owner_conditions(plan_owner).merge(feature_key: feature_key.to_s))
-        if grant
-          grant.update!(source: source.to_s, note: note, expires_at: expires_at)
-          grant
-        else
-          create!(
-            plan_owner: plan_owner,
-            feature_key: feature_key.to_s,
-            source: source.to_s,
-            note: note,
-            expires_at: expires_at
-          )
+        # Serialize grant writes through the owner row. A lookup followed by
+        # create is otherwise race-prone, and a portable partial unique index
+        # cannot express "unrevoked and unexpired" consistently on every
+        # supported database.
+        with_locked_owner(plan_owner) do
+          grant = active.find_by(owner_conditions(plan_owner).merge(feature_key: feature_key.to_s))
+          if grant
+            grant.update!(source: source.to_s, note: note, expires_at: expires_at)
+            grant
+          else
+            create!(
+              plan_owner: plan_owner,
+              feature_key: feature_key.to_s,
+              source: source.to_s,
+              note: note,
+              expires_at: expires_at
+            )
+          end
         end
       end
 
       def revoke_for!(plan_owner, feature_key, note: nil)
         ensure_table!
+        ensure_persisted_owner!(plan_owner)
 
-        active
-          .where(owner_conditions(plan_owner).merge(feature_key: feature_key.to_s))
-          .map { |grant| grant.revoke!(note: note) }
+        with_locked_owner(plan_owner) do
+          active
+            .where(owner_conditions(plan_owner).merge(feature_key: feature_key.to_s))
+            .map { |grant| grant.revoke!(note: note) }
+        end
       end
 
       def active_for?(plan_owner, feature_key)
@@ -86,13 +97,41 @@ module PricingPlans
         return if table_ready?
 
         raise ConfigurationError,
-          "The #{table_name} table does not exist. Run " \
-          "`rails generate pricing_plans:grants && rails db:migrate` to add it."
+              "The #{table_name} table does not exist. Run " \
+              "`rails generate pricing_plans:grants && rails db:migrate` to add it."
       end
 
       def owner_conditions(plan_owner)
-        { plan_owner_type: plan_owner.class.name, plan_owner_id: plan_owner.id }
+        PlanOwnerIdentity.conditions_for(plan_owner)
       end
+
+      def ensure_persisted_owner!(plan_owner)
+        persisted_active_record = plan_owner.respond_to?(:persisted?) &&
+                                  plan_owner.persisted? &&
+                                  plan_owner.class.respond_to?(:base_class)
+        return if persisted_active_record
+
+        raise ArgumentError, "plan_owner must be a persisted Active Record"
+      end
+
+      def with_locked_owner(plan_owner)
+        owner_class = plan_owner.class.base_class
+
+        owner_class.transaction do
+          # Lock a fresh copy so granting a feature never reloads or rejects a
+          # caller that happens to have unrelated unsaved changes.
+          owner_class.unscoped.lock.find(plan_owner.id)
+          yield
+        end
+      end
+    end
+
+    private
+
+    def expires_at_must_be_parseable
+      return if expires_at_before_type_cast.blank? || expires_at.present?
+
+      errors.add(:expires_at, "must be a valid time")
     end
   end
 end

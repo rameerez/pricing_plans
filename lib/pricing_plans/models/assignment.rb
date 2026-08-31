@@ -22,8 +22,7 @@ module PricingPlans
 
     def self.create_or_update_pricing_plan_override_for!(plan_owner, plan_key, source:)
       assignment = find_or_initialize_by(
-        plan_owner_type: plan_owner.class.name,
-        plan_owner_id: plan_owner.id
+        PlanOwnerIdentity.conditions_for(plan_owner)
       )
 
       assignment.assign_attributes(
@@ -37,8 +36,7 @@ module PricingPlans
 
     def self.clear_pricing_plan_override_for!(plan_owner)
       where(
-        plan_owner_type: plan_owner.class.name,
-        plan_owner_id: plan_owner.id
+        PlanOwnerIdentity.conditions_for(plan_owner)
       ).destroy_all
     end
 

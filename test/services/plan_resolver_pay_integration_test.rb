@@ -3,6 +3,8 @@
 require "test_helper"
 
 class PlanResolverPayIntegrationTest < ActiveSupport::TestCase
+  Subscription = Struct.new(:active?, :on_trial?, :on_grace_period?, :processor_plan, keyword_init: true)
+
   def setup
     super
     # Ensure pay is defined for these tests
@@ -124,6 +126,22 @@ class PlanResolverPayIntegrationTest < ActiveSupport::TestCase
     assert_equal :pro, PricingPlans::PlanResolver.effective_plan_for(org).key
   end
 
+  def test_maps_plan_while_payment_is_past_due
+    PricingPlans.reset_configuration!
+    PricingPlans.configure do |config|
+      config.default_plan = :free
+      config.plan(:free) { price 0 }
+      config.plan(:pro) { stripe_price "price_pro_past_due" }
+    end
+
+    org = create_organization(
+      pay_subscription: { active: false, past_due: true, processor_plan: "price_pro_past_due" }
+    )
+
+    assert_equal :pro, PricingPlans::PlanResolver.effective_plan_for(org).key
+    assert_predicate org, :pay_subscription_active?
+  end
+
   def test_chooses_matching_subscription_from_collection
     PricingPlans.reset_configuration!
     PricingPlans.configure do |config|
@@ -138,12 +156,47 @@ class PlanResolverPayIntegrationTest < ActiveSupport::TestCase
 
     org = create_organization
     # Provide multiple subscriptions; only one has the right processor_plan
-    sub1 = OpenStruct.new(active?: false, on_trial?: false, on_grace_period?: false, processor_plan: "price_other")
-    sub2 = OpenStruct.new(active?: true, on_trial?: false, on_grace_period?: false, processor_plan: "price_pro_collection")
+    sub1 = Subscription.new(active?: false, on_trial?: false, on_grace_period?: false, processor_plan: "price_other")
+    sub2 = Subscription.new(
+      active?: true,
+      on_trial?: false,
+      on_grace_period?: false,
+      processor_plan: "price_pro_collection"
+    )
     org.define_singleton_method(:subscriptions) { [sub1, sub2] }
     org.define_singleton_method(:subscription) { nil }
 
     assert_equal :pro, PricingPlans::PlanResolver.effective_plan_for(org).key
+  end
+
+  def test_prefers_a_registered_plan_over_an_unrelated_active_subscription
+    PricingPlans.reset_configuration!
+    PricingPlans.configure do |config|
+      config.default_plan = :free
+      config.plan(:free) { price 0 }
+      config.plan(:pro) { stripe_price "price_pro_collection" }
+    end
+
+    org = create_organization
+    unrelated = Subscription.new(
+      active?: true,
+      on_trial?: false,
+      on_grace_period?: false,
+      processor_plan: "price_unrelated"
+    )
+    pro = Subscription.new(
+      active?: true,
+      on_trial?: false,
+      on_grace_period?: false,
+      processor_plan: "price_pro_collection"
+    )
+    org.define_singleton_method(:subscriptions) { [unrelated, pro] }
+    org.define_singleton_method(:subscription) { nil }
+
+    resolution = PricingPlans::PlanResolver.resolution_for(org)
+
+    assert_equal :pro, resolution.plan_key
+    assert_same pro, resolution.subscription
   end
 
   def test_falls_back_to_default_when_processor_plan_unknown

@@ -14,9 +14,10 @@ end
 
 group :development, :test do
   gem "appraisal"
-  gem "minitest", "~> 6.0"
+  gem "minitest", ">= 5.16", "< 7"
   gem "minitest-mock"
   gem "rack-test"
+  gem "railties", ">= 7.1", "< 9"
   gem "sqlite3", ">= 2.1"
   gem "ostruct"
   gem "simplecov", require: false

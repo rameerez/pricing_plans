@@ -21,14 +21,16 @@ module PricingPlans
 
       def create_migration_file
         migration_template "create_pricing_plans_feature_grants.rb.erb",
-          File.join(db_migrate_path, "create_pricing_plans_feature_grants.rb"),
-          migration_version: migration_version
+                           File.join(db_migrate_path, "create_pricing_plans_feature_grants.rb"),
+                           migration_version: migration_version
       end
 
       def display_post_install_message
         say "\n✅ Feature grants migration created.", :green
-        say "Run 'rails db:migrate', then grant per-owner features with e.g. `owner.grant_feature!(:some_feature, note: \"comp\")`."
-        say "Note: declarative grandfathering (`grandfather :feature, subscribed_before: ...` in a plan) needs no table at all."
+        say "Run 'rails db:migrate', then grant per-owner features with e.g. " \
+            "`owner.grant_feature!(:some_feature, note: \"comp\")`."
+        say "Note: declarative grandfathering " \
+            "(`grandfather :feature, subscribed_before: ...` in a plan) needs no table at all."
       end
 
       private

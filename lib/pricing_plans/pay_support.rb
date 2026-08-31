@@ -12,120 +12,88 @@ module PricingPlans
       puts message if PricingPlans.configuration&.debug
     end
 
+    # Whether an owner currently has a billing relationship that should keep
+    # plan entitlements. Besides Pay's active/trial/grace states, this includes
+    # past_due while the processor is retrying payment. Canceled and unpaid
+    # subscriptions remain ineligible.
     def subscription_active_for?(plan_owner)
       return false unless plan_owner
 
-      owner_id = plan_owner.respond_to?(:id) ? plan_owner.id : "N/A"
-      log_debug "[PricingPlans::PaySupport] subscription_active_for? called for #{plan_owner.class.name}##{owner_id}"
+      log_debug "[PricingPlans::PaySupport] subscription_active_for? called for #{owner_label(plan_owner)}"
 
-      # Prefer Pay's official API on the payment_processor
-      if plan_owner.respond_to?(:payment_processor) && (pp = plan_owner.payment_processor)
-        log_debug "[PricingPlans::PaySupport] payment_processor found: #{pp.class.name}##{pp.id}"
-
-        # Check all subscriptions, not just the default-named one
-        # Note: Don't call pp.subscribed?() without a name parameter, as it defaults to
-        # checking only for subscriptions named Pay.default_product_name (usually "default")
-        if pp.respond_to?(:subscriptions)
-          subs = pp.subscriptions
-          log_debug "[PricingPlans::PaySupport] subscriptions relation: #{subs.class.name}, count: #{subs.count}"
-
-          # Force array conversion to ensure we iterate through all subscriptions
-          # Some ActiveRecord relations might not enumerate properly in boolean context
-          subs_array = subs.respond_to?(:to_a) ? subs.to_a : subs
-          log_debug "[PricingPlans::PaySupport] subscriptions array size: #{subs_array.size}"
-
-          subs_array.each_with_index do |sub, idx|
-            log_debug "[PricingPlans::PaySupport]   [#{idx}] Subscription: #{sub.class.name}##{sub.id}, name: #{sub.name rescue 'N/A'}, status: #{sub.status rescue 'N/A'}, active?: #{sub.active? rescue 'N/A'}, on_trial?: #{sub.on_trial? rescue 'N/A'}, on_grace_period?: #{sub.on_grace_period? rescue 'N/A'}"
-          end
-
-          result = subs_array.any? { |sub| (sub.respond_to?(:active?) && sub.active?) || (sub.respond_to?(:on_trial?) && sub.on_trial?) || (sub.respond_to?(:on_grace_period?) && sub.on_grace_period?) }
-          log_debug "[PricingPlans::PaySupport] subscription_active_for? returning: #{result}"
-          return result
-        else
-          log_debug "[PricingPlans::PaySupport] payment_processor does not respond to :subscriptions"
-        end
-      else
-        log_debug "[PricingPlans::PaySupport] No payment_processor found or plan_owner doesn't respond to :payment_processor"
-      end
-
-      # Fallbacks for apps that surface Pay state on the owner
-      individual_active = (plan_owner.respond_to?(:subscribed?) && plan_owner.subscribed?) ||
-                          (plan_owner.respond_to?(:on_trial?) && plan_owner.on_trial?) ||
-                          (plan_owner.respond_to?(:on_grace_period?) && plan_owner.on_grace_period?)
-      log_debug "[PricingPlans::PaySupport] Fallback individual_active: #{individual_active}"
-      return true if individual_active
-
-      if plan_owner.respond_to?(:subscriptions) && (subs = plan_owner.subscriptions)
-        log_debug "[PricingPlans::PaySupport] Checking plan_owner.subscriptions fallback"
-        return subs.any? { |sub| (sub.respond_to?(:active?) && sub.active?) || (sub.respond_to?(:on_trial?) && sub.on_trial?) || (sub.respond_to?(:on_grace_period?) && sub.on_grace_period?) }
-      end
-
-      log_debug "[PricingPlans::PaySupport] subscription_active_for? returning false (no active subscription found)"
-      false
+      result = current_subscriptions_for(plan_owner).any?
+      log_debug "[PricingPlans::PaySupport] subscription_active_for? returning: #{result}"
+      result
     end
 
     def current_subscription_for(plan_owner)
-      return nil unless pay_available?
-
-      owner_id = plan_owner.respond_to?(:id) ? plan_owner.id : "N/A"
-      log_debug "[PricingPlans::PaySupport] current_subscription_for called for #{plan_owner.class.name}##{owner_id}"
-
-      # Prefer Pay's payment_processor API
-      if plan_owner.respond_to?(:payment_processor) && (pp = plan_owner.payment_processor)
-        log_debug "[PricingPlans::PaySupport] payment_processor found: #{pp.class.name}##{pp.id}"
-
-        # Check all subscriptions, not just the default-named one
-        # Note: Don't call pp.subscription() without a name parameter, as it defaults to
-        # looking for subscriptions named Pay.default_product_name (usually "default")
-        if pp.respond_to?(:subscriptions)
-          subs = pp.subscriptions
-          log_debug "[PricingPlans::PaySupport] subscriptions relation: #{subs.class.name}, count: #{subs.count}"
-
-          # Force array conversion to ensure we iterate properly
-          subs_array = subs.respond_to?(:to_a) ? subs.to_a : subs
-          log_debug "[PricingPlans::PaySupport] subscriptions array size: #{subs_array.size}"
-
-          found = subs_array.find do |sub|
-            (sub.respond_to?(:on_trial?) && sub.on_trial?) ||
-              (sub.respond_to?(:on_grace_period?) && sub.on_grace_period?) ||
-              (sub.respond_to?(:active?) && sub.active?)
-          end
-          log_debug "[PricingPlans::PaySupport] current_subscription_for found: #{found ? "#{found.class.name}##{found.id} (name: #{found.name})" : 'nil'}"
-          return found if found
-        else
-          log_debug "[PricingPlans::PaySupport] payment_processor does not respond to :subscriptions"
-        end
-      else
-        log_debug "[PricingPlans::PaySupport] No payment_processor found or plan_owner doesn't respond to :payment_processor"
-      end
-
-      # Fallbacks for apps that surface subscriptions on the owner
-      if plan_owner.respond_to?(:subscription)
-        log_debug "[PricingPlans::PaySupport] Checking plan_owner.subscription fallback"
-        subscription = plan_owner.subscription
-        if subscription && (
-          (subscription.respond_to?(:active?) && subscription.active?) ||
-          (subscription.respond_to?(:on_trial?) && subscription.on_trial?) ||
-          (subscription.respond_to?(:on_grace_period?) && subscription.on_grace_period?)
-        )
-          log_debug "[PricingPlans::PaySupport] current_subscription_for returning fallback subscription"
-          return subscription
-        end
-      end
-
-      if plan_owner.respond_to?(:subscriptions) && (subs = plan_owner.subscriptions)
-        log_debug "[PricingPlans::PaySupport] Checking plan_owner.subscriptions fallback"
-        found = subs.find do |sub|
-          (sub.respond_to?(:on_trial?) && sub.on_trial?) ||
-            (sub.respond_to?(:on_grace_period?) && sub.on_grace_period?) ||
-            (sub.respond_to?(:active?) && sub.active?)
-        end
-        log_debug "[PricingPlans::PaySupport] current_subscription_for found in fallback: #{found ? "#{found.class.name}##{found.id}" : 'nil'}"
-        return found if found
-      end
-
-      log_debug "[PricingPlans::PaySupport] current_subscription_for returning nil"
-      nil
+      current_subscriptions_for(plan_owner).first
     end
+
+    # Returns every entitlement-bearing subscription from the canonical Pay
+    # customer. PlanResolver can then prefer one whose processor_plan appears
+    # in the registry instead of accidentally choosing an unrelated active
+    # subscription that happened to be returned first.
+    def current_subscriptions_for(plan_owner)
+      return [] unless plan_owner && pay_available?
+
+      log_debug "[PricingPlans::PaySupport] current_subscriptions_for called for #{owner_label(plan_owner)}"
+
+      processor_subscriptions = current_payment_processor_subscriptions(plan_owner)
+      return processor_subscriptions unless processor_subscriptions.empty?
+
+      subscriptions = []
+      subscriptions << plan_owner.subscription if plan_owner.respond_to?(:subscription)
+      subscriptions.concat(subscription_collection(plan_owner))
+
+      current_subscriptions_in(subscriptions.compact.uniq).tap do |current|
+        log_debug "[PricingPlans::PaySupport] found #{current.size} current owner subscription(s)"
+      end
+    end
+
+    def subscription_current?(subscription)
+      return false unless subscription
+      return false if subscription.respond_to?(:ended?) && subscription.ended?
+
+      state_predicates = %i[active? on_trial? on_grace_period? past_due?]
+      state_predicates.any? do |predicate|
+        subscription.respond_to?(predicate) && subscription.public_send(predicate)
+      end
+    end
+
+    def subscription_collection(record)
+      return [] unless record.respond_to?(:subscriptions)
+
+      subscriptions = record.subscriptions
+      return [] unless subscriptions
+
+      subscriptions.respond_to?(:to_a) ? subscriptions.to_a : Array(subscriptions)
+    end
+    private_class_method :subscription_collection
+
+    def current_payment_processor_subscriptions(plan_owner)
+      return [] unless plan_owner.respond_to?(:payment_processor)
+
+      payment_processor = plan_owner.payment_processor
+      return [] unless payment_processor
+
+      current_subscriptions_in(subscription_collection(payment_processor)).tap do |subscriptions|
+        next if subscriptions.empty?
+
+        log_debug "[PricingPlans::PaySupport] found #{subscriptions.size} current payment-processor subscription(s)"
+      end
+    end
+    private_class_method :current_payment_processor_subscriptions
+
+    def current_subscriptions_in(subscriptions)
+      Array(subscriptions).select { |subscription| subscription_current?(subscription) }
+    end
+    private_class_method :current_subscriptions_in
+
+    def owner_label(plan_owner)
+      owner_id = plan_owner.respond_to?(:id) ? plan_owner.id : "N/A"
+      "#{plan_owner.class.name}##{owner_id}"
+    end
+    private_class_method :owner_label
   end
 end

@@ -30,6 +30,8 @@ Newly generated initializers enable this strict behavior. Intentional default-ti
 
 As long as a matching `stripe_price` is found in the `pricing_plans.rb` initializer, the gem will know a user subscribed to that Stripe price ID is under the corresponding plan. Essentially, the gem just looks at the current `pay` subscriptions of your user. If a matching price ID is found in the `pricing_plans` configuration file, it enforces the corresponding limits.
 
+Plan resolution treats Pay subscriptions as entitlement-bearing while they are active, trialing, in a cancellation grace period, or `past_due`. A failed renewal therefore does not abruptly downgrade a customer while the processor is still retrying payment; canceled and unpaid subscriptions no longer qualify. If an owner has multiple current subscriptions, the gem prefers one whose `processor_plan` matches the configured registry instead of blindly taking the first row.
+
 > [!TIP]
 > To make your `pricing_plans` gem config work across environments (production, development, etc.) instead of defining price IDs statically like this in the config:
 >
