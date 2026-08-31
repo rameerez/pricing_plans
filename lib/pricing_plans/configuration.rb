@@ -6,7 +6,13 @@ module PricingPlans
   class Configuration
     include DSL
 
+    LEGACY_DEFAULT_PLAN_ASSIGNMENT_BEHAVIORS = [:allow, :warn, :raise].freeze
+
     attr_accessor :default_plan, :highlighted_plan, :period_cycle
+    # Controls what the deprecated assignment APIs do when they are asked to
+    # assign the configured default plan. Explicit override APIs are never
+    # affected because their names already communicate the caller's intent.
+    attr_accessor :legacy_default_plan_assignment_behavior
     # Optional ergonomics
     attr_accessor :default_cta_text, :default_cta_url
     # Debug mode - set to true to enable debug output
@@ -57,6 +63,7 @@ module PricingPlans
       @default_plan = nil
       @highlighted_plan = nil
       @period_cycle = :billing_cycle
+      @legacy_default_plan_assignment_behavior = :warn
       @default_cta_text = nil
       @default_cta_url = nil
       @message_builder = nil
@@ -151,6 +158,7 @@ module PricingPlans
       validate_required_settings!
       validate_plan_references!
       validate_dsl_markers!
+      validate_legacy_default_plan_assignment_behavior!
       validate_plans!
     end
     def select_defaults_from_dsl!
@@ -204,6 +212,13 @@ module PricingPlans
 
     def validate_plans!
       @plans.each_value(&:validate!)
+    end
+
+    def validate_legacy_default_plan_assignment_behavior!
+      return if LEGACY_DEFAULT_PLAN_ASSIGNMENT_BEHAVIORS.include?(@legacy_default_plan_assignment_behavior)
+
+      raise PricingPlans::ConfigurationError,
+        "legacy_default_plan_assignment_behavior must be :allow, :warn, or :raise"
     end
   end
 end

@@ -36,7 +36,7 @@ class LimitableTest < ActiveSupport::TestCase
     assert counter, "Expected counter to be registered for :projects"
 
     org = create_organization
-    PricingPlans::Assignment.assign_plan_to(org, :enterprise)
+    PricingPlans::Assignment.create_or_update_pricing_plan_override_for!(org, :enterprise, source: "test")
     org.projects.create!(name: "Test 1")
     org.projects.create!(name: "Test 2")
 
@@ -52,13 +52,13 @@ class LimitableTest < ActiveSupport::TestCase
 
   def test_count_for_plan_owner_counts_associated_records
     org = create_organization
-    PricingPlans::Assignment.assign_plan_to(org, :enterprise)
+    PricingPlans::Assignment.create_or_update_pricing_plan_override_for!(org, :enterprise, source: "test")
     Project.create!(name: "Project 1", organization: org)
     Project.create!(name: "Project 2", organization: org)
 
     # Create projects for different org to ensure isolation
     other_org = create_organization
-    PricingPlans::Assignment.assign_plan_to(other_org, :enterprise)
+    PricingPlans::Assignment.create_or_update_pricing_plan_override_for!(other_org, :enterprise, source: "test")
     Project.create!(name: "Other Project", organization: other_org)
 
     count = Project.count_for_plan_owner(org, :organization)
@@ -155,7 +155,7 @@ class LimitableTest < ActiveSupport::TestCase
 
   def test_per_period_counter_incrementation_on_create
     org = create_organization
-    PricingPlans::Assignment.assign_plan_to(org, :pro)  # Pro plan has custom_models limit
+    PricingPlans::Assignment.create_or_update_pricing_plan_override_for!(org, :pro, source: "test")  # Pro plan has custom_models limit
 
     # Create custom model should increment usage counter
     travel_to(Time.parse("2025-01-15 12:00:00 UTC")) do
@@ -175,7 +175,7 @@ class LimitableTest < ActiveSupport::TestCase
 
   def test_per_period_counter_handles_race_conditions
     org = create_organization
-    PricingPlans::Assignment.assign_plan_to(org, :pro)
+    PricingPlans::Assignment.create_or_update_pricing_plan_override_for!(org, :pro, source: "test")
 
     travel_to(Time.parse("2025-01-15 12:00:00 UTC")) do
       # Get the actual period that will be calculated
@@ -201,7 +201,7 @@ class LimitableTest < ActiveSupport::TestCase
   def test_persistent_counter_does_not_decrement_on_destroy
     # This is by design - persistent counters are computed live
     org = create_organization
-    PricingPlans::Assignment.assign_plan_to(org, :enterprise)
+    PricingPlans::Assignment.create_or_update_pricing_plan_override_for!(org, :enterprise, source: "test")
 
     project1 = org.projects.create!(name: "Project 1")
     project2 = org.projects.create!(name: "Project 2")
@@ -363,7 +363,7 @@ class LimitableTest < ActiveSupport::TestCase
     end
 
     org = create_organization
-    PricingPlans::Assignment.assign_plan_to(org, :enterprise)
+    PricingPlans::Assignment.create_or_update_pricing_plan_override_for!(org, :enterprise, source: "test")
     # Use real Project records to exercise counter callable
     Project.create!(name: "P1", organization: org)
     Project.create!(name: "P2", organization: org)

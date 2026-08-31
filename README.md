@@ -162,10 +162,23 @@ Integrating payment processing (Stripe, `pay`, etc.) is relatively straightforwa
 
 The `pricing_plans` gem needs three new models in the schema in order to work: `Assignment`, `EnforcementState`, and `Usage`. Why are they needed?
 
-- `PricingPlans::Assignment` allow manual plan overrides independent of billing system (or before you wire up Stripe/Pay). Great for admin toggles, trials, demos.
-  - What: The arbitrary `plan_key` and a `source` label (default "manual"). Unique per plan_owner.
-  - How it's used: `PlanResolver` checks manual assignment → Pay → default plan. Manual assignments (admin overrides) take precedence over subscription-based plans. You can call `assign_pricing_plan!` and `remove_pricing_plan!` on the plan_owner.
-  - Provenance helpers: `current_pricing_plan_source` tells you whether the effective plan came from `:assignment`, `:subscription`, or `:default`, and `current_pricing_plan_resolution` exposes the assignment and current subscription objects when you need both entitlement and billing context.
+- `PricingPlans::Assignment` stores explicit pricing plan overrides independently of the billing system. This is useful for gifts, employee access, demos, support interventions, and grandfathered customers.
+  - What: A `plan_key` and a required provenance label such as `"admin"`, `"customer_success_gift"`, or `"legacy_import"`. There can be only one override per plan owner.
+  - How it's used: `PlanResolver` checks explicit override → Pay subscription → configured default. Every persisted override takes precedence over subscription-based plans, including an override whose key happens to equal the configured default.
+  - Intention-revealing API: call `plan_owner.override_pricing_plan!(:pro, source: "admin")` to create or update an override, and `plan_owner.clear_pricing_plan_override!` to resume normal subscription/default resolution.
+  - Provenance helpers: `pricing_plan_overridden?`, `pricing_plan_override`, and `pricing_plan_override_source` expose the override directly. `current_pricing_plan_resolution` preserves both entitlement and billing context when an override and a subscription coexist.
+
+An ordinary free/default account needs no assignment row:
+
+```ruby
+# Intentional exception: pin this organization to Pro independently of billing.
+organization.override_pricing_plan!(:pro, source: "customer_success_gift")
+
+# Resume automatic Pay subscription / configured default resolution.
+organization.clear_pricing_plan_override!
+```
+
+The old `assign_pricing_plan!` and `remove_pricing_plan!` names are deprecated because they hide the override semantics. See [Check and explicitly override plans](docs/03-model-helpers.md#check-and-explicitly-override-plans) for migration and strict-mode guidance.
 
 - `PricingPlans::EnforcementState` tracks per-plan_owner per-limit enforcement state for persistent caps and per-period allowances (grace/warnings/block state) in a race-safe way.
   - What: `exceeded_at`, `blocked_at`, last warning info, and a small JSON `data` column where we persist plan-derived parameters like grace period seconds.
@@ -196,7 +209,7 @@ Enforcing pricing plans is one of those boring plumbing problems that look easy 
 
 ## Downgrades and overages
 
-When a customer moves to a lower plan (via Stripe/Pay or manual assignment), the new plan’s limits start applying immediately. Existing resources are never auto‑deleted by the gem; instead:
+When a customer moves to a lower plan (via Stripe/Pay or an explicit override), the new plan’s limits start applying immediately. Existing resources are never auto‑deleted by the gem; instead:
 
 - **Persistent caps** (e.g., `:projects, to: 3`): We count live rows. If the account is now over the new cap, creations will be blocked (or put into grace/warn depending on `after_limit`). Users must remediate by deleting/archiving until under cap.
 - 

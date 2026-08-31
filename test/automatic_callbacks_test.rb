@@ -26,7 +26,7 @@ class AutomaticCallbacksTest < ActiveSupport::TestCase
     setup_plans_with_warning_thresholds
 
     org = create_organization
-    org.assign_pricing_plan!(:pro_with_warnings)
+    org.override_pricing_plan!(:pro_with_warnings, source: "test")
 
     # Track emitted events via callback configuration
     track_events_via_callbacks!(:projects)
@@ -44,7 +44,7 @@ class AutomaticCallbacksTest < ActiveSupport::TestCase
     setup_plans_with_warning_thresholds
 
     org = create_organization
-    org.assign_pricing_plan!(:pro_with_warnings)
+    org.override_pricing_plan!(:pro_with_warnings, source: "test")
 
     track_events_via_callbacks!(:projects)
 
@@ -63,7 +63,7 @@ class AutomaticCallbacksTest < ActiveSupport::TestCase
     setup_plans_with_grace
 
     org = create_organization
-    org.assign_pricing_plan!(:pro_with_grace)
+    org.override_pricing_plan!(:pro_with_grace, source: "test")
 
     track_events_via_callbacks!(:projects)
 
@@ -85,7 +85,7 @@ class AutomaticCallbacksTest < ActiveSupport::TestCase
     setup_plans_with_grace
 
     org = create_organization
-    org.assign_pricing_plan!(:pro_with_grace)
+    org.override_pricing_plan!(:pro_with_grace, source: "test")
 
     track_events_via_callbacks!(:projects)
 
@@ -103,7 +103,7 @@ class AutomaticCallbacksTest < ActiveSupport::TestCase
     setup_plans_with_grace
 
     org = create_organization
-    org.assign_pricing_plan!(:pro_with_grace)
+    org.override_pricing_plan!(:pro_with_grace, source: "test")
 
     track_events_via_callbacks!(:projects)
 
@@ -140,7 +140,7 @@ class AutomaticCallbacksTest < ActiveSupport::TestCase
     setup_plans_with_warning_thresholds
 
     org = create_organization
-    org.assign_pricing_plan!(:pro_with_warnings)
+    org.override_pricing_plan!(:pro_with_warnings, source: "test")
 
     # Setup a callback that raises an error
     PricingPlans.configuration.on_warning(:projects) do |_plan_owner, _threshold|
@@ -160,7 +160,7 @@ class AutomaticCallbacksTest < ActiveSupport::TestCase
     setup_plans_with_warning_thresholds
 
     org = create_organization
-    org.assign_pricing_plan!(:pro_with_warnings)
+    org.override_pricing_plan!(:pro_with_warnings, source: "test")
 
     # Setup callback that raises
     PricingPlans.configuration.on_warning(:projects) do |_plan_owner, _threshold|
@@ -180,7 +180,7 @@ class AutomaticCallbacksTest < ActiveSupport::TestCase
     setup_plans_with_warning_thresholds
 
     org = create_organization
-    org.assign_pricing_plan!(:pro_with_warnings)
+    org.override_pricing_plan!(:pro_with_warnings, source: "test")
 
     callback_fired = false
 
@@ -211,7 +211,7 @@ class AutomaticCallbacksTest < ActiveSupport::TestCase
     setup_plans_with_per_period_warnings
 
     org = create_organization
-    org.assign_pricing_plan!(:pro_with_period_warnings)
+    org.override_pricing_plan!(:pro_with_period_warnings, source: "test")
 
     track_events_via_callbacks!(:custom_models)
 
@@ -228,7 +228,7 @@ class AutomaticCallbacksTest < ActiveSupport::TestCase
     setup_plans_with_per_period_warnings
 
     org = create_organization
-    org.assign_pricing_plan!(:pro_with_period_warnings)
+    org.override_pricing_plan!(:pro_with_period_warnings, source: "test")
 
     track_events_via_callbacks!(:custom_models)
 
@@ -256,7 +256,7 @@ class AutomaticCallbacksTest < ActiveSupport::TestCase
     setup_plans_with_warning_thresholds
 
     org = create_organization
-    org.assign_pricing_plan!(:pro_with_warnings)
+    org.override_pricing_plan!(:pro_with_warnings, source: "test")
 
     track_events_via_callbacks!(:projects)
 
@@ -278,7 +278,7 @@ class AutomaticCallbacksTest < ActiveSupport::TestCase
     setup_plans_with_grace
 
     org = create_organization
-    org.assign_pricing_plan!(:pro_with_grace)
+    org.override_pricing_plan!(:pro_with_grace, source: "test")
 
     track_events_via_callbacks!(:projects)
 
@@ -309,7 +309,7 @@ class AutomaticCallbacksTest < ActiveSupport::TestCase
     setup_plans_with_warning_thresholds
 
     org = create_organization
-    org.assign_pricing_plan!(:pro_with_warnings)
+    org.override_pricing_plan!(:pro_with_warnings, source: "test")
 
     received_plan_owner = nil
     received_threshold = nil
@@ -330,7 +330,7 @@ class AutomaticCallbacksTest < ActiveSupport::TestCase
     setup_plans_with_grace
 
     org = create_organization
-    org.assign_pricing_plan!(:pro_with_grace)
+    org.override_pricing_plan!(:pro_with_grace, source: "test")
 
     received_plan_owner = nil
     received_grace_ends_at = nil
@@ -359,7 +359,7 @@ class AutomaticCallbacksTest < ActiveSupport::TestCase
     setup_plans_with_grace
 
     org = create_organization
-    org.assign_pricing_plan!(:pro_with_grace)
+    org.override_pricing_plan!(:pro_with_grace, source: "test")
 
     received_plan_owner = nil
 
@@ -397,7 +397,7 @@ class AutomaticCallbacksTest < ActiveSupport::TestCase
     setup_plans_with_warning_thresholds
 
     org = create_organization
-    org.assign_pricing_plan!(:pro_with_warnings)
+    org.override_pricing_plan!(:pro_with_warnings, source: "test")
 
     wildcard_events = []
 
@@ -418,7 +418,7 @@ class AutomaticCallbacksTest < ActiveSupport::TestCase
     setup_plans_with_warning_thresholds
 
     org = create_organization
-    org.assign_pricing_plan!(:pro_with_warnings)
+    org.override_pricing_plan!(:pro_with_warnings, source: "test")
 
     specific_fired = false
     wildcard_fired = false
@@ -447,7 +447,7 @@ class AutomaticCallbacksTest < ActiveSupport::TestCase
     setup_plans_with_grace
 
     org = create_organization
-    org.assign_pricing_plan!(:pro_with_grace)
+    org.override_pricing_plan!(:pro_with_grace, source: "test")
 
     wildcard_events = []
 
@@ -474,7 +474,7 @@ class AutomaticCallbacksTest < ActiveSupport::TestCase
     setup_plans_with_grace
 
     org = create_organization
-    org.assign_pricing_plan!(:pro_with_grace)
+    org.override_pricing_plan!(:pro_with_grace, source: "test")
 
     wildcard_events = []
 
@@ -517,7 +517,7 @@ class AutomaticCallbacksTest < ActiveSupport::TestCase
     setup_license_saas_plans
 
     org = create_organization
-    org.assign_pricing_plan!(:pro)
+    org.override_pricing_plan!(:pro, source: "test")
 
     emails_sent = []
 
@@ -568,7 +568,7 @@ class AutomaticCallbacksTest < ActiveSupport::TestCase
     setup_plans_with_warning_thresholds
 
     org = create_organization
-    org.assign_pricing_plan!(:pro_with_warnings)
+    org.override_pricing_plan!(:pro_with_warnings, source: "test")
 
     received_plan_owner = nil
     received_limit_key = nil
@@ -591,7 +591,7 @@ class AutomaticCallbacksTest < ActiveSupport::TestCase
     setup_plans_with_grace
 
     org = create_organization
-    org.assign_pricing_plan!(:pro_with_grace)
+    org.override_pricing_plan!(:pro_with_grace, source: "test")
 
     received_plan_owner = nil
     received_limit_key = nil
@@ -622,7 +622,7 @@ class AutomaticCallbacksTest < ActiveSupport::TestCase
     setup_plans_with_grace
 
     org = create_organization
-    org.assign_pricing_plan!(:pro_with_grace)
+    org.override_pricing_plan!(:pro_with_grace, source: "test")
 
     received_plan_owner = nil
     received_limit_key = nil

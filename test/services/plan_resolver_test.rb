@@ -3,10 +3,10 @@
 require "test_helper"
 
 class PlanResolverTest < ActiveSupport::TestCase
-  def test_resolution_for_manual_assignment_includes_provenance
+  def test_resolution_for_explicit_override_includes_provenance
     org = create_organization
 
-    assignment = PricingPlans::Assignment.assign_plan_to(org, :enterprise, source: "admin")
+    assignment = PricingPlans::Assignment.create_or_update_pricing_plan_override_for!(org, :enterprise, source: "admin")
 
     resolution = PricingPlans::PlanResolver.resolution_for(org)
 
@@ -50,12 +50,12 @@ class PlanResolverTest < ActiveSupport::TestCase
     assert resolution.default?
   end
 
-  def test_resolution_for_manual_assignment_keeps_underlying_subscription
+  def test_resolution_for_explicit_override_keeps_underlying_subscription
     org = create_organization(
       pay_subscription: { active: true, processor_plan: "price_pro_123" }
     )
 
-    PricingPlans::Assignment.assign_plan_to(org, :enterprise, source: "admin")
+    PricingPlans::Assignment.create_or_update_pricing_plan_override_for!(org, :enterprise, source: "admin")
 
     resolution = PricingPlans::PlanResolver.resolution_for(org)
 
@@ -109,10 +109,10 @@ class PlanResolverTest < ActiveSupport::TestCase
     assert_equal :pro, plan.key
   end
 
-  def test_effective_plan_with_manual_assignment
+  def test_effective_plan_with_explicit_override
     org = create_organization
 
-    PricingPlans::Assignment.assign_plan_to(org, :enterprise)
+    PricingPlans::Assignment.create_or_update_pricing_plan_override_for!(org, :enterprise, source: "test")
 
     plan = PricingPlans::PlanResolver.effective_plan_for(org)
 
@@ -127,17 +127,17 @@ class PlanResolverTest < ActiveSupport::TestCase
     assert_equal :free, plan.key
   end
 
-  def test_manual_assignment_overrides_pay_subscription
+  def test_explicit_override_takes_precedence_over_pay_subscription
     org = create_organization(
       pay_subscription: { active: true, processor_plan: "price_pro_123" }
     )
 
-    # Manual assignment takes precedence over Pay subscription (admin override)
-    PricingPlans::Assignment.assign_plan_to(org, :enterprise)
+    # The explicit admin override takes precedence over the Pay subscription.
+    PricingPlans::Assignment.create_or_update_pricing_plan_override_for!(org, :enterprise, source: "test")
 
     plan = PricingPlans::PlanResolver.effective_plan_for(org)
 
-    assert_equal :enterprise, plan.key  # Manual assignment wins
+    assert_equal :enterprise, plan.key
   end
 
   def test_effective_plan_with_unknown_processor_plan
@@ -151,12 +151,12 @@ class PlanResolverTest < ActiveSupport::TestCase
     assert_equal :free, plan.key
   end
 
-  def test_effective_plan_with_inactive_subscription_but_manual_assignment
+  def test_effective_plan_with_inactive_subscription_and_explicit_override
     org = create_organization(
       pay_subscription: { active: false, processor_plan: "price_pro_123" }
     )
 
-    PricingPlans::Assignment.assign_plan_to(org, :enterprise)
+    PricingPlans::Assignment.create_or_update_pricing_plan_override_for!(org, :enterprise, source: "test")
 
     plan = PricingPlans::PlanResolver.effective_plan_for(org)
 
@@ -185,10 +185,10 @@ class PlanResolverTest < ActiveSupport::TestCase
     assert_equal :pro, plan_key
   end
 
-  def test_assign_plan_manually
+  def test_override_pricing_plan_for
     org = create_organization
 
-    assignment = PricingPlans::PlanResolver.assign_plan_manually!(org, :pro, source: "admin")
+    assignment = PricingPlans::PlanResolver.override_pricing_plan_for!(org, :pro, source: "admin")
 
     assert_equal "pro", assignment.plan_key
     assert_equal "admin", assignment.source
@@ -198,16 +198,16 @@ class PlanResolverTest < ActiveSupport::TestCase
     assert_equal :pro, plan.key
   end
 
-  def test_remove_manual_assignment
+  def test_clear_pricing_plan_override_for
     org = create_organization
 
-    PricingPlans::PlanResolver.assign_plan_manually!(org, :pro)
+    PricingPlans::PlanResolver.override_pricing_plan_for!(org, :pro, source: "test")
 
     # Verify assignment exists
     plan = PricingPlans::PlanResolver.effective_plan_for(org)
     assert_equal :pro, plan.key
 
-    PricingPlans::PlanResolver.remove_manual_assignment!(org)
+    PricingPlans::PlanResolver.clear_pricing_plan_override_for!(org)
 
     # Should fall back to default
     plan = PricingPlans::PlanResolver.effective_plan_for(org)
@@ -257,7 +257,7 @@ class PlanResolverTest < ActiveSupport::TestCase
 
     plan = PricingPlans::PlanResolver.effective_plan_for(basic_org)
 
-    # Should fall back to default (no manual assignments for non-AR objects)
+    # Should fall back to default (non-AR objects cannot have persisted overrides).
     assert_equal :free, plan.key
   end
 
@@ -321,7 +321,7 @@ class PlanResolverTest < ActiveSupport::TestCase
     assert_equal :free, PricingPlans::PlanResolver.effective_plan_for(org).key
 
     # Assign plan; should reflect immediately since we don’t cache plan resolution here
-    PricingPlans::PlanResolver.assign_plan_manually!(org, :pro)
+    PricingPlans::PlanResolver.override_pricing_plan_for!(org, :pro, source: "test")
     assert_equal :pro, PricingPlans::PlanResolver.effective_plan_for(org).key
   end
 end

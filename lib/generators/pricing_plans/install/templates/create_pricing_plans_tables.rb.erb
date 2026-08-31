@@ -57,7 +57,7 @@ class CreatePricingPlansTables < ActiveRecord::Migration<%= migration_version %>
     create_table :pricing_plans_assignments, id: primary_key_type do |t|
       t.references :plan_owner, polymorphic: true, null: false, type: foreign_key_type
       t.string :plan_key, null: false
-      t.string :source, null: false, default: "manual"
+      t.string :source, null: false
 
       t.timestamps
     end
@@ -87,5 +87,4 @@ class CreatePricingPlansTables < ActiveRecord::Migration<%= migration_version %>
     :json
   end
 end
-
 

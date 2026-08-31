@@ -68,7 +68,7 @@ ActiveRecord::Schema.define do
     t.string :plan_owner_type, null: false
     t.bigint :plan_owner_id, null: false
     t.string :plan_key, null: false
-    t.string :source, null: false, default: 'manual'
+    t.string :source, null: false
 
     t.timestamps
   end

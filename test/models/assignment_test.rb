@@ -48,20 +48,21 @@ class AssignmentTest < ActiveSupport::TestCase
     assignment = PricingPlans::Assignment.new(
       plan_owner: @org,
       plan_key: "pro",
-      source: nil  # Explicitly set to nil since it has default
+      source: nil
     )
 
     refute assignment.valid?
     assert assignment.errors[:source].any?
   end
 
-  def test_source_defaults_to_manual
-    assignment = PricingPlans::Assignment.create!(
+  def test_source_has_no_implicit_default
+    assignment = PricingPlans::Assignment.new(
       plan_owner: @org,
       plan_key: "pro"
     )
 
-    assert_equal "manual", assignment.source
+    refute assignment.valid?
+    assert assignment.errors[:source].any?
   end
 
   def test_uniqueness_per_plan_owner
@@ -103,7 +104,8 @@ class AssignmentTest < ActiveSupport::TestCase
   def test_polymorphic_plan_owner_association
     assignment = PricingPlans::Assignment.create!(
       plan_owner: @org,
-      plan_key: "pro"
+      plan_key: "pro",
+      source: "test"
     )
 
     assert_equal @org, assignment.plan_owner
@@ -111,8 +113,8 @@ class AssignmentTest < ActiveSupport::TestCase
     assert_equal @org.id, assignment.plan_owner_id
   end
 
-  def test_assign_plan_to_class_method
-    result = PricingPlans::Assignment.assign_plan_to(@org, :enterprise, source: "admin")
+  def test_create_or_update_pricing_plan_override_for_class_method
+    result = PricingPlans::Assignment.create_or_update_pricing_plan_override_for!(@org, :enterprise, source: "admin")
 
     assert result.persisted?
     assert_equal "enterprise", result.plan_key
@@ -120,47 +122,49 @@ class AssignmentTest < ActiveSupport::TestCase
     assert_equal @org, result.plan_owner
   end
 
-  def test_assign_plan_to_updates_existing_assignment
+  def test_create_or_update_pricing_plan_override_for_updates_existing_override
     existing = PricingPlans::Assignment.create!(
       plan_owner: @org,
       plan_key: "pro",
       source: "manual"
     )
 
-    updated = PricingPlans::Assignment.assign_plan_to(@org, :enterprise, source: "admin")
+    updated = PricingPlans::Assignment.create_or_update_pricing_plan_override_for!(@org, :enterprise, source: "admin")
 
     assert_equal existing.id, updated.id
     assert_equal "enterprise", updated.plan_key
     assert_equal "admin", updated.source
   end
 
-  def test_assign_plan_to_with_string_plan_key
-    result = PricingPlans::Assignment.assign_plan_to(@org, "pro")
+  def test_create_or_update_pricing_plan_override_for_with_string_plan_key
+    result = PricingPlans::Assignment.create_or_update_pricing_plan_override_for!(@org, "pro", source: "test")
 
     assert_equal "pro", result.plan_key
   end
 
-  def test_remove_assignment_for_class_method
+  def test_clear_pricing_plan_override_for_class_method
     PricingPlans::Assignment.create!(
       plan_owner: @org,
-      plan_key: "pro"
+      plan_key: "pro",
+      source: "test"
     )
 
     assert_difference "PricingPlans::Assignment.count", -1 do
-      PricingPlans::Assignment.remove_assignment_for(@org)
+      PricingPlans::Assignment.clear_pricing_plan_override_for!(@org)
     end
   end
 
-  def test_remove_assignment_for_nonexistent_assignment
+  def test_clear_pricing_plan_override_for_nonexistent_override
     assert_no_difference "PricingPlans::Assignment.count" do
-      PricingPlans::Assignment.remove_assignment_for(@org)
+      PricingPlans::Assignment.clear_pricing_plan_override_for!(@org)
     end
   end
 
   def test_find_by_plan_owner
     assignment = PricingPlans::Assignment.create!(
       plan_owner: @org,
-      plan_key: "pro"
+      plan_key: "pro",
+      source: "test"
     )
 
     found = PricingPlans::Assignment.find_by(
@@ -172,7 +176,7 @@ class AssignmentTest < ActiveSupport::TestCase
   end
 
   def test_integration_with_plan_resolver
-    PricingPlans::Assignment.assign_plan_to(@org, :pro)
+    PricingPlans::Assignment.create_or_update_pricing_plan_override_for!(@org, :pro, source: "test")
 
     resolved_plan = PricingPlans::PlanResolver.effective_plan_for(@org)
     assert_equal :pro, resolved_plan.key
@@ -199,7 +203,8 @@ class AssignmentTest < ActiveSupport::TestCase
     travel_to(Time.parse("2025-01-01 12:00:00 UTC")) do
       assignment = PricingPlans::Assignment.create!(
         plan_owner: @org,
-        plan_key: "free"
+        plan_key: "free",
+        source: "test"
       )
 
       assert_in_delta Time.parse("2025-01-01 12:00:00 UTC"), assignment.created_at, 1.second
@@ -207,7 +212,7 @@ class AssignmentTest < ActiveSupport::TestCase
 
     travel_to(Time.parse("2025-01-15 12:00:00 UTC")) do
       assignment = PricingPlans::Assignment.find_by(plan_owner: @org)
-      PricingPlans::Assignment.assign_plan_to(@org, :pro, source: "upgrade")
+      PricingPlans::Assignment.create_or_update_pricing_plan_override_for!(@org, :pro, source: "upgrade")
 
       updated_assignment = PricingPlans::Assignment.find_by(plan_owner: @org)
       assert updated_assignment.updated_at > assignment.updated_at

@@ -62,7 +62,7 @@ class LimitCheckerTest < ActiveSupport::TestCase
 
   def test_remaining_calculation_unlimited
     # Switch to enterprise plan which has unlimited projects
-    PricingPlans::Assignment.assign_plan_to(create_organization, :enterprise)
+    PricingPlans::Assignment.create_or_update_pricing_plan_override_for!(create_organization, :enterprise, source: "test")
     org = Organization.first
 
     assert_equal :unlimited, PricingPlans::LimitChecker.plan_limit_remaining(org, :projects)
@@ -82,7 +82,7 @@ class LimitCheckerTest < ActiveSupport::TestCase
   end
 
   def test_percent_used_with_unlimited_limit
-    PricingPlans::Assignment.assign_plan_to(create_organization, :enterprise)
+    PricingPlans::Assignment.create_or_update_pricing_plan_override_for!(create_organization, :enterprise, source: "test")
     org = Organization.first
 
     org.projects.create!(name: "Project 1")
@@ -104,7 +104,7 @@ class LimitCheckerTest < ActiveSupport::TestCase
   end
 
   def test_limit_amount_unlimited
-    PricingPlans::Assignment.assign_plan_to(create_organization, :enterprise)
+    PricingPlans::Assignment.create_or_update_pricing_plan_override_for!(create_organization, :enterprise, source: "test")
     org = Organization.first
 
     assert_equal :unlimited, PricingPlans::LimitChecker.limit_amount(org, :projects)

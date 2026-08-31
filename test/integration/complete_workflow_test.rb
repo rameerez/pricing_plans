@@ -88,7 +88,7 @@ class CompleteWorkflowTest < ActiveSupport::TestCase
 
   def test_per_period_limit_workflow_across_period_boundary
     # Assign to pro plan which has custom_models limit and grace_then_block
-    PricingPlans::Assignment.assign_plan_to(create_organization, :pro)
+    PricingPlans::Assignment.create_or_update_pricing_plan_override_for!(create_organization, :pro, source: "test")
     org = Organization.first
 
     travel_to(Time.parse("2025-01-15 12:00:00 UTC")) do
@@ -194,7 +194,7 @@ class CompleteWorkflowTest < ActiveSupport::TestCase
     assert_match(/pro/i, error.message)  # Should mention upgrade to Pro
 
     # Upgrade to pro plan
-    PricingPlans::Assignment.assign_plan_to(org, :pro)
+    PricingPlans::Assignment.create_or_update_pricing_plan_override_for!(org, :pro, source: "test")
 
     # Now API access should work
     assert_nothing_raised do
@@ -203,7 +203,7 @@ class CompleteWorkflowTest < ActiveSupport::TestCase
   end
 
   def test_enterprise_unlimited_workflow
-    PricingPlans::Assignment.assign_plan_to(create_organization, :enterprise)
+    PricingPlans::Assignment.create_or_update_pricing_plan_override_for!(create_organization, :enterprise, source: "test")
     org = Organization.first
 
     # Should have unlimited projects
@@ -222,7 +222,7 @@ class CompleteWorkflowTest < ActiveSupport::TestCase
     assert_match(/unlimited/i, result.message)
   end
 
-  def test_manual_plan_assignment_override_workflow
+  def test_explicit_pricing_plan_override_workflow
     org = create_organization(
       pay_subscription: { active: true, processor_plan: "price_pro_123" }
     )
@@ -230,14 +230,14 @@ class CompleteWorkflowTest < ActiveSupport::TestCase
     # Should be on pro plan via subscription
     assert_equal :pro, PricingPlans::PlanResolver.effective_plan_for(org).key
 
-    # Manual assignment overrides subscription (admin override takes precedence)
-    PricingPlans::Assignment.assign_plan_to(org, :enterprise)
+    # The explicit override takes precedence over the subscription.
+    PricingPlans::Assignment.create_or_update_pricing_plan_override_for!(org, :enterprise, source: "test")
 
-    # Now on enterprise plan (manual assignment wins)
+    # The override now supplies the effective Enterprise plan.
     assert_equal :enterprise, PricingPlans::PlanResolver.effective_plan_for(org).key
 
-    # Remove manual assignment
-    PricingPlans::Assignment.remove_assignment_for(org)
+    # Clear the override without modifying the subscription.
+    PricingPlans::Assignment.clear_pricing_plan_override_for!(org)
 
     # Back to subscription-based plan
     assert_equal :pro, PricingPlans::PlanResolver.effective_plan_for(org).key

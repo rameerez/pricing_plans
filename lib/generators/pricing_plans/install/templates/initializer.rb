@@ -36,6 +36,11 @@ PricingPlans.configure do |config|
     allows    :api_access, :premium_features
   end
 
+  # Reject the deprecated, ambiguous assignment API if it is used to assign
+  # the configured default plan. Use `override_pricing_plan!(..., source: ...)`
+  # for deliberate exceptions and no assignment at all for ordinary defaults.
+  config.legacy_default_plan_assignment_behavior = :raise
+
 
   # Optional settings
 

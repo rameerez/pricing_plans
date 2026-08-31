@@ -1,12 +1,24 @@
 # frozen_string_literal: true
 
 require_relative "pricing_plans/version"
+require "active_support/deprecation"
 require_relative "pricing_plans/engine" if defined?(Rails::Engine)
 
 module PricingPlans
   class Error < StandardError; end
   class ConfigurationError < Error; end
   class PlanNotFoundError < Error; end
+
+  class LegacyDefaultPlanAssignmentError < Error
+    attr_reader :configured_default_plan_key, :legacy_assignment_method_name
+
+    def initialize(message, configured_default_plan_key:, legacy_assignment_method_name:)
+      super(message)
+      @configured_default_plan_key = configured_default_plan_key.to_sym
+      @legacy_assignment_method_name = legacy_assignment_method_name
+    end
+  end
+
   class FeatureDenied < Error
     attr_reader :feature_key, :plan_owner
 
@@ -25,6 +37,7 @@ module PricingPlans
   autoload :DSL, "pricing_plans/dsl"
   autoload :IntegerRefinements, "pricing_plans/integer_refinements"
   autoload :PlanResolver, "pricing_plans/plan_resolver"
+  autoload :LegacyPlanAssignmentApi, "pricing_plans/legacy_plan_assignment_api"
   autoload :PaySupport, "pricing_plans/pay_support"
   autoload :LimitChecker, "pricing_plans/limit_checker"
   autoload :LimitableRegistry, "pricing_plans/limit_checker"
@@ -54,6 +67,13 @@ module PricingPlans
 
     def configuration
       @configuration ||= Configuration.new
+    end
+
+    # A gem-specific deprecator lets host applications configure pricing_plans
+    # warnings independently and lets Rails include them in its deprecator
+    # collection.
+    def deprecator
+      @deprecator ||= ActiveSupport::Deprecation.new("0.6.0", "pricing_plans")
     end
 
     def configure(&block)

@@ -55,10 +55,10 @@ class PlanOwnerHelpersTest < ActiveSupport::TestCase
     assert resolution.default?
   end
 
-  def test_current_pricing_plan_resolution_for_manual_assignment
+  def test_current_pricing_plan_resolution_for_explicit_override
     org = create_organization
 
-    org.assign_pricing_plan!(:pro, source: "admin")
+    org.override_pricing_plan!(:pro, source: "admin")
 
     resolution = org.current_pricing_plan_resolution
 
@@ -68,17 +68,17 @@ class PlanOwnerHelpersTest < ActiveSupport::TestCase
     assert resolution.assignment?
   end
 
-  def test_assigning_the_default_plan_is_still_a_manual_override
+  def test_explicitly_overriding_to_the_default_plan_is_still_an_override
     org = create_organization
 
-    org.assign_pricing_plan!(:free)
+    org.override_pricing_plan!(:free, source: "test")
 
     assert_equal :free, org.current_pricing_plan.key
     assert_equal :assignment, org.current_pricing_plan_source
-    assert_equal "manual", org.current_pricing_plan_resolution.assignment_source
+    assert_equal "test", org.current_pricing_plan_resolution.assignment_source
     assert org.has_plan_assignment?
 
-    org.remove_pricing_plan!
+    org.clear_pricing_plan_override!
 
     assert_equal :free, org.current_pricing_plan.key
     assert_equal :default, org.current_pricing_plan_source
@@ -126,7 +126,7 @@ class PlanOwnerHelpersTest < ActiveSupport::TestCase
     refute org.plan_allows_api_access?
 
     # Assign the preconfigured pro plan, which allows :api_access
-    PricingPlans::Assignment.assign_plan_to(org, :pro)
+    PricingPlans::Assignment.create_or_update_pricing_plan_override_for!(org, :pro, source: "test")
     assert org.plan_allows_api_access?
     assert_equal org.plan_allows?(:api_access), org.plan_allows_api_access?
   end

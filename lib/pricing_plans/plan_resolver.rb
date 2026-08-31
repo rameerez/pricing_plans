@@ -18,11 +18,11 @@ module PricingPlans
       def resolution_for(plan_owner)
         log_debug "[PricingPlans::PlanResolver] resolution_for called for #{plan_owner.class.name}##{plan_owner.respond_to?(:id) ? plan_owner.id : 'N/A'}"
 
-        assignment = assignment_for(plan_owner)
+        assignment = pricing_plan_override_for(plan_owner)
         subscription = current_subscription_for(plan_owner)
 
         if assignment
-          log_debug "[PricingPlans::PlanResolver] Returning assignment-backed resolution: #{assignment.plan_key}"
+          log_debug "[PricingPlans::PlanResolver] Returning explicit-override resolution: #{assignment.plan_key}"
           return PlanResolution.new(
             plan: Registry.plan(assignment.plan_key),
             source: :assignment,
@@ -56,12 +56,32 @@ module PricingPlans
         )
       end
 
+      def override_pricing_plan_for!(plan_owner, plan_key, source:)
+        Assignment.create_or_update_pricing_plan_override_for!(
+          plan_owner,
+          plan_key,
+          source: source
+        )
+      end
+
+      def clear_pricing_plan_override_for!(plan_owner)
+        Assignment.clear_pricing_plan_override_for!(plan_owner)
+      end
+
       def assign_plan_manually!(plan_owner, plan_key, source: "manual")
-        Assignment.assign_plan_to(plan_owner, plan_key, source: source)
+        LegacyPlanAssignmentApi.create_or_update_override!(
+          plan_owner,
+          plan_key,
+          source: source,
+          called_method_name: "PricingPlans::PlanResolver.assign_plan_manually!"
+        )
       end
 
       def remove_manual_assignment!(plan_owner)
-        Assignment.remove_assignment_for(plan_owner)
+        LegacyPlanAssignmentApi.clear_override!(
+          plan_owner,
+          called_method_name: "PricingPlans::PlanResolver.remove_manual_assignment!"
+        )
       end
 
       private
@@ -71,8 +91,8 @@ module PricingPlans
         PaySupport.pay_available?
       end
 
-      def assignment_for(plan_owner)
-        log_debug "[PricingPlans::PlanResolver] Checking for manual assignment..."
+      def pricing_plan_override_for(plan_owner)
+        log_debug "[PricingPlans::PlanResolver] Checking for an explicit pricing plan override..."
         return nil unless plan_owner.respond_to?(:id)
 
         assignment = Assignment.find_by(
@@ -81,9 +101,9 @@ module PricingPlans
         )
 
         if assignment
-          log_debug "[PricingPlans::PlanResolver] Found manual assignment: #{assignment.plan_key}"
+          log_debug "[PricingPlans::PlanResolver] Found explicit pricing plan override: #{assignment.plan_key}"
         else
-          log_debug "[PricingPlans::PlanResolver] No manual assignment found"
+          log_debug "[PricingPlans::PlanResolver] No explicit pricing plan override found"
         end
 
         assignment

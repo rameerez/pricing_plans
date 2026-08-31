@@ -14,7 +14,19 @@ There's nothing to do on your end to make `pricing_plans` work with `pay`!
 
 As long as your `pricing_plans` config (`config/initializers/pricing_plans.rb`) contains a plan with the correct `stripe_price` ID, whenever a subscription to that Stripe price ID is found through the `pay` gem, `pricing_plans` will understand the user is subscribed to that plan automatically, and will start enforcing the corresponding limits.
 
-The way `pricing_plans` works doesn't require any data migration, callback setup, or manual action. You don't need to call `assign_pricing_plan!` unless you're intentionally overriding normal plan resolution, gifting access without payment, or doing something similar. In particular, do not assign the default/free plan during ordinary signup or free-plan selection: assigning even the configured default creates a manual override that takes precedence over future Pay subscriptions. Leave the owner unassigned—or call `remove_pricing_plan!`—to use the default plan normally.
+The way `pricing_plans` works doesn't require any data migration, callback setup, or assignment during signup. Do not call an override API for ordinary plan selection or after a successful Pay checkout: Pay subscriptions are discovered automatically.
+
+Use `plan_owner.override_pricing_plan!(:pro, source: "customer_success_gift")` only when you deliberately want an exception that wins over billing. In particular, do not override to the default/free plan during ordinary signup or free-plan selection. Leave the owner without an override—or call `plan_owner.clear_pricing_plan_override!`—to use Pay/default resolution normally.
+
+The deprecated `assign_pricing_plan!` API now warns, and upgraded applications can turn accidental legacy default-plan assignments into errors:
+
+```ruby
+PricingPlans.configure do |config|
+  config.legacy_default_plan_assignment_behavior = :raise
+end
+```
+
+Newly generated initializers enable this strict behavior. Intentional default-tier pinning remains available through the self-documenting explicit API: `plan_owner.override_pricing_plan!(:free, source: "admin_downgrade")`.
 
 As long as a matching `stripe_price` is found in the `pricing_plans.rb` initializer, the gem will know a user subscribed to that Stripe price ID is under the corresponding plan. Essentially, the gem just looks at the current `pay` subscriptions of your user. If a matching price ID is found in the `pricing_plans` configuration file, it enforces the corresponding limits.
 

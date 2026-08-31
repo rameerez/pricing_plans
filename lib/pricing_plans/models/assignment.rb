@@ -20,7 +20,7 @@ module PricingPlans
       Registry.plan(plan_key.to_sym)
     end
 
-    def self.assign_plan_to(plan_owner, plan_key, source: "manual")
+    def self.create_or_update_pricing_plan_override_for!(plan_owner, plan_key, source:)
       assignment = find_or_initialize_by(
         plan_owner_type: plan_owner.class.name,
         plan_owner_id: plan_owner.id
@@ -35,11 +35,27 @@ module PricingPlans
       assignment
     end
 
-    def self.remove_assignment_for(plan_owner)
+    def self.clear_pricing_plan_override_for!(plan_owner)
       where(
         plan_owner_type: plan_owner.class.name,
         plan_owner_id: plan_owner.id
       ).destroy_all
+    end
+
+    def self.assign_plan_to(plan_owner, plan_key, source: "manual")
+      LegacyPlanAssignmentApi.create_or_update_override!(
+        plan_owner,
+        plan_key,
+        source: source,
+        called_method_name: "PricingPlans::Assignment.assign_plan_to"
+      )
+    end
+
+    def self.remove_assignment_for(plan_owner)
+      LegacyPlanAssignmentApi.clear_override!(
+        plan_owner,
+        called_method_name: "PricingPlans::Assignment.remove_assignment_for"
+      )
     end
 
     private

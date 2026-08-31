@@ -290,26 +290,64 @@ You can also use the top-level equivalents if you prefer: `PricingPlans.severity
 
 ## Other helpers and methods
 
-### Check and override plans
+### Check and explicitly override plans
 
-You can also check and override the current pricing plan for any user, which comes handy as an admin:
+An override is an intentional exception to normal plan resolution. It is useful for gifts, employee accounts, support interventions, demos, and grandfathering. The method names deliberately say **override** because an override always takes precedence over both Pay subscriptions and the configured default:
+
 ```ruby
-user.current_pricing_plan                    # => PricingPlans::Plan
-user.current_pricing_plan_source             # => :assignment, :subscription, :default
-user.current_pricing_plan_resolution         # => PricingPlans::PlanResolution
-user.assign_pricing_plan!(:pro)              # manual assignment override
-user.remove_pricing_plan!                    # remove manual override (fallback to default)
+user.current_pricing_plan                             # => PricingPlans::Plan
+user.current_pricing_plan_source                      # => :assignment, :subscription, :default
+user.current_pricing_plan_resolution                  # => PricingPlans::PlanResolution
+
+user.override_pricing_plan!(:pro, source: "admin")   # create/update an explicit override
+user.pricing_plan_overridden?                         # => true
+user.pricing_plan_override                            # => PricingPlans::Assignment
+user.pricing_plan_override_source                     # => "admin"
+user.clear_pricing_plan_override!                     # resume subscription/default resolution
 ```
 
 > [!WARNING]
-> Assigning the configured default plan is still a manual override. For example,
-> `user.assign_pricing_plan!(:free)` creates an assignment row, reports
-> `current_pricing_plan_source == :assignment`, and takes precedence over a future
-> Pay subscription. For an ordinary free/default account, create no assignment at
-> all. If an override already exists and the account should return to normal plan
-> resolution, call `user.remove_pricing_plan!`.
+> Explicitly overriding to the configured default plan is still an override. For
+> example, `user.override_pricing_plan!(:free, source: "admin_downgrade")`
+> creates an assignment row and continues to take precedence over future Pay
+> subscriptions. That behavior supports intentional default-tier pinning. For an
+> ordinary free/default account, create no assignment. If an override already
+> exists, call `user.clear_pricing_plan_override!` to resume normal resolution.
 
-**Performance note:** Each call to `current_pricing_plan`, `current_pricing_plan_source`, or `current_pricing_plan_resolution` performs a fresh database lookup. If you need both the plan and its provenance, call `current_pricing_plan_resolution` once and read both values from that object — this avoids duplicate queries.
+The `source:` keyword is required by the explicit API. Use a stable, auditable description of why the exception exists—such as `"admin"`, `"customer_success_gift"`, `"employee_access"`, or `"legacy_import"`. The source is provenance; it does not alter precedence. Every override wins regardless of its source label.
+
+Newly generated assignment tables do not have a database default for `source`, so direct model writes must also state their provenance. Applications installed with an older gem version may still have the historical `"manual"` database default; the explicit public API does not rely on it.
+
+#### Migrating from the old assignment API
+
+`assign_pricing_plan!` and `remove_pricing_plan!` are deprecated because their names do not reveal that they create and clear persistent overrides. Replace them directly:
+
+```ruby
+# Before: ambiguous and source defaulted silently to "manual"
+user.assign_pricing_plan!(:pro)
+user.remove_pricing_plan!
+
+# After: intent and provenance are explicit
+user.override_pricing_plan!(:pro, source: "admin")
+user.clear_pricing_plan_override!
+```
+
+Legacy calls continue to work during the deprecation window and emit a gem-specific Active Support deprecation warning. Assigning the configured default through a legacy API receives an additional guard because it is usually accidental. Its behavior is configurable:
+
+```ruby
+PricingPlans.configure do |config|
+  # :warn  — default for upgraded applications; preserve behavior and warn
+  # :raise — recommended; reject legacy default-plan assignments before writing
+  # :allow — migration escape hatch; emit only the general deprecation warning
+  config.legacy_default_plan_assignment_behavior = :raise
+end
+```
+
+The strict `:raise` behavior raises `PricingPlans::LegacyDefaultPlanAssignmentError` and writes no assignment. It never blocks the explicit `override_pricing_plan!` API, even when the target is the default plan, because that method already states the caller's intent. Newly generated initializers use `:raise`.
+
+The low-level legacy methods—`PricingPlans::PlanResolver.assign_plan_manually!`, `PricingPlans::PlanResolver.remove_manual_assignment!`, `PricingPlans::Assignment.assign_plan_to`, and `PricingPlans::Assignment.remove_assignment_for`—are deprecated under the same policy. Prefer `PlanResolver.override_pricing_plan_for!`, `PlanResolver.clear_pricing_plan_override_for!`, `Assignment.create_or_update_pricing_plan_override_for!`, and `Assignment.clear_pricing_plan_override_for!` when a lower-level API is genuinely necessary.
+
+**Performance note:** Each plan/provenance helper performs a fresh database lookup. If you need both the effective plan and its provenance, call `current_pricing_plan_resolution` once and read both from that object.
 
 If you need the full provenance, use the resolution object:
 
@@ -317,13 +355,18 @@ If you need the full provenance, use the resolution object:
 resolution = user.current_pricing_plan_resolution
 
 resolution.plan.key                          # => :enterprise
-resolution.source                            # => :assignment
-resolution.assignment                        # => PricingPlans::Assignment | nil
-resolution.assignment_source                 # => "admin" | "manual" | nil
+resolution.source                            # => :assignment (compatibility value)
+resolution.pricing_plan_overridden?           # => true
+resolution.pricing_plan_override              # => PricingPlans::Assignment | nil
+resolution.pricing_plan_override_source       # => "admin" | "legacy_import" | nil
 resolution.subscription                      # => Pay subscription | nil
+
+# Storage-oriented compatibility readers remain available:
+resolution.assignment                        # => same object as pricing_plan_override
+resolution.assignment_source                 # => same value as pricing_plan_override_source
 ```
 
-This distinction matters: the **effective pricing plan** is what controls entitlements and limits inside your app. The **Pay/Stripe subscription state** is billing-facing. A manual assignment may intentionally override the subscription-backed plan while still leaving the underlying subscription present for billing operations.
+This distinction matters: the **effective pricing plan** controls entitlements and limits inside your app, while the **Pay/Stripe subscription state** is billing-facing. An explicit override may intentionally control entitlements while the underlying subscription remains available for billing operations. Clearing the override does not cancel or modify billing; it simply lets subscription/default resolution take control again.
 
 **Edge case:** `source` can be `:default` even when `subscription` is non-nil. This happens when a Pay subscription exists but its `processor_plan` (Stripe price ID) doesn't map to any plan in your registry. The subscription is preserved for billing context, but the effective plan falls back to your configured default.
 

@@ -60,7 +60,7 @@ class ControllerDynamicCallbacksTest < ActiveSupport::TestCase
     # Free plan denies api_access
     assert_raises(PricingPlans::FeatureDenied) { controller.enforce_api_access! }
 
-    PricingPlans::Assignment.assign_plan_to(@org, :pro)
+    PricingPlans::Assignment.create_or_update_pricing_plan_override_for!(@org, :pro, source: "test")
     assert_equal true, controller.enforce_api_access!
   end
 
@@ -181,7 +181,7 @@ class ControllerDynamicCallbacksTest < ActiveSupport::TestCase
     # Free plan denies api_access
     assert_raises(PricingPlans::FeatureDenied) { controller.enforce_api_access!(for: :current_organization) }
 
-    PricingPlans::Assignment.assign_plan_to(@org, :pro)
+    PricingPlans::Assignment.create_or_update_pricing_plan_override_for!(@org, :pro, source: "test")
     assert_equal true, controller.enforce_api_access!(for: :current_organization)
   end
 
@@ -192,7 +192,7 @@ class ControllerDynamicCallbacksTest < ActiveSupport::TestCase
     # Free plan denies api_access
     assert_raises(PricingPlans::FeatureDenied) { controller.enforce_api_access!(for: block) }
 
-    PricingPlans::Assignment.assign_plan_to(@org, :pro)
+    PricingPlans::Assignment.create_or_update_pricing_plan_override_for!(@org, :pro, source: "test")
     assert_equal true, controller.enforce_api_access!(for: block)
   end
 
@@ -205,14 +205,14 @@ class ControllerDynamicCallbacksTest < ActiveSupport::TestCase
     assert_raises(PricingPlans::FeatureDenied) { controller.enforce_api_access! }
 
     # org2 on pro → allowed
-    PricingPlans::Assignment.assign_plan_to(org2, :pro)
+    PricingPlans::Assignment.create_or_update_pricing_plan_override_for!(org2, :pro, source: "test")
     assert_equal true, controller.enforce_api_access!(plan_owner: org2)
   end
 
   def test_plan_owner_resolution_prefers_configured_method_over_conventions
     org1 = create_organization
     org2 = create_organization
-    PricingPlans::Assignment.assign_plan_to(org2, :pro)
+    PricingPlans::Assignment.create_or_update_pricing_plan_override_for!(org2, :pro, source: "test")
 
     controller = DummyConfiguredController.new(org1: org1, org2: org2)
     DummyConfiguredController.use_configured_method!
@@ -224,8 +224,8 @@ class ControllerDynamicCallbacksTest < ActiveSupport::TestCase
   def test_plan_owner_resolution_with_block
     org1 = create_organization
     org2 = create_organization
-    PricingPlans::Assignment.assign_plan_to(org2, :pro)
-    PricingPlans::Assignment.assign_plan_to(org1, :pro)
+    PricingPlans::Assignment.create_or_update_pricing_plan_override_for!(org2, :pro, source: "test")
+    PricingPlans::Assignment.create_or_update_pricing_plan_override_for!(org1, :pro, source: "test")
 
     # Ensure no residue from other tests
     if DummyConfiguredController.respond_to?(:pricing_plans_plan_owner_method=)

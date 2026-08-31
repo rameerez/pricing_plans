@@ -212,21 +212,49 @@ module PricingPlans
     end
 
     def has_plan_assignment?
+      pricing_plan_overridden?
+    end
+
+    def pricing_plan_overridden?
       return false unless respond_to?(:id) && id.present?
       Assignment.exists?(plan_owner_type: self.class.name, plan_owner_id: id)
     end
 
     def plan_assignment
+      pricing_plan_override
+    end
+
+    def pricing_plan_override
       return nil unless respond_to?(:id) && id.present?
       Assignment.find_by(plan_owner_type: self.class.name, plan_owner_id: id)
     end
 
+    def pricing_plan_override_source
+      pricing_plan_override&.source
+    end
+
+    def override_pricing_plan!(plan_key, source:)
+      PlanResolver.override_pricing_plan_for!(self, plan_key, source: source)
+    end
+
+    def clear_pricing_plan_override!
+      PlanResolver.clear_pricing_plan_override_for!(self)
+    end
+
     def assign_pricing_plan!(plan_key, source: "manual")
-      Assignment.assign_plan_to(self, plan_key, source: source)
+      LegacyPlanAssignmentApi.create_or_update_override!(
+        self,
+        plan_key,
+        source: source,
+        called_method_name: "assign_pricing_plan!"
+      )
     end
 
     def remove_pricing_plan!
-      Assignment.remove_assignment_for(self)
+      LegacyPlanAssignmentApi.clear_override!(
+        self,
+        called_method_name: "remove_pricing_plan!"
+      )
     end
 
     # Features

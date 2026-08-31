@@ -37,7 +37,10 @@ class PlanResolutionTest < ActiveSupport::TestCase
         assignment: assignment,
         subscription: subscription,
         plan_key: :enterprise,
-        assignment_source: "admin"
+        assignment_source: "admin",
+        pricing_plan_overridden: true,
+        pricing_plan_override: assignment,
+        pricing_plan_override_source: "admin"
       },
       resolution.to_h
     )

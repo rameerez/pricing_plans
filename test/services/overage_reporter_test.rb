@@ -7,7 +7,7 @@ class OverageReporterTest < ActiveSupport::TestCase
     org = create_organization
 
     # Persistent cap: projects
-    PricingPlans::Assignment.assign_plan_to(org, :enterprise)
+    PricingPlans::Assignment.create_or_update_pricing_plan_override_for!(org, :enterprise, source: "test")
     org.projects.create!(name: "P1")
     org.projects.create!(name: "P2")
 
@@ -22,7 +22,7 @@ class OverageReporterTest < ActiveSupport::TestCase
     assert_equal 1, projects_item.overage
 
     # Per period: custom_models (free allows 0, pro allows 3); assign pro, use 3, then report vs free
-    PricingPlans::Assignment.assign_plan_to(org, :pro)
+    PricingPlans::Assignment.create_or_update_pricing_plan_override_for!(org, :pro, source: "test")
     3.times { |i| org.custom_models.create!(name: "M#{i}") }
 
     items = PricingPlans::OverageReporter.report(org, :free)
