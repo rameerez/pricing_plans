@@ -8,6 +8,11 @@ module PricingPlans
 
     LEGACY_DEFAULT_PLAN_ASSIGNMENT_BEHAVIORS = [:allow, :warn, :raise].freeze
 
+    def self.legacy_default_plan_assignment_behaviors_description
+      descriptions = LEGACY_DEFAULT_PLAN_ASSIGNMENT_BEHAVIORS.map(&:inspect)
+      "#{descriptions[0..-2].join(', ')}, or #{descriptions.last}"
+    end
+
     attr_accessor :default_plan, :highlighted_plan, :period_cycle
     # Controls what the deprecated assignment APIs do when they are asked to
     # assign the configured default plan. Explicit override APIs are never
@@ -218,7 +223,8 @@ module PricingPlans
       return if LEGACY_DEFAULT_PLAN_ASSIGNMENT_BEHAVIORS.include?(@legacy_default_plan_assignment_behavior)
 
       raise PricingPlans::ConfigurationError,
-        "legacy_default_plan_assignment_behavior must be :allow, :warn, or :raise"
+        "legacy_default_plan_assignment_behavior must be " \
+        "#{self.class.legacy_default_plan_assignment_behaviors_description}"
     end
   end
 end

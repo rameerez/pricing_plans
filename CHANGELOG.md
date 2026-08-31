@@ -1,4 +1,4 @@
-## Unreleased
+## [0.5.0] - 2026-08-31
 
 - Add intention-revealing pricing plan override APIs: `override_pricing_plan!`, `clear_pricing_plan_override!`, `pricing_plan_overridden?`, `pricing_plan_override`, and `pricing_plan_override_source`
 - Require explicit `source:` provenance when creating overrides through the new API

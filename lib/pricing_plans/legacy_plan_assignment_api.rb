@@ -58,7 +58,8 @@ module PricingPlans
           )
         else
           raise ConfigurationError,
-            "legacy_default_plan_assignment_behavior must be :allow, :warn, or :raise"
+            "legacy_default_plan_assignment_behavior must be " \
+            "#{Configuration.legacy_default_plan_assignment_behaviors_description}"
         end
       end
 

@@ -44,6 +44,13 @@ class ConfigurationTest < ActiveSupport::TestCase
     end
   end
 
+  def test_legacy_default_plan_assignment_behavior_description_comes_from_the_supported_values
+    assert_equal(
+      ":allow, :warn, or :raise",
+      PricingPlans::Configuration.legacy_default_plan_assignment_behaviors_description
+    )
+  end
+
   def test_legacy_default_plan_assignment_behavior_rejects_unknown_values
     error = assert_raises(PricingPlans::ConfigurationError) do
       PricingPlans.configure do |config|
