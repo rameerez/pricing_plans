@@ -11,6 +11,8 @@
 - Declaring `grandfather` for a feature the plan still `allows` raises a `ConfigurationError` (one of the two lines is a mistake); unparseable cutoffs raise too, Rails `TimeWithZone` values are accepted, and date-only cutoffs are read as midnight UTC
 - The install generator now creates `pricing_plans_feature_grants`; existing apps add it with the new `rails generate pricing_plans:grants` (plan-level grandfathering needs no table at all — reads degrade silently without it, grant writes raise with instructions)
 - Advance the deprecation horizon to 0.7.0 (the APIs deprecated in 0.5.0 live one more minor)
+- Stop storing a grace window on limits that never honor one: `grace` now defaults only for `:grace_then_block`, and declaring it explicitly with `:block_usage`/`:just_warn` raises a `ConfigurationError`. Previously every limit silently carried `grace: 7.days`, so anything reading `limit[:grace]` (downgrade UX, dunning emails) could promise customers a grace window that enforcement would never grant
+- `OverageReporter` items now carry `grace_window` (the configured window on the target plan, enforced-only by construction) alongside the runtime `grace_active`/`grace_ends_at`, so downgrade and dunning copy can say "after a N-day grace window" without re-deriving enforcement rules
 - Add docs/07-repricing.md (the full grandfathering + grants guide), make plan_allows? entitlement-awareness explicit in the model-helpers doc, and bless two long-requested recipes in the docs: reacting to plan changes via Pay lifecycle hooks (#13) and running multiple plan-owner models side by side (#22)
 
 ## [0.5.0] - 2026-08-31

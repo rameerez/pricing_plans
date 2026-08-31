@@ -243,12 +243,26 @@ module PricingPlans
     # Limit methods
     def set_limit(key, **options)
       limit_key = key.to_sym
+      after_limit = options.fetch(:after_limit, :block_usage)
+
+      # Grace only exists for :grace_then_block. Defaulting it onto every
+      # limit made `limit[:grace]` a lie for :block_usage/:just_warn limits
+      # (enforcement ignores it there), and downstream consumers reading the
+      # config naively would promise customers a grace window that does not
+      # exist. Explicit grace on a non-grace mode raises in validation.
+      grace =
+        if after_limit == :grace_then_block
+          options.fetch(:grace, 7.days)
+        else
+          options[:grace]
+        end
+
       @limits[limit_key] = {
         key: limit_key,
         to: options[:to],
         per: options[:per],
-        after_limit: options.fetch(:after_limit, :block_usage),
-        grace: options.fetch(:grace, 7.days),
+        after_limit: after_limit,
+        grace: grace,
         warn_at: options.fetch(:warn_at, [0.6, 0.8, 0.95]),
         count_scope: options[:count_scope]
       }
@@ -604,9 +618,12 @@ module PricingPlans
         raise ConfigurationError, "Limit #{limit[:key]} after_limit must be one of #{valid_after_limit.join(', ')}"
       end
 
-      # Validate grace only applies to blocking behaviors
-      if limit[:grace] && limit[:after_limit] == :just_warn
-        raise ConfigurationError, "Limit #{limit[:key]} cannot have grace with :just_warn after_limit"
+      # Grace only applies to :grace_then_block; anywhere else it would be
+      # stored but never honored, which is worse than an error.
+      if limit[:grace] && limit[:after_limit] != :grace_then_block
+        raise ConfigurationError,
+          "Limit #{limit[:key]} cannot have grace with :#{limit[:after_limit]} after_limit " \
+          "(grace only applies to :grace_then_block)"
       end
 
       # Validate warn_at thresholds
