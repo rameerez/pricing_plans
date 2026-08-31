@@ -45,6 +45,39 @@ As long as a matching `stripe_price` is found in the `pricing_plans.rb` initiali
 >
 > You can come up with similar solutions, like adding that config to a plaintext `.yml` file if you don't want to store this info in the credentials file, but this is the overall idea.
 
+### Reacting to plan changes ("repackaging")
+
+`pricing_plans` resolves plans lazily — it reads the current Pay subscription when you ask, and never writes anything on plan changes. That's a feature (no sync bugs, no migrations), but it means the gem has no built-in "plan changed" callback to run side effects like disabling excess resources on downgrade or re-enabling them on upgrade.
+
+The blessed recipe (worked out in [#13](https://github.com/rameerez/pricing_plans/issues/13)) is to hook Pay's own subscription lifecycle, which is exactly where plan changes become visible:
+
+```ruby
+# app/models/concerns/pay_extension.rb
+module PayExtension
+  extend ActiveSupport::Concern
+
+  included do
+    after_commit :repackage_for_subscription, on: [ :create, :update, :destroy ]
+  end
+
+  def repackage_for_subscription
+    owner = customer&.owner
+    return unless owner.is_a?(Organization)
+
+    RepackageService.new(owner).call   # your idempotent per-plan side effects
+  end
+end
+
+# config/initializers/pay.rb
+ActiveSupport.on_load(:pay_subscription) do
+  include PayExtension
+end
+```
+
+Keep the service **idempotent** (safe to run twice) and derive everything from `owner.current_pricing_plan` — that way it also doubles as a backfill job you can run over all owners after changing the rules. Note that if you also use [manual plan overrides](03-model-helpers.md#check-and-explicitly-override-plans), those change plans without touching Pay, so run the same service after calling `override_pricing_plan!` too.
+
+Also consider whether you need repackaging at all: for limits, the gem's own [downgrade semantics](../README.md#downgrades-and-overages) (block writes while over-quota, never delete data) often cover it with no code.
+
 ## `usage_credits` gem
 
 In the SaaS world, pricing plans and usage credits are related in so far credits are usually a part of a pricing plan. A plan would give you, say, 100 credits a month along other features, and users would find that information usually documented in the pricing table itself.

@@ -234,7 +234,7 @@ Notes:
 
 ## Changing your pricing: grandfathering and feature grants
 
-Sooner or later you'll reprice: a feature that used to be on a cheap plan moves to a higher one. The customers who already pay you should keep what they signed up for — and that should not require new columns, backfills, or rake tasks in your app.
+Sooner or later you'll reprice: a feature that used to be on a cheap plan moves to a higher one. The customers who already pay you should keep what they signed up for — and that should not require new columns, backfills, or rake tasks in your app. (Full guide: [docs/07-repricing.md](/docs/07-repricing.md).)
 
 ### Grandfathering (declarative, zero state)
 

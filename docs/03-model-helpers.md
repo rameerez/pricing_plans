@@ -16,6 +16,16 @@ end
 
 By adding the `PricingPlans::PlanOwner` mixin to a model, you automatically get all the features described below.
 
+### Multiple plan-owner models (two-sided marketplaces)
+
+You can include `PricingPlans::PlanOwner` in more than one model (say, `User` on the consumer side and `Organization` on the company side, each with their own `pay_customer`). Plan resolution is per-owner, so this mostly just works ([#22](https://github.com/rameerez/pricing_plans/issues/22)):
+
+- Give each side its own paid plans; a subscription resolves whichever plan matches its Stripe price, regardless of which model holds it.
+- In controllers, point the gem at the right owner per side with a custom plan-owner method (see the [controller helpers](02-controller-helpers.md)) returning `Current.user` or `Current.organization` as appropriate.
+- For pricing pages, tag plans with `meta`data (e.g. `meta audience: "users"` vs `"organizations"`) and filter [`PricingPlans.plans`](01-define-pricing-plans.md#plan-metadata-for-ui-and-presentation) by it, so each side sees only its own ladder.
+
+The one real constraint today: there is a single global `default!` plan (and a single `highlighted!`), shared by every owner model — so keep the default plan generic enough for both sides. First-class plan groups (per-owner-type defaults and highlights) are a candidate for a future release.
+
 ## Link plan limits to your `PlanOwner` model
 
 Now you can link any `has_many` relationships in this model to `limits` defined in your `pricing_plans.rb`
@@ -130,6 +140,12 @@ Of course, there's also dynamic syntactic sugar of the form `plan_allows_<featur
 
 ```ruby
 user.plan_allows_api_access?
+```
+
+`plan_allows?` is entitlement-aware, not just plan-aware: it also honors [grandfathered features and per-owner grants](07-repricing.md) (since 0.6.0), so it stays the one predicate to gate on even after you reprice. To see *why* an owner is entitled:
+
+```ruby
+user.feature_entitlement_source(:api_access)  # => :plan | :grandfather | :grant | nil
 ```
 
 ## Usage and limits status
