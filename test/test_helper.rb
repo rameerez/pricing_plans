@@ -77,6 +77,22 @@ ActiveRecord::Schema.define do
             [:plan_owner_type, :plan_owner_id],
             unique: true
 
+  create_table :pricing_plans_feature_grants do |t|
+    t.string :plan_owner_type, null: false
+    t.bigint :plan_owner_id, null: false
+    t.string :feature_key, null: false
+    t.string :source, null: false
+    t.text :note
+    t.datetime :expires_at
+    t.datetime :revoked_at
+
+    t.timestamps
+  end
+
+  add_index :pricing_plans_feature_grants,
+            [:plan_owner_type, :plan_owner_id, :feature_key],
+            name: "idx_pricing_plans_feature_grants_lookup"
+
   # Test models
   create_table :organizations do |t|
     t.string :name
@@ -104,6 +120,11 @@ class Organization < ActiveRecord::Base
 
   # Mock Pay methods for testing
   attr_accessor :pay_subscription, :pay_trial, :pay_grace_period
+  attr_writer :pay_subscription_created_at
+
+  def pay_subscription_created_at
+    @pay_subscription_created_at || 2.months.ago
+  end
 
   def pay_enabled?
     true # Always enabled for testing
@@ -131,7 +152,7 @@ class Organization < ActiveRecord::Base
       on_grace_period?: on_grace_period?,
       current_period_start: 1.month.ago,
       current_period_end: 1.day.from_now,
-      created_at: 2.months.ago
+      created_at: pay_subscription_created_at
     )
   end
 end

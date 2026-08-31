@@ -61,6 +61,7 @@ module PricingPlans
   autoload :EnforcementState, "pricing_plans/models/enforcement_state"
   autoload :Usage, "pricing_plans/models/usage"
   autoload :Assignment, "pricing_plans/models/assignment"
+  autoload :FeatureGrant, "pricing_plans/models/feature_grant"
 
   class << self
     attr_writer :configuration
@@ -73,7 +74,7 @@ module PricingPlans
     # warnings independently and lets Rails include them in its deprecator
     # collection.
     def deprecator
-      @deprecator ||= ActiveSupport::Deprecation.new("0.6.0", "pricing_plans")
+      @deprecator ||= ActiveSupport::Deprecation.new("0.7.0", "pricing_plans")
     end
 
     def configure(&block)

@@ -1,0 +1,32 @@
+# frozen_string_literal: true
+
+class CreatePricingPlansFeatureGrants < ActiveRecord::Migration<%= migration_version %>
+  def change
+    primary_key_type, foreign_key_type = primary_and_foreign_key_types
+
+    create_table :pricing_plans_feature_grants, id: primary_key_type do |t|
+      t.references :plan_owner, polymorphic: true, null: false, type: foreign_key_type
+      t.string :feature_key, null: false
+      t.string :source, null: false
+      t.text :note
+      t.datetime :expires_at
+      t.datetime :revoked_at
+
+      t.timestamps
+    end
+
+    add_index :pricing_plans_feature_grants,
+              [:plan_owner_type, :plan_owner_id, :feature_key],
+              name: "idx_pricing_plans_feature_grants_lookup"
+  end
+
+  private
+
+  def primary_and_foreign_key_types
+    config = Rails.configuration.generators
+    setting = config.options[config.orm][:primary_key_type]
+    primary_key_type = setting || :primary_key
+    foreign_key_type = setting || :bigint
+    [primary_key_type, foreign_key_type]
+  end
+end

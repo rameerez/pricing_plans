@@ -16,7 +16,7 @@ class ViewHelpersTest < ActiveSupport::TestCase
     plan = PricingPlans::Plan.new(:pro)
     plan.allows(:api_access)
 
-    PricingPlans::PlanResolver.stub(:effective_plan_for, plan) do
+    PricingPlans::PlanResolver.stub(:resolution_for, resolution_with(plan)) do
       assert @org.plan_allows?(:api_access)
     end
   end
@@ -24,9 +24,13 @@ class ViewHelpersTest < ActiveSupport::TestCase
   def test_plan_allows_with_disallowed_feature
     plan = PricingPlans::Plan.new(:free)
 
-    PricingPlans::PlanResolver.stub(:effective_plan_for, plan) do
+    PricingPlans::PlanResolver.stub(:resolution_for, resolution_with(plan)) do
       refute @org.plan_allows?(:api_access)
     end
+  end
+
+  def resolution_with(plan)
+    PricingPlans::PlanResolution.new(plan: plan, source: :default, assignment: nil, subscription: nil)
   end
 
   def test_plan_limit_remaining

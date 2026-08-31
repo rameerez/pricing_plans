@@ -257,10 +257,64 @@ module PricingPlans
       )
     end
 
-    # Features
+    # Features. True when the owner is entitled to the feature by ANY source:
+    # the resolved plan carries it, the plan grandfathers it and the owner's
+    # tenure predates the cutoff, or the owner holds an active per-owner
+    # grant. Every caller of plan_allows? (and the plan_allows_x? sugar)
+    # honors grandfathering and grants with no app changes.
     def plan_allows?(feature_key)
-      plan = current_pricing_plan
-      plan&.allows_feature?(feature_key) || false
+      feature_entitlement_source(feature_key).present?
+    end
+
+    # Why is (or isn't) this owner entitled to a feature?
+    # => :plan | :grandfather | :grant | nil
+    def feature_entitlement_source(feature_key)
+      resolution = current_pricing_plan_resolution
+      plan = resolution.plan
+
+      return :plan if plan&.allows_feature?(feature_key)
+
+      if plan&.grandfathers_feature?(feature_key, tenure_started_at: plan_tenure_started_at(resolution))
+        return :grandfather
+      end
+
+      return :grant if FeatureGrant.active_for?(self, feature_key)
+
+      nil
+    end
+
+    # When did this owner's tenure on the resolved plan begin? The older of
+    # the manual assignment and the current subscription, so an assignment
+    # added later (say, by support) can never strip a grandfathered
+    # entitlement the subscription already earned. Owners on the default
+    # plan with neither have no tenure and are never grandfathered.
+    def plan_tenure_started_at(resolution = current_pricing_plan_resolution)
+      [
+        resolution.assignment&.created_at,
+        resolution.subscription&.created_at
+      ].compact.min
+    end
+
+    # Per-owner feature grants: individual, auditable exceptions on top of
+    # plan resolution (comps, beta access, sales exceptions, promises that
+    # must survive cancellation). See PricingPlans::FeatureGrant.
+    def grant_feature!(feature_key, source: "manual", note: nil, expires_at: nil)
+      FeatureGrant.grant_to!(self, feature_key, source: source, note: note, expires_at: expires_at)
+    end
+
+    # Revokes active grants for the feature (audit rows are kept, stamped
+    # with revoked_at). Plan- and grandfather-sourced entitlements are
+    # config, not grants, and are not affected.
+    def revoke_feature!(feature_key, note: nil)
+      FeatureGrant.revoke_for!(self, feature_key, note: note)
+    end
+
+    def feature_granted?(feature_key)
+      FeatureGrant.active_for?(self, feature_key)
+    end
+
+    def feature_grants
+      FeatureGrant.where(plan_owner_type: self.class.name, plan_owner_id: id)
     end
 
     # Syntactic sugar for feature checks:

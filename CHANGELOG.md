@@ -1,3 +1,15 @@
+## [0.6.0] - 2026-08-31
+
+**Repricing without app migrations: grandfathering and per-owner feature grants.**
+
+- Add the `grandfather` plan DSL: `grandfather :feature, subscribed_before: <time>` declares that owners whose tenure on the plan predates the cutoff keep a feature the plan no longer `allows`. Pure configuration — no columns, no backfills, no rake tasks; the initializer stays the git-versioned record of every pricing change
+- Tenure is the older of the owner's current subscription and manual assignment `created_at`, so a support-added assignment can never strip an entitlement the subscription already earned; grandfathering rides a continuous subscription (lapse and return = current pricing)
+- Add `PricingPlans::FeatureGrant` and the per-owner grants API: `grant_feature!`, `revoke_feature!`, `feature_granted?`, `feature_grants` — individual, auditable exceptions (comps, beta access, sales promises, remediation) that attach to the owner and survive plan changes and cancellation until revoked; revocation stamps `revoked_at` and keeps the row as history
+- `plan_allows?` (and the `plan_allows_x?` sugar) now honors all three entitlement sources — plan, grandfather, grant — so existing app gates pick everything up with zero changes; `feature_entitlement_source` answers which one applied (`:plan | :grandfather | :grant | nil`)
+- Declaring `grandfather` for a feature the plan still `allows` raises a `ConfigurationError` (one of the two lines is a mistake); unparseable cutoffs raise too, and date-only cutoffs are read as midnight UTC
+- The install generator now creates `pricing_plans_feature_grants`; existing apps add it with the new `rails generate pricing_plans:grants` (plan-level grandfathering needs no table at all — reads degrade silently without it, grant writes raise with instructions)
+- Advance the deprecation horizon to 0.7.0 (the APIs deprecated in 0.5.0 live one more minor)
+
 ## [0.5.0] - 2026-08-31
 
 - Add intention-revealing pricing plan override APIs: `override_pricing_plan!`, `clear_pricing_plan_override!`, `pricing_plan_overridden?`, `pricing_plan_override`, and `pricing_plan_override_source`

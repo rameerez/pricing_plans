@@ -17,6 +17,7 @@ module PricingPlans
       @price_string = nil
       @stripe_price = nil
       @features = Set.new
+      @grandfathers = {}
       @limits = {}
       @credits_included = nil
       @meta = {}
@@ -201,6 +202,41 @@ module PricingPlans
 
     def allows_feature?(feature_key)
       @features.include?(feature_key.to_sym)
+    end
+
+    # Grandfathering: declare that owners whose tenure on this plan began
+    # before the cutoff keep a feature the plan no longer carries. Pure
+    # config — no database state, no backfill, no rake task. The pricing
+    # history stays readable in the initializer forever:
+    #
+    #   plan :indie do
+    #     allows :api_access                # :distribution removed 2026-08-31
+    #     grandfather :distribution, subscribed_before: "2026-09-01"
+    #   end
+    #
+    # The cutoff accepts a Time, Date, or String; date-only values are read
+    # as midnight UTC. "Tenure" is when the owner's current subscription (or
+    # manual plan assignment) was created — so grandfathering rides a
+    # continuous subscription, and lapsing and re-subscribing re-enters at
+    # current pricing. For a promise that must survive anything, use an
+    # explicit per-owner grant instead: `owner.grant_feature!(:distribution)`.
+    def grandfather(feature_key, subscribed_before:)
+      @grandfathers[feature_key.to_sym] = normalize_grandfather_cutoff(subscribed_before)
+    end
+
+    def grandfathered_features
+      @grandfathers.keys
+    end
+
+    def grandfather_cutoff_for(feature_key)
+      @grandfathers[feature_key.to_sym]
+    end
+
+    def grandfathers_feature?(feature_key, tenure_started_at:)
+      cutoff = grandfather_cutoff_for(feature_key)
+      return false unless cutoff && tenure_started_at
+
+      tenure_started_at < cutoff
     end
 
     # Limit methods
@@ -509,9 +545,40 @@ module PricingPlans
     def validate!
       validate_limits!
       validate_pricing!
+      validate_grandfathers!
     end
 
     private
+
+    def normalize_grandfather_cutoff(value)
+      cutoff =
+        case value
+        when Time then value
+        when Date, String then value.to_time(:utc)
+        else
+          raise ConfigurationError,
+            "grandfather cutoff must be a Time, Date, or String (got #{value.class})"
+        end
+
+      unless cutoff.is_a?(Time)
+        raise ConfigurationError, "grandfather cutoff #{value.inspect} is not a parseable time"
+      end
+
+      cutoff
+    rescue ArgumentError
+      raise ConfigurationError, "grandfather cutoff #{value.inspect} is not a parseable time"
+    end
+
+    def validate_grandfathers!
+      contradiction = @grandfathers.keys & @features.to_a
+      return if contradiction.empty?
+
+      raise ConfigurationError,
+        "Plan #{key.inspect} grandfathers #{contradiction.inspect} but also allows " \
+        "them via `allows`. Grandfathering is for features the plan no longer " \
+        "carries — remove them from `allows` (everyone has them) or from " \
+        "`grandfather` (nobody needs the exception)."
+    end
     def validate_limits!
       @limits.each do |key, limit|
         validate_limit_options!(limit)

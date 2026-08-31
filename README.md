@@ -232,6 +232,48 @@ Notes:
 - If you provide a `config.message_builder`, it’s used to customize copy for the `:overage_report` context.
 - This reporter works regardless of whether any controller/model action has been hit; it reads live counts and current period usage.
 
+## Changing your pricing: grandfathering and feature grants
+
+Sooner or later you'll reprice: a feature that used to be on a cheap plan moves to a higher one. The customers who already pay you should keep what they signed up for — and that should not require new columns, backfills, or rake tasks in your app.
+
+### Grandfathering (declarative, zero state)
+
+Remove the feature from the plan's `allows`, and declare the grandfather right next to it:
+
+```ruby
+plan :indie do
+  allows :api_access                 # :distribution moved to :starter on 2026-08-31
+  grandfather :distribution, subscribed_before: "2026-09-01"
+end
+```
+
+That's the whole migration. Owners whose tenure on the plan began before the cutoff keep the feature; everyone who arrives later doesn't. `plan_allows?(:distribution)` (and the `plan_allows_distribution?` sugar) just keep working everywhere — the gate code in your app doesn't change at all. Your initializer stays the single, git-versioned record of what changed and when.
+
+Semantics, precisely:
+
+- **Tenure** is when the owner's current subscription (or manual plan assignment) was created — the older of the two if both exist, so a support-added assignment can never strip an entitlement the subscription already earned.
+- Grandfathering **rides a continuous subscription**: cancel and come back later, and you re-enter at current pricing (the industry-standard deal). For a promise that must survive anything, use a grant (below).
+- Cutoffs accept a `Time`, `Date`, or `String`; date-only values are read as **midnight UTC**.
+- Declaring `grandfather` for a feature the plan still `allows` raises a configuration error — one of the two lines is a mistake.
+
+### Feature grants (per-owner exceptions)
+
+For individual exceptions — comps, beta access, sales promises, support remediation, or a grandfather that must survive cancellation — grant the feature to the owner directly:
+
+```ruby
+org.grant_feature!(:distribution, source: "founder_comp", note: "conference friend")
+org.grant_feature!(:sso, source: "sales", expires_at: 30.days.from_now)
+
+org.plan_allows?(:sso)                      # => true (source-aware predicate below)
+org.feature_entitlement_source(:sso)        # => :plan | :grandfather | :grant | nil
+org.feature_granted?(:sso)                  # => true (active grant row exists)
+
+org.revoke_feature!(:sso, note: "eval over") # keeps the row, stamps revoked_at
+org.feature_grants                           # full audit trail, revocations included
+```
+
+Grants live in the `pricing_plans_feature_grants` table (created by the install generator; apps upgrading from < 0.6.0 add it with `rails generate pricing_plans:grants && rails db:migrate`). They attach to the owner, not the plan, so they survive plan changes and cancellations until you revoke them. Rows are never deleted by the API: revoking stamps `revoked_at`, so "why does this customer have this?" always has an answer.
+
 ### Override checks
 
 Some times you'll want to override plan limits / feature gating checks. A common use case is if you're responding to a webhook (like Stripe), you'll want to process the webhook correctly (bypassing the check) and maybe later handle the limit manually.
