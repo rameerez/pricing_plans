@@ -93,4 +93,6 @@ org.pricing_relationship_started_at
 
 ## A real-world example
 
-[LicenseSeat](https://licenseseat.com) moved its software-distribution feature from its $9 plan to its $29 plan. The entire grandfather for every existing subscriber was the one `grandfather :distribution, subscribed_before:` line in the initializer — no schema changes, and the app's feature gates (plain `plan_allows?(:distribution)` calls) didn't change at all.
+[LicenseSeat](https://licenseseat.com) moved its software-distribution feature from its $9 plan to its $29 plan. Its feature gates (plain `plan_allows?(:distribution)` calls) didn't change at all — the whole repricing lived in configuration and one data migration.
+
+It's also a worked example of choosing between the two tools. LicenseSeat's promise was to *the exact set of customers subscribed on launch day*, frozen, surviving anything — so it ran a small one-time migration that wrote a durable grant per qualifying subscriber (`grant_feature!` with a dated `source`), rather than declaring the date rule. If your promise is the more common "anyone with us from before the change keeps it while they stay subscribed", the one-line `grandfather` declaration is the whole migration.
