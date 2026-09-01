@@ -54,6 +54,12 @@ module PricingPlans
     def subscription_current?(subscription)
       return false unless subscription
       return false if subscription.respond_to?(:ended?) && subscription.ended?
+      # Pay's Stripe adapter keeps status="past_due" while a void pause can
+      # independently become effective. Do not let the explicit past_due
+      # entitlement below revive a subscription that Pay says is currently
+      # paused. A scheduled future pause remains current through
+      # `on_grace_period?`, matching Pay's own active? semantics.
+      return false if subscription.respond_to?(:pause_active?) && subscription.pause_active?
 
       state_predicates = %i[active? on_trial? on_grace_period? past_due?]
       state_predicates.any? do |predicate|

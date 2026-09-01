@@ -3,7 +3,10 @@
 require "test_helper"
 
 class PaySupportTest < ActiveSupport::TestCase
-  Subscription = Struct.new(:active?, :on_trial?, :on_grace_period?, :past_due?, :ended?, keyword_init: true)
+  Subscription = Struct.new(
+    :active?, :on_trial?, :on_grace_period?, :past_due?, :ended?, :pause_active?,
+    keyword_init: true
+  )
 
   def test_subscription_active_for_handles_objects_without_id
     refute PricingPlans::PaySupport.subscription_active_for?(Object.new)
@@ -27,6 +30,14 @@ class PaySupportTest < ActiveSupport::TestCase
     ended = subscription_with(past_due: true, ended: true)
 
     refute PricingPlans::PaySupport.subscription_current?(ended)
+  end
+
+  def test_an_effective_pause_cannot_remain_current_from_a_stale_past_due_status
+    paused = subscription_with(past_due: true, pause_active: true)
+    scheduled_pause = subscription_with(past_due: true, grace: true)
+
+    refute PricingPlans::PaySupport.subscription_current?(paused)
+    assert PricingPlans::PaySupport.subscription_current?(scheduled_pause)
   end
 
   def test_owner_subscribed_wrapper_cannot_recurse_into_pay_support
@@ -67,13 +78,15 @@ class PaySupportTest < ActiveSupport::TestCase
 
   private
 
-  def subscription_with(active: false, trial: false, grace: false, past_due: false, ended: false)
+  def subscription_with(active: false, trial: false, grace: false, past_due: false, ended: false,
+    pause_active: false)
     Subscription.new(
       active?: active,
       on_trial?: trial,
       on_grace_period?: grace,
       past_due?: past_due,
-      ended?: ended
+      ended?: ended,
+      pause_active?: pause_active
     )
   end
 end
