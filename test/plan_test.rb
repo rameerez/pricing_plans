@@ -330,6 +330,7 @@ class PlanTest < ActiveSupport::TestCase
     plan = PricingPlans::Plan.new(:pro)
 
     plan.limits :projects, to: 5, after_limit: :grace_then_block
+
     assert_equal 7.days, plan.limit_for(:projects)[:grace]
 
     error = assert_raises(PricingPlans::ConfigurationError) do
@@ -339,7 +340,7 @@ class PlanTest < ActiveSupport::TestCase
   end
 
   def test_explicit_grace_is_rejected_for_every_non_grace_mode_even_when_falsey
-    [:block_usage, :just_warn].product([nil, false]).each do |after_limit, grace|
+    %i[block_usage just_warn].product([nil, false]).each do |after_limit, grace|
       plan = PricingPlans::Plan.new(:pro)
 
       error = assert_raises(PricingPlans::ConfigurationError) do

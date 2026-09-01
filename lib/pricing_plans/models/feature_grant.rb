@@ -129,7 +129,9 @@ module PricingPlans
     private
 
     def expires_at_must_be_parseable
-      return if expires_at_before_type_cast.blank? || expires_at.present?
+      raw_value = expires_at_before_type_cast
+      return if raw_value.nil? || (raw_value.is_a?(String) && raw_value.blank?)
+      return if expires_at.respond_to?(:to_time)
 
       errors.add(:expires_at, "must be a valid time")
     end

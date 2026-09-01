@@ -262,11 +262,14 @@ class FeatureGrantTest < FeatureEntitlementTest
   def test_an_invalid_expiration_cannot_silently_become_a_permanent_grant
     org = create_organization(name: "Invalid Expiration")
 
-    error = assert_raises(ActiveRecord::RecordInvalid) do
-      org.grant_feature!(:exports, expires_at: "not a timestamp")
+    ["not a timestamp", false, 0].each do |invalid_expiration|
+      error = assert_raises(ActiveRecord::RecordInvalid) do
+        org.grant_feature!(:exports, expires_at: invalid_expiration)
+      end
+
+      assert_match(/Expires at must be a valid time/, error.message)
     end
 
-    assert_match(/Expires at must be a valid time/, error.message)
     refute org.feature_granted?(:exports)
   end
 

@@ -251,10 +251,10 @@ module PricingPlans
       # config naively would promise customers a grace window that does not
       # exist. Explicit grace on a non-grace mode raises immediately, even if
       # the caller supplied nil/false (truthiness must not erase intent).
-      if [:block_usage, :just_warn].include?(after_limit) && options.key?(:grace)
+      if %i[block_usage just_warn].include?(after_limit) && options.key?(:grace)
         raise ConfigurationError,
-          "Limit #{limit_key} cannot have grace with :#{after_limit} after_limit " \
-          "(grace only applies to :grace_then_block)"
+              "Limit #{limit_key} cannot have grace with :#{after_limit} after_limit " \
+              "(grace only applies to :grace_then_block)"
       end
 
       limit = {
@@ -581,9 +581,7 @@ module PricingPlans
           end
         end
 
-      unless cutoff.is_a?(Time)
-        raise ConfigurationError, "grandfather cutoff #{value.inspect} is not a parseable time"
-      end
+      raise ConfigurationError, "grandfather cutoff #{value.inspect} is not a parseable time" unless cutoff.is_a?(Time)
 
       cutoff
     rescue ArgumentError
@@ -595,10 +593,10 @@ module PricingPlans
       return if contradiction.empty?
 
       raise ConfigurationError,
-        "Plan #{key.inspect} grandfathers #{contradiction.inspect} but also allows " \
-        "them via `allows`. Grandfathering is for features the plan no longer " \
-        "carries — remove them from `allows` (everyone has them) or from " \
-        "`grandfather` (nobody needs the exception)."
+            "Plan #{key.inspect} grandfathers #{contradiction.inspect} but also allows " \
+            "them via `allows`. Grandfathering is for features the plan no longer " \
+            "carries — remove them from `allows` (everyone has them) or from " \
+            "`grandfather` (nobody needs the exception)."
     end
 
     def validate_limits!
@@ -623,13 +621,13 @@ module PricingPlans
       # stored but never honored, which is worse than an error.
       if limit[:grace] && limit[:after_limit] != :grace_then_block
         raise ConfigurationError,
-          "Limit #{limit[:key]} cannot have grace with :#{limit[:after_limit]} after_limit " \
-          "(grace only applies to :grace_then_block)"
+              "Limit #{limit[:key]} cannot have grace with :#{limit[:after_limit]} after_limit " \
+              "(grace only applies to :grace_then_block)"
       end
 
       if limit[:after_limit] == :grace_then_block && !valid_grace_window?(limit[:grace])
         raise ConfigurationError,
-          "Limit #{limit[:key]} grace must be a positive duration of at least one second"
+              "Limit #{limit[:key]} grace must be a positive duration of at least one second"
       end
 
       # Validate warn_at thresholds

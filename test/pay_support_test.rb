@@ -78,15 +78,23 @@ class PaySupportTest < ActiveSupport::TestCase
 
   private
 
-  def subscription_with(active: false, trial: false, grace: false, past_due: false, ended: false,
-    pause_active: false)
+  def subscription_with(**overrides)
+    states = {
+      active: false,
+      trial: false,
+      grace: false,
+      past_due: false,
+      ended: false,
+      pause_active: false
+    }.merge(overrides)
+
     Subscription.new(
-      active?: active,
-      on_trial?: trial,
-      on_grace_period?: grace,
-      past_due?: past_due,
-      ended?: ended,
-      pause_active?: pause_active
+      active?: states[:active],
+      on_trial?: states[:trial],
+      on_grace_period?: states[:grace],
+      past_due?: states[:past_due],
+      ended?: states[:ended],
+      pause_active?: states[:pause_active]
     )
   end
 end

@@ -91,7 +91,7 @@ ActiveRecord::Schema.define do
   end
 
   add_index :pricing_plans_feature_grants,
-            [:plan_owner_type, :plan_owner_id, :feature_key],
+            %i[plan_owner_type plan_owner_id feature_key],
             name: "idx_pricing_plans_feature_grants_lookup"
 
   # Test models
