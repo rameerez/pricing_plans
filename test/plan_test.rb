@@ -320,8 +320,59 @@ class PlanTest < ActiveSupport::TestCase
 
     limit = plan.limit_for(:projects)
     assert_equal :block_usage, limit[:after_limit]
-    assert_equal 7.days, limit[:grace]  # grace ignored for block_usage
+    # No stored grace on a mode that never honors it: consumers reading
+    # limit[:grace] must never be told about a window that does not exist.
+    assert_nil limit[:grace]
     assert_equal [0.6, 0.8, 0.95], limit[:warn_at]
+  end
+
+  def test_grace_defaults_only_where_it_is_honored
+    plan = PricingPlans::Plan.new(:pro)
+
+    plan.limits :projects, to: 5, after_limit: :grace_then_block
+
+    assert_equal 7.days, plan.limit_for(:projects)[:grace]
+
+    error = assert_raises(PricingPlans::ConfigurationError) do
+      plan.limits :seats, to: 5, after_limit: :block_usage, grace: 3.days
+    end
+    assert_match(/grace only applies to :grace_then_block/, error.message)
+  end
+
+  def test_explicit_grace_is_rejected_for_every_non_grace_mode_even_when_falsey
+    %i[block_usage just_warn].product([nil, false]).each do |after_limit, grace|
+      plan = PricingPlans::Plan.new(:pro)
+
+      error = assert_raises(PricingPlans::ConfigurationError) do
+        plan.limits :projects, to: 5, after_limit: after_limit, grace: grace
+      end
+
+      assert_match(/cannot have grace/, error.message)
+      assert_nil plan.limit_for(:projects), "invalid limit must not remain registered"
+    end
+  end
+
+  def test_grace_then_block_requires_a_positive_finite_duration_of_at_least_one_second
+    [nil, false, 0, -1, 0.5, Float::INFINITY, Float::NAN, Complex(1, 1), "7 days"].each do |grace|
+      plan = PricingPlans::Plan.new(:pro)
+
+      error = assert_raises(PricingPlans::ConfigurationError) do
+        plan.limits :projects, to: 5, after_limit: :grace_then_block, grace: grace
+      end
+
+      assert_match(/positive duration of at least one second/, error.message)
+      assert_nil plan.limit_for(:projects), "invalid limit must not remain registered"
+    end
+  end
+
+  def test_grace_then_block_accepts_duration_and_numeric_seconds
+    plan = PricingPlans::Plan.new(:pro)
+
+    plan.limits :projects, to: 5, after_limit: :grace_then_block, grace: 90.minutes
+    plan.limits :seats, to: 5, after_limit: :grace_then_block, grace: 3_600
+
+    assert_equal 90.minutes, plan.limit_for(:projects)[:grace]
+    assert_equal 3_600, plan.limit_for(:seats)[:grace]
   end
 
   def test_nonexistent_limit_returns_nil

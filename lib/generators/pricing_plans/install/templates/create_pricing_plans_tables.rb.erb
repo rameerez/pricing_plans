@@ -17,12 +17,12 @@ class CreatePricingPlansTables < ActiveRecord::Migration<%= migration_version %>
     end
 
     add_index :pricing_plans_enforcement_states,
-              [:plan_owner_type, :plan_owner_id, :limit_key],
+              [ :plan_owner_type, :plan_owner_id, :limit_key ],
               unique: true,
               name: "idx_pricing_plans_enforcement_unique"
 
     add_index :pricing_plans_enforcement_states,
-              [:plan_owner_type, :plan_owner_id],
+              [ :plan_owner_type, :plan_owner_id ],
               name: "idx_pricing_plans_enforcement_plan_owner"
 
     add_index :pricing_plans_enforcement_states,
@@ -42,16 +42,16 @@ class CreatePricingPlansTables < ActiveRecord::Migration<%= migration_version %>
     end
 
     add_index :pricing_plans_usages,
-              [:plan_owner_type, :plan_owner_id, :limit_key, :period_start],
+              [ :plan_owner_type, :plan_owner_id, :limit_key, :period_start ],
               unique: true,
               name: "idx_pricing_plans_usages_unique"
 
     add_index :pricing_plans_usages,
-              [:plan_owner_type, :plan_owner_id],
+              [ :plan_owner_type, :plan_owner_id ],
               name: "idx_pricing_plans_usages_plan_owner"
 
     add_index :pricing_plans_usages,
-              [:period_start, :period_end],
+              [ :period_start, :period_end ],
               name: "idx_pricing_plans_usages_period"
 
     create_table :pricing_plans_assignments, id: primary_key_type do |t|
@@ -63,13 +63,28 @@ class CreatePricingPlansTables < ActiveRecord::Migration<%= migration_version %>
     end
 
     add_index :pricing_plans_assignments,
-              [:plan_owner_type, :plan_owner_id],
+              [ :plan_owner_type, :plan_owner_id ],
               unique: true,
               name: "idx_pricing_plans_assignments_unique"
 
     add_index :pricing_plans_assignments,
               :plan_key,
               name: "idx_pricing_plans_assignments_plan"
+
+    create_table :pricing_plans_feature_grants, id: primary_key_type do |t|
+      t.references :plan_owner, polymorphic: true, null: false, type: foreign_key_type
+      t.string :feature_key, null: false
+      t.string :source, null: false
+      t.text :note
+      t.datetime :expires_at
+      t.datetime :revoked_at
+
+      t.timestamps
+    end
+
+    add_index :pricing_plans_feature_grants,
+              [ :plan_owner_type, :plan_owner_id, :feature_key ],
+              name: "idx_pricing_plans_feature_grants_lookup"
   end
 
   private
@@ -79,7 +94,7 @@ class CreatePricingPlansTables < ActiveRecord::Migration<%= migration_version %>
     setting = config.options[config.orm][:primary_key_type]
     primary_key_type = setting || :primary_key
     foreign_key_type = setting || :bigint
-    [primary_key_type, foreign_key_type]
+    [ primary_key_type, foreign_key_type ]
   end
 
   def json_column_type
@@ -87,4 +102,3 @@ class CreatePricingPlansTables < ActiveRecord::Migration<%= migration_version %>
     :json
   end
 end
-

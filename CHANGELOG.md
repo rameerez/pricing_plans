@@ -1,3 +1,22 @@
+## [0.6.0] - 2026-08-31
+
+**Repricing without app migrations: grandfathering and per-owner feature grants.**
+
+- Add the `grandfather` plan DSL: `grandfather :feature, subscribed_before: <time>` declares that owners whose qualifying pricing relationship predates the cutoff keep a feature the plan no longer `allows`. Pure configuration — no columns, no backfills, no rake tasks; the initializer stays the git-versioned record of every pricing change
+- Grandfather eligibility uses the older of the current assignment and same-plan subscription `created_at`. It models a continuous pricing relationship (Pay keeps the same subscription row across price swaps, and updating an assignment keeps that row's age), not unavailable plan-change history; lapse/re-subscribe or clear/reassign resets the corresponding timestamp, while exact materialized cohorts belong in feature grants
+- Add `PricingPlans::FeatureGrant` and the per-owner grants API: `grant_feature!`, `revoke_feature!`, `feature_granted?`, `feature_grants` — individual, auditable exceptions (comps, beta access, sales promises, remediation) that attach to the owner and survive plan changes and cancellation until expiry or revocation; revocation stamps `revoked_at` and keeps the row as history
+- `plan_allows?` (and the `plan_allows_x?` sugar) now honors all three entitlement sources — plan, grandfather, grant — so existing app gates pick everything up with zero changes; `feature_entitlement_source` answers which one applied (`:plan | :grandfather | :grant | nil`)
+- Keep `past_due` Pay subscriptions entitled while the processor retries payment, and prefer a current subscription whose processor price exists in the plan registry when an owner has several
+- Do not let a stale `past_due` status re-entitle a Stripe subscription after an already-scheduled `void` pause becomes effective; future pauses remain entitled through their scheduled date
+- Use Rails' canonical polymorphic owner identity throughout assignments, grants, and admin scopes (including STI), and serialize grant mutations on the owner row so idempotent writes remain race-safe
+- Declaring `grandfather` for a feature the plan still `allows` raises a `ConfigurationError` (one of the two lines is a mistake); unparseable cutoffs raise too, Rails `TimeWithZone` values are accepted, and date-only cutoffs are read as midnight UTC
+- The install generator now creates `pricing_plans_feature_grants`; existing apps add it with the new `rails generate pricing_plans:grants` (plan-level grandfathering needs no table at all — reads degrade silently without it, grant writes raise with instructions)
+- Advance the deprecation horizon to 0.7.0 (the APIs deprecated in 0.5.0 live one more minor)
+- Make grace windows a validated invariant: `grace` defaults only for `:grace_then_block`, must be a positive finite numeric duration of at least one second, and cannot be declared at all (including `nil`/`false`) with `:block_usage`/`:just_warn`. Previously every limit silently carried `grace: 7.days`, and malformed values could make reporting disagree with enforcement
+- `OverageReporter` items now carry `grace_window` (the configured window on the target plan, enforced-only by construction) alongside the runtime `grace_active`/`grace_ends_at`, so downgrade and dunning copy can say "after a N-day grace window" without re-deriving enforcement rules
+- Plan resolution now reads Pay's underlying `payment_processor` association without invoking Pay's auto-provisioning reader, so asking for the current plan can never create a `pay_customers` row; PORO/legacy adapters still use their public reader
+- Add docs/07-repricing.md (the full grandfathering + grants guide), make plan_allows? entitlement-awareness explicit in the model-helpers doc, and bless two long-requested recipes in the docs: reacting to plan changes via Pay lifecycle hooks (#13) and running multiple plan-owner models side by side (#22)
+
 ## [0.5.0] - 2026-08-31
 
 - Add intention-revealing pricing plan override APIs: `override_pricing_plan!`, `clear_pricing_plan_override!`, `pricing_plan_overridden?`, `pricing_plan_override`, and `pricing_plan_override_source`

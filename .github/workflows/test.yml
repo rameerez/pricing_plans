@@ -19,8 +19,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        ruby_version: ["3.3", "3.4", "4.0"]
+        ruby_version: ["3.2", "3.3", "3.4", "4.0"]
         gemfile:
+          - gemfiles/rails_7.1.gemfile
           - gemfiles/rails_7.2.gemfile
           - gemfiles/rails_8.1.gemfile
 
@@ -40,6 +41,21 @@ jobs:
 
       - name: Run tests
         run: bundle exec rake test
+
+      - name: Build and inspect the release artifact
+        if: matrix.ruby_version == '3.4' && matrix.gemfile == 'gemfiles/rails_8.1.gemfile'
+        run: |
+          gem build pricing_plans.gemspec --output pricing_plans-release.gem
+          ruby -rrubygems/package -e '
+            spec = Gem::Package.new(ARGV.fetch(0)).spec
+            required = %w[
+              lib/pricing_plans/models/feature_grant.rb
+              lib/pricing_plans/plan_owner_identity.rb
+              lib/generators/pricing_plans/grants/grants_generator.rb
+            ]
+            missing = required - spec.files
+            abort "Missing packaged files: #{missing.join(", ")}" if missing.any?
+          ' pricing_plans-release.gem
 
       - name: Upload test results
         if: failure()

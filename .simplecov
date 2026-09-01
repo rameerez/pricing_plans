@@ -3,15 +3,15 @@
 # SimpleCov configuration file (auto-loaded before test suite)
 # This keeps test_helper.rb clean and follows best practices
 
-SimpleCov.start do
+SimpleCov.configure do
   # Use SimpleFormatter for terminal-only output (no HTML generation)
   formatter SimpleCov::Formatter::SimpleFormatter
 
   # Track coverage for the lib directory (gem source code)
-  add_filter "/test/"
+  skip "/test/"
 
   # Track the lib and app directories
-  track_files "{lib,app}/**/*.rb"
+  cover "{lib,app}/**/*.rb"
 
   # Enable branch coverage for more detailed metrics
   enable_coverage :branch
@@ -20,13 +20,14 @@ SimpleCov.start do
   minimum_coverage line: 80, branch: 65
 
   # Disambiguate parallel test runs
-  command_name "Job #{ENV['TEST_ENV_NUMBER']}" if ENV['TEST_ENV_NUMBER']
+  test_env_number = ENV.fetch("TEST_ENV_NUMBER", nil)
+  command_name "Job #{test_env_number}" if test_env_number
 end
 
 # Print coverage summary to terminal after tests complete
 SimpleCov.at_exit do
   SimpleCov.result.format!
-  puts "\n" + "=" * 60
+  puts "\n#{'=' * 60}"
   puts "COVERAGE SUMMARY"
   puts "=" * 60
   puts "Line Coverage:   #{SimpleCov.result.covered_percent.round(2)}%"

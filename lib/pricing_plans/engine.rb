@@ -14,6 +14,7 @@ module PricingPlans
         require "pricing_plans/models/enforcement_state"
         require "pricing_plans/models/usage"
         require "pricing_plans/models/assignment"
+        require "pricing_plans/models/feature_grant"
       end
     end
 

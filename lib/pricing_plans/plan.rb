@@ -17,6 +17,7 @@ module PricingPlans
       @price_string = nil
       @stripe_price = nil
       @features = Set.new
+      @grandfathers = {}
       @limits = {}
       @credits_included = nil
       @meta = {}
@@ -203,20 +204,71 @@ module PricingPlans
       @features.include?(feature_key.to_sym)
     end
 
+    # Grandfathering: declare that owners whose qualifying pricing
+    # relationship predates the cutoff keep a feature the plan no longer
+    # carries. Pure config — no database state, no backfill, no rake task.
+    # The pricing history stays readable in the initializer forever:
+    #
+    #   plan :indie do
+    #     allows :api_access                # :distribution removed 2026-08-31
+    #     grandfather :distribution, subscribed_before: "2026-09-01"
+    #   end
+    #
+    # The cutoff accepts a Time, Date, or String; date-only values are read
+    # as midnight UTC. The relationship timestamp comes from the current
+    # assignment and/or same-plan subscription. Those records keep created_at
+    # across in-place plan/price changes, so this models a continuous pricing
+    # relationship rather than unavailable plan-change history. For an exact
+    # materialized cohort or a promise that must survive anything, use an
+    # explicit per-owner grant instead: `owner.grant_feature!(:distribution)`.
+    def grandfather(feature_key, subscribed_before:)
+      @grandfathers[feature_key.to_sym] = normalize_grandfather_cutoff(subscribed_before)
+    end
+
+    def grandfathered_features
+      @grandfathers.keys
+    end
+
+    def grandfather_cutoff_for(feature_key)
+      @grandfathers[feature_key.to_sym]
+    end
+
+    def grandfathers_feature?(feature_key, relationship_started_at:)
+      cutoff = grandfather_cutoff_for(feature_key)
+      return false unless cutoff && relationship_started_at
+
+      relationship_started_at < cutoff
+    end
+
     # Limit methods
     def set_limit(key, **options)
       limit_key = key.to_sym
-      @limits[limit_key] = {
+      after_limit = options.fetch(:after_limit, :block_usage)
+
+      # Grace only exists for :grace_then_block. Defaulting it onto every
+      # limit made `limit[:grace]` a lie for :block_usage/:just_warn limits
+      # (enforcement ignores it there), and downstream consumers reading the
+      # config naively would promise customers a grace window that does not
+      # exist. Explicit grace on a non-grace mode raises immediately, even if
+      # the caller supplied nil/false (truthiness must not erase intent).
+      if %i[block_usage just_warn].include?(after_limit) && options.key?(:grace)
+        raise ConfigurationError,
+              "Limit #{limit_key} cannot have grace with :#{after_limit} after_limit " \
+              "(grace only applies to :grace_then_block)"
+      end
+
+      limit = {
         key: limit_key,
         to: options[:to],
         per: options[:per],
-        after_limit: options.fetch(:after_limit, :block_usage),
-        grace: options.fetch(:grace, 7.days),
+        after_limit: after_limit,
+        grace: after_limit == :grace_then_block ? options.fetch(:grace, 7.days) : nil,
         warn_at: options.fetch(:warn_at, [0.6, 0.8, 0.95]),
         count_scope: options[:count_scope]
       }
 
-      validate_limit_options!(@limits[limit_key])
+      validate_limit_options!(limit)
+      @limits[limit_key] = limit
     end
 
     def limits(key=nil, **options)
@@ -509,9 +561,44 @@ module PricingPlans
     def validate!
       validate_limits!
       validate_pricing!
+      validate_grandfathers!
     end
 
     private
+
+    def normalize_grandfather_cutoff(value)
+      cutoff =
+        if defined?(ActiveSupport::TimeWithZone) && value.is_a?(ActiveSupport::TimeWithZone)
+          value.utc.to_time
+        else
+          case value
+          when Time then value
+          when Date, String then value.to_time(:utc)
+          else
+            raise ConfigurationError,
+                  "grandfather cutoff must be a Time, ActiveSupport::TimeWithZone, Date, or String " \
+                  "(got #{value.class})"
+          end
+        end
+
+      raise ConfigurationError, "grandfather cutoff #{value.inspect} is not a parseable time" unless cutoff.is_a?(Time)
+
+      cutoff
+    rescue ArgumentError
+      raise ConfigurationError, "grandfather cutoff #{value.inspect} is not a parseable time"
+    end
+
+    def validate_grandfathers!
+      contradiction = @grandfathers.keys & @features.to_a
+      return if contradiction.empty?
+
+      raise ConfigurationError,
+            "Plan #{key.inspect} grandfathers #{contradiction.inspect} but also allows " \
+            "them via `allows`. Grandfathering is for features the plan no longer " \
+            "carries — remove them from `allows` (everyone has them) or from " \
+            "`grandfather` (nobody needs the exception)."
+    end
+
     def validate_limits!
       @limits.each do |key, limit|
         validate_limit_options!(limit)
@@ -530,9 +617,17 @@ module PricingPlans
         raise ConfigurationError, "Limit #{limit[:key]} after_limit must be one of #{valid_after_limit.join(', ')}"
       end
 
-      # Validate grace only applies to blocking behaviors
-      if limit[:grace] && limit[:after_limit] == :just_warn
-        raise ConfigurationError, "Limit #{limit[:key]} cannot have grace with :just_warn after_limit"
+      # Grace only applies to :grace_then_block; anywhere else it would be
+      # stored but never honored, which is worse than an error.
+      if limit[:grace] && limit[:after_limit] != :grace_then_block
+        raise ConfigurationError,
+              "Limit #{limit[:key]} cannot have grace with :#{limit[:after_limit]} after_limit " \
+              "(grace only applies to :grace_then_block)"
+      end
+
+      if limit[:after_limit] == :grace_then_block && !valid_grace_window?(limit[:grace])
+        raise ConfigurationError,
+              "Limit #{limit[:key]} grace must be a positive duration of at least one second"
       end
 
       # Validate warn_at thresholds
@@ -549,6 +644,12 @@ module PricingPlans
         allowed = cs.respond_to?(:call) || cs.is_a?(Symbol) || cs.is_a?(Hash) || (cs.is_a?(Array) && cs.all? { |e| e.respond_to?(:call) || e.is_a?(Symbol) || e.is_a?(Hash) })
         raise ConfigurationError, "Limit #{limit[:key]} count_scope must be a Proc, Symbol, Hash, or Array of these" unless allowed
       end
+    end
+
+    def valid_grace_window?(grace)
+      grace.is_a?(Numeric) && grace.finite? && grace.to_i.positive?
+    rescue TypeError, RangeError
+      false
     end
 
     def validate_pricing!

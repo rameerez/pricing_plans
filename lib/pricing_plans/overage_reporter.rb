@@ -10,6 +10,7 @@ module PricingPlans
       :overage,
       :grace_active,
       :grace_ends_at,
+      :grace_window,
       keyword_init: true
     )
 
@@ -37,7 +38,12 @@ module PricingPlans
             allowed: allowed,
             overage: over_by,
             grace_active: GraceManager.grace_active?(plan_owner, limit_key),
-            grace_ends_at: GraceManager.grace_ends_at(plan_owner, limit_key)
+            grace_ends_at: GraceManager.grace_ends_at(plan_owner, limit_key),
+            # The CONFIGURED window on the target plan (nil unless the limit
+            # is :grace_then_block, where alone grace is honored) — so
+            # downgrade/dunning UX can say "after a N-day grace window"
+            # without re-deriving enforcement rules.
+            grace_window: limit_config[:grace]
           )
         end.compact
       end

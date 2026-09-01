@@ -129,12 +129,17 @@ PricingPlans.configure do |config|
 end
 ```
 
+`grace` must be a positive numeric duration of at least one second. Omitting it
+for `:grace_then_block` defaults to `7.days`. Do not pass `grace` (even as
+`nil` or `false`) to `:block_usage` or `:just_warn`; those modes never honor a
+grace window and configuration fails fast instead of storing misleading data.
+
 In summary: persistent caps count live rows (per plan owner model). When over the cap:
   - `:just_warn` → validation passes; use controller guard to warn.
   - `:block_usage` → validation fails immediately (uses `error_after_limit` if set).
   - `:grace_then_block` → validation fails once grace is considered “blocked” (we track and switch from grace to blocked).
 
-Note: `grace` is only valid with blocking behaviors. We’ll raise at boot if you set `grace` with `:just_warn`.
+Note: `grace` is only valid with `:grace_then_block`. We’ll raise at boot if you declare it with `:block_usage` or `:just_warn`.
 
 ### Per‑period allowances
 

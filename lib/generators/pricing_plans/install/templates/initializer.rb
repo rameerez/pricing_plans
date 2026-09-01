@@ -21,6 +21,12 @@ PricingPlans.configure do |config|
     allows :api_access, :premium_features
     limits :projects, to: 25, after_limit: :grace_then_block, grace: 7.days
 
+    # Repricing later? When you move a feature to a higher plan, existing
+    # subscribers keep it with one declarative line (no columns, no backfill):
+    #   grandfather :premium_features, subscribed_before: "2027-01-01"
+    # One-off exceptions (comps, betas) are per-owner grants instead:
+    #   owner.grant_feature!(:premium_features, note: "comp")
+
     highlighted!
   end
 

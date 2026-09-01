@@ -160,7 +160,7 @@ Integrating payment processing (Stripe, `pay`, etc.) is relatively straightforwa
 
 ## Why the models?
 
-The `pricing_plans` gem needs three new models in the schema in order to work: `Assignment`, `EnforcementState`, and `Usage`. Why are they needed?
+The `pricing_plans` gem uses four models: `Assignment`, `EnforcementState`, `Usage`, and `FeatureGrant`. Why are they needed?
 
 - `PricingPlans::Assignment` stores explicit pricing plan overrides independently of the billing system. This is useful for gifts, employee access, demos, support interventions, and grandfathered customers.
   - What: A `plan_key` and a required provenance label such as `"admin"`, `"customer_success_gift"`, or `"legacy_import"`. There can be only one override per plan owner.
@@ -187,6 +187,10 @@ The old `assign_pricing_plan!` and `remove_pricing_plan!` names are deprecated b
 - `PricingPlans::Usage` tracks per-period allowances (e.g., “3 projects per month”). Persistent caps don’t need a table because they are live counts.
   - What: `period_start`, `period_end`, and a monotonic `used` counter with a last-used timestamp.
   - How it’s used: On create of the metered model, we increment or upsert the usage for the current window (based on `PeriodCalculator`). Reads power `remaining`, `percent_used`, and warning thresholds.
+
+- `PricingPlans::FeatureGrant` stores optional per-owner feature exceptions independently of the current plan.
+  - What: A feature key, provenance source, optional note/expiry, and revocation timestamp.
+  - How it’s used: Active grants participate in `plan_allows?`; revocation retains the row so the grant/revocation lifecycle remains inspectable. Apps upgrading from before 0.6.0 add this table with `rails generate pricing_plans:grants && rails db:migrate`.
 
 ## Gem features
 
@@ -231,6 +235,49 @@ Example human message:
 Notes:
 - If you provide a `config.message_builder`, it’s used to customize copy for the `:overage_report` context.
 - This reporter works regardless of whether any controller/model action has been hit; it reads live counts and current period usage.
+
+## Changing your pricing: grandfathering and feature grants
+
+Sooner or later you'll reprice: a feature that used to be on a cheap plan moves to a higher one. The customers who already pay you should keep what they signed up for — and that should not require new columns, backfills, or rake tasks in your app. (Full guide: [docs/07-repricing.md](/docs/07-repricing.md).)
+
+### Grandfathering (declarative, zero state)
+
+Remove the feature from the plan's `allows`, and declare the grandfather right next to it:
+
+```ruby
+plan :indie do
+  allows :api_access                 # :distribution moved to :starter on 2026-08-31
+  grandfather :distribution, subscribed_before: "2026-09-01"
+end
+```
+
+That's the whole migration. Owners whose qualifying pricing relationship predates the cutoff keep the feature; everyone who arrives later doesn't. `plan_allows?(:distribution)` (and the `plan_allows_distribution?` sugar) just keep working everywhere — the gate code in your app doesn't change at all. Your initializer stays the single, git-versioned record of what changed and when.
+
+Semantics, precisely:
+
+- **Eligibility time** is the older of the current manual assignment and a current subscription whose processor price maps to the same resolved plan. An old subscription on another plan cannot make a new override eligible.
+- Pay keeps a subscription's original `created_at` when its price is swapped; changing the plan key on an existing manual assignment likewise keeps that assignment row's age. This measures a **continuous pricing relationship**, not the exact date the current plan or price was selected. That is usually the desired grandfathering policy; use grants if you need a frozen, exact historical cohort.
+- Grandfathering rides that continuous relationship: cancel and re-subscribe, or clear and later recreate an assignment, and you re-enter at current pricing. For a promise that must survive anything, use a grant (below).
+- Cutoffs accept a `Time`, `ActiveSupport::TimeWithZone`, `Date`, or `String`; date-only values are read as **midnight UTC**.
+- Declaring `grandfather` for a feature the plan still `allows` raises a configuration error — one of the two lines is a mistake.
+
+### Feature grants (per-owner exceptions)
+
+For individual exceptions — comps, beta access, sales promises, support remediation, or a grandfather that must survive cancellation — grant the feature to the owner directly:
+
+```ruby
+org.grant_feature!(:distribution, source: "founder_comp", note: "conference friend")
+org.grant_feature!(:sso, source: "sales", expires_at: 30.days.from_now)
+
+org.plan_allows?(:sso)                      # => true (source-aware predicate below)
+org.feature_entitlement_source(:sso)        # => :plan | :grandfather | :grant | nil
+org.feature_granted?(:sso)                  # => true (active grant row exists)
+
+org.revoke_feature!(:sso, note: "eval over") # keeps the row, stamps revoked_at
+org.feature_grants                           # retained grant/revocation history
+```
+
+Grants live in the `pricing_plans_feature_grants` table (created by the install generator; apps upgrading from < 0.6.0 add it with `rails generate pricing_plans:grants && rails db:migrate`). They attach to the owner, not the plan, so they survive plan changes and cancellations until expiry or revocation. Rows are never deleted by the API: revoking stamps `revoked_at`, preserving each grant/revocation lifecycle. Re-granting while a grant is active updates that row; it is not an event-by-event audit log of field edits.
 
 ### Override checks
 

@@ -158,7 +158,7 @@ module PricingPlans
           owners.join(enforcement_states)
             .on(
               enforcement_states[:plan_owner_id].eq(owners[:id])
-              .and(enforcement_states[:plan_owner_type].eq(name))
+              .and(enforcement_states[:plan_owner_type].eq(PlanOwnerIdentity.type_for(self)))
             )
             .join_sources
         )
@@ -174,7 +174,7 @@ module PricingPlans
           owners.join(enforcement_states, Arel::Nodes::OuterJoin)
             .on(
               enforcement_states[:plan_owner_id].eq(owners[:id])
-              .and(enforcement_states[:plan_owner_type].eq(name))
+              .and(enforcement_states[:plan_owner_type].eq(PlanOwnerIdentity.type_for(self)))
               .and(enforcement_states[:exceeded_at].not_eq(nil))
             )
             .join_sources
@@ -217,7 +217,7 @@ module PricingPlans
 
     def pricing_plan_overridden?
       return false unless respond_to?(:id) && id.present?
-      Assignment.exists?(plan_owner_type: self.class.name, plan_owner_id: id)
+      Assignment.exists?(PlanOwnerIdentity.conditions_for(self))
     end
 
     def plan_assignment
@@ -226,7 +226,7 @@ module PricingPlans
 
     def pricing_plan_override
       return nil unless respond_to?(:id) && id.present?
-      Assignment.find_by(plan_owner_type: self.class.name, plan_owner_id: id)
+      Assignment.find_by(PlanOwnerIdentity.conditions_for(self))
     end
 
     def pricing_plan_override_source
@@ -257,10 +257,76 @@ module PricingPlans
       )
     end
 
-    # Features
+    # Features. True when the owner is entitled to the feature by ANY source:
+    # the resolved plan carries it, the plan grandfathers it and the owner's
+    # qualifying relationship predates the cutoff, or the owner holds an
+    # active per-owner grant. Every caller of plan_allows? (and the
+    # plan_allows_x? sugar)
+    # honors grandfathering and grants with no app changes.
     def plan_allows?(feature_key)
-      plan = current_pricing_plan
-      plan&.allows_feature?(feature_key) || false
+      feature_entitlement_source(feature_key).present?
+    end
+
+    # Why is (or isn't) this owner entitled to a feature?
+    # => :plan | :grandfather | :grant | nil
+    def feature_entitlement_source(feature_key)
+      resolution = current_pricing_plan_resolution
+      plan = resolution.plan
+
+      return :plan if plan&.allows_feature?(feature_key)
+
+      if plan&.grandfathers_feature?(
+        feature_key,
+        relationship_started_at: pricing_relationship_started_at(resolution)
+      )
+        return :grandfather
+      end
+
+      return :grant if FeatureGrant.active_for?(self, feature_key)
+
+      nil
+    end
+
+    # The earliest qualifying relationship timestamp carried by the current
+    # resolution. An assignment always belongs to its resolved plan. An
+    # underlying subscription only participates when its processor price maps
+    # to that same plan, preventing an old subscription on a different plan
+    # from manufacturing grandfather rights for a new override.
+    def pricing_relationship_started_at(resolution = current_pricing_plan_resolution)
+      timestamps = []
+      timestamps << resolution.assignment.created_at if resolution.assignment?
+
+      subscription = resolution.subscription
+      if subscription.respond_to?(:processor_plan) && subscription.respond_to?(:created_at)
+        subscription_plan = PlanResolver.plan_for_processor_plan(subscription.processor_plan)
+        timestamps << subscription.created_at if subscription_plan&.key == resolution.plan_key
+      end
+
+      timestamps.compact.min
+    end
+
+    # Per-owner feature grants: individual, auditable exceptions on top of
+    # plan resolution (comps, beta access, sales exceptions, promises that
+    # must survive cancellation). See PricingPlans::FeatureGrant.
+    def grant_feature!(feature_key, source: "manual", note: nil, expires_at: nil)
+      FeatureGrant.grant_to!(self, feature_key, source: source, note: note, expires_at: expires_at)
+    end
+
+    # Revokes active grants for the feature (audit rows are kept, stamped
+    # with revoked_at). Plan- and grandfather-sourced entitlements are
+    # config, not grants, and are not affected.
+    def revoke_feature!(feature_key, note: nil)
+      FeatureGrant.revoke_for!(self, feature_key, note: note)
+    end
+
+    def feature_granted?(feature_key)
+      FeatureGrant.active_for?(self, feature_key)
+    end
+
+    def feature_grants
+      return FeatureGrant.none unless FeatureGrant.table_ready?
+
+      FeatureGrant.where(PlanOwnerIdentity.conditions_for(self))
     end
 
     # Syntactic sugar for feature checks:

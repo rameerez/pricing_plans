@@ -30,6 +30,8 @@ Newly generated initializers enable this strict behavior. Intentional default-ti
 
 As long as a matching `stripe_price` is found in the `pricing_plans.rb` initializer, the gem will know a user subscribed to that Stripe price ID is under the corresponding plan. Essentially, the gem just looks at the current `pay` subscriptions of your user. If a matching price ID is found in the `pricing_plans` configuration file, it enforces the corresponding limits.
 
+Plan resolution treats Pay subscriptions as entitlement-bearing while they are active, trialing, in a cancellation grace period, or `past_due`. A failed renewal therefore does not abruptly downgrade a customer while the processor is still retrying payment; canceled and unpaid subscriptions no longer qualify. If an owner has multiple current subscriptions, the gem prefers one whose `processor_plan` matches the configured registry instead of blindly taking the first row.
+
 > [!TIP]
 > To make your `pricing_plans` gem config work across environments (production, development, etc.) instead of defining price IDs statically like this in the config:
 >
@@ -44,6 +46,39 @@ As long as a matching `stripe_price` is found in the `pricing_plans.rb` initiali
 > ```
 >
 > You can come up with similar solutions, like adding that config to a plaintext `.yml` file if you don't want to store this info in the credentials file, but this is the overall idea.
+
+### Reacting to plan changes ("repackaging")
+
+`pricing_plans` resolves plans lazily — it reads the current Pay subscription when you ask, and never writes anything on plan changes. That's a feature (no sync bugs, no migrations), but it means the gem has no built-in "plan changed" callback to run side effects like disabling excess resources on downgrade or re-enabling them on upgrade.
+
+The blessed recipe (worked out in [#13](https://github.com/rameerez/pricing_plans/issues/13)) is to hook Pay's own subscription lifecycle, which is exactly where plan changes become visible:
+
+```ruby
+# app/models/concerns/pay_extension.rb
+module PayExtension
+  extend ActiveSupport::Concern
+
+  included do
+    after_commit :repackage_for_subscription, on: [ :create, :update, :destroy ]
+  end
+
+  def repackage_for_subscription
+    owner = customer&.owner
+    return unless owner.is_a?(Organization)
+
+    RepackageService.new(owner).call   # your idempotent per-plan side effects
+  end
+end
+
+# config/initializers/pay.rb
+ActiveSupport.on_load(:pay_subscription) do
+  include PayExtension
+end
+```
+
+Keep the service **idempotent** (safe to run twice) and derive everything from `owner.current_pricing_plan` — that way it also doubles as a backfill job you can run over all owners after changing the rules. Note that if you also use [manual plan overrides](03-model-helpers.md#check-and-explicitly-override-plans), those change plans without touching Pay, so run the same service after calling `override_pricing_plan!` too.
+
+Also consider whether you need repackaging at all: for limits, the gem's own [downgrade semantics](../README.md#downgrades-and-overages) (block writes while over-quota, never delete data) often cover it with no code.
 
 ## `usage_credits` gem
 
