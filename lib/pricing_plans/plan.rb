@@ -249,25 +249,26 @@ module PricingPlans
       # limit made `limit[:grace]` a lie for :block_usage/:just_warn limits
       # (enforcement ignores it there), and downstream consumers reading the
       # config naively would promise customers a grace window that does not
-      # exist. Explicit grace on a non-grace mode raises in validation.
-      grace =
-        if after_limit == :grace_then_block
-          options.fetch(:grace, 7.days)
-        else
-          options[:grace]
-        end
+      # exist. Explicit grace on a non-grace mode raises immediately, even if
+      # the caller supplied nil/false (truthiness must not erase intent).
+      if [:block_usage, :just_warn].include?(after_limit) && options.key?(:grace)
+        raise ConfigurationError,
+          "Limit #{limit_key} cannot have grace with :#{after_limit} after_limit " \
+          "(grace only applies to :grace_then_block)"
+      end
 
-      @limits[limit_key] = {
+      limit = {
         key: limit_key,
         to: options[:to],
         per: options[:per],
         after_limit: after_limit,
-        grace: grace,
+        grace: after_limit == :grace_then_block ? options.fetch(:grace, 7.days) : nil,
         warn_at: options.fetch(:warn_at, [0.6, 0.8, 0.95]),
         count_scope: options[:count_scope]
       }
 
-      validate_limit_options!(@limits[limit_key])
+      validate_limit_options!(limit)
+      @limits[limit_key] = limit
     end
 
     def limits(key=nil, **options)
@@ -626,6 +627,11 @@ module PricingPlans
           "(grace only applies to :grace_then_block)"
       end
 
+      if limit[:after_limit] == :grace_then_block && !valid_grace_window?(limit[:grace])
+        raise ConfigurationError,
+          "Limit #{limit[:key]} grace must be a positive duration of at least one second"
+      end
+
       # Validate warn_at thresholds
       if limit[:warn_at] && !limit[:warn_at].all? { |t| t.is_a?(Numeric) && t.between?(0, 1) }
         raise ConfigurationError, "Limit #{limit[:key]} warn_at thresholds must be numbers between 0 and 1"
@@ -640,6 +646,12 @@ module PricingPlans
         allowed = cs.respond_to?(:call) || cs.is_a?(Symbol) || cs.is_a?(Hash) || (cs.is_a?(Array) && cs.all? { |e| e.respond_to?(:call) || e.is_a?(Symbol) || e.is_a?(Hash) })
         raise ConfigurationError, "Limit #{limit[:key]} count_scope must be a Proc, Symbol, Hash, or Array of these" unless allowed
       end
+    end
+
+    def valid_grace_window?(grace)
+      grace.is_a?(Numeric) && grace.finite? && grace.to_i.positive?
+    rescue TypeError, RangeError
+      false
     end
 
     def validate_pricing!

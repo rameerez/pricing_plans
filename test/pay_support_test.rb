@@ -38,6 +38,33 @@ class PaySupportTest < ActiveSupport::TestCase
     refute PricingPlans::PaySupport.subscription_active_for?(owner)
   end
 
+  def test_active_record_payment_processor_is_read_without_calling_side_effectful_override
+    processor = Struct.new(:subscriptions).new([subscription_with(active: true)])
+    association = Struct.new(:reader).new(processor)
+    owner_class = Class.new do
+      define_singleton_method(:reflect_on_association) do |name|
+        Object.new if name == :payment_processor
+      end
+    end
+    owner = owner_class.new
+    owner.define_singleton_method(:payment_processor) { raise "must not invoke Pay's side-effectful reader" }
+    owner.define_singleton_method(:association) do |name|
+      raise unless name == :payment_processor
+
+      association
+    end
+
+    assert_equal [processor.subscriptions.first], PricingPlans::PaySupport.current_subscriptions_for(owner)
+  end
+
+  def test_poro_payment_processor_adapters_still_use_the_public_reader
+    processor = Struct.new(:subscriptions).new([subscription_with(active: true)])
+    owner = Object.new
+    owner.define_singleton_method(:payment_processor) { processor }
+
+    assert_equal [processor.subscriptions.first], PricingPlans::PaySupport.current_subscriptions_for(owner)
+  end
+
   private
 
   def subscription_with(active: false, trial: false, grace: false, past_due: false, ended: false)

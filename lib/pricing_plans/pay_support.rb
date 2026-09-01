@@ -74,7 +74,7 @@ module PricingPlans
     def current_payment_processor_subscriptions(plan_owner)
       return [] unless plan_owner.respond_to?(:payment_processor)
 
-      payment_processor = plan_owner.payment_processor
+      payment_processor = payment_processor_for(plan_owner)
       return [] unless payment_processor
 
       current_subscriptions_in(subscription_collection(payment_processor)).tap do |subscriptions|
@@ -84,6 +84,24 @@ module PricingPlans
       end
     end
     private_class_method :current_payment_processor_subscriptions
+
+    # Pay::Attributes overrides the generated `payment_processor` association
+    # reader: when no row exists and a default processor is configured, merely
+    # calling it creates a Pay::Customer. Plan lookup is a read operation and
+    # must never acquire that side effect. Read the underlying Active Record
+    # association directly when it exists; retain the public-reader fallback
+    # for PORO integrations and older Pay-shaped adapters.
+    def payment_processor_for(plan_owner)
+      reflection =
+        if plan_owner.class.respond_to?(:reflect_on_association)
+          plan_owner.class.reflect_on_association(:payment_processor)
+        end
+
+      return plan_owner.association(:payment_processor).reader if reflection && plan_owner.respond_to?(:association)
+
+      plan_owner.payment_processor
+    end
+    private_class_method :payment_processor_for
 
     def current_subscriptions_in(subscriptions)
       Array(subscriptions).select { |subscription| subscription_current?(subscription) }

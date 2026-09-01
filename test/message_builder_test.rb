@@ -50,12 +50,14 @@ class MessageBuilderTest < ActiveSupport::TestCase
     2.times { |i| @org.projects.create!(name: "GW#{i}") }
 
     items = PricingPlans::OverageReporter.report(@org, :free)
+    state = PricingPlans::GraceManager.mark_exceeded!(@org, :projects)
 
     assert_equal 1, items.size
     # The CONFIGURED window (enforced-only by construction since grace is no
     # longer stored for non-grace modes) — dunning/downgrade UX reads this
     # instead of re-deriving enforcement rules from the raw limit config.
     assert_equal 7.days, items.first.grace_window
+    assert_equal items.first.grace_window.to_i, state.data.fetch("grace_period")
   end
 
   def test_overage_report_message_builder
