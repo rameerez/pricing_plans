@@ -30,6 +30,8 @@ class FeatureGrantsGeneratorTest < Rails::Generators::TestCase
       assert_includes migration, "t.string :feature_key, null: false"
       assert_includes migration, "t.string :source, null: false"
       assert_includes migration, "t.datetime :expires_at"
+      assert_includes migration, "t.json :limits, default: {}, null: false"
+      assert_includes migration, "t.bigint :usage_count, default: 0, null: false"
       assert_includes migration, "t.datetime :revoked_at"
       assert_includes migration, "idx_pricing_plans_feature_grants_lookup"
     end
@@ -51,6 +53,28 @@ class FeatureGrantsInstallGeneratorTest < Rails::Generators::TestCase
     assert_migration "db/migrate/create_pricing_plans_tables.rb" do |migration|
       assert_includes migration, "create_table :pricing_plans_feature_grants"
       assert_includes migration, "idx_pricing_plans_feature_grants_lookup"
+    end
+  end
+end
+
+require_relative "../../lib/generators/pricing_plans/passes/passes_generator"
+
+class FeaturePassesGeneratorTest < Rails::Generators::TestCase
+  include GeneratorTestRailsConstant
+  tests PricingPlans::Generators::PassesGenerator
+  destination File.expand_path("../../tmp/passes_generator", __dir__)
+  setup :restore_rails_constant
+  setup :prepare_destination
+
+  def test_upgrade_adds_columns_and_constraint_without_touching_existing_grants
+    run_generator
+    assert_migration "db/migrate/add_feature_pass_limits.rb" do |migration|
+      assert_includes migration, ":limits, :json, default: {}, null: false"
+      assert_includes migration, ":usage_limit, :bigint"
+      assert_includes migration, ":usage_count, :bigint, default: 0, null: false"
+      assert_includes migration, "add_check_constraint"
+      refute_includes migration, "delete"
+      refute_includes migration, "drop_table"
     end
   end
 end

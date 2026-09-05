@@ -17,6 +17,7 @@ module PricingPlans
       @price_string = nil
       @stripe_price = nil
       @features = Set.new
+      @feature_limits = {}
       @grandfathers = {}
       @limits = {}
       @credits_included = nil
@@ -180,24 +181,31 @@ module PricingPlans
     end
 
     # Feature methods
-    def allows(*feature_keys)
+    def allows(*feature_keys, limits: {})
+      normalized = FeatureAccess.normalize_limits(limits)
       feature_keys.flatten.each do |key|
         @features.add(key.to_sym)
+        @feature_limits[key.to_sym] = normalized.dup unless normalized.empty?
       end
     end
 
-    def allow(*feature_keys)
-      allows(*feature_keys)
+    def allow(*feature_keys, **options)
+      allows(*feature_keys, **options)
     end
 
     def disallows(*feature_keys)
       feature_keys.flatten.each do |key|
         @features.delete(key.to_sym)
+        @feature_limits.delete(key.to_sym)
       end
     end
 
     def disallow(*feature_keys)
       disallows(*feature_keys)
+    end
+
+    def feature_limits(feature_key)
+      (@feature_limits[feature_key.to_sym] || {}).dup
     end
 
     def allows_feature?(feature_key)

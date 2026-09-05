@@ -1,0 +1,12 @@
+# frozen_string_literal: true
+
+class AddFeaturePassLimits < ActiveRecord::Migration<%= migration_version %>
+  def change
+    add_column :pricing_plans_feature_grants, :limits, :json, default: {}, null: false
+    add_column :pricing_plans_feature_grants, :usage_limit, :bigint
+    add_column :pricing_plans_feature_grants, :usage_count, :bigint, default: 0, null: false
+    add_check_constraint :pricing_plans_feature_grants,
+                         "usage_count >= 0 AND (usage_limit IS NULL OR usage_limit >= 0)",
+                         name: "pricing_plans_feature_pass_usage_nonnegative"
+  end
+end

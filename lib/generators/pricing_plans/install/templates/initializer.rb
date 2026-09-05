@@ -147,3 +147,8 @@ PricingPlans.configure do |config|
   # When set to true, detailed debug output will be printed to stdout, which can be helpful for troubleshooting.
   # config.debug = false
 end
+
+# Individual sales evaluations (after migration; run from your app/admin service):
+# owner.issue_feature_pass!(:api_access, source: "sales", expires_at: 3.months.from_now)
+# Capacity/consumption offers require with_feature_access! at the write boundary.
+# Full guide: https://github.com/rameerez/pricing_plans/blob/main/docs/08-feature-passes.md

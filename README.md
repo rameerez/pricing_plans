@@ -279,6 +279,22 @@ org.feature_grants                           # retained grant/revocation history
 
 Grants live in the `pricing_plans_feature_grants` table (created by the install generator; apps upgrading from < 0.6.0 add it with `rails generate pricing_plans:grants && rails db:migrate`). They attach to the owner, not the plan, so they survive plan changes and cancellations until expiry or revocation. Rows are never deleted by the API: revoking stamps `revoked_at`, preserving each grant/revocation lifecycle. Re-granting while a grant is active updates that row; it is not an event-by-event audit log of field edits.
 
+### Feature passes: time and usage bounded evaluations
+
+Offer a customer a sample without changing billing or replacing an existing promise:
+
+```ruby
+org.issue_feature_pass!(:distribution, source: "sales_evaluation",
+  expires_at: 3.months.from_now,
+  limits: { storage_bytes: 1.gigabyte }, usage_limit: 2.gigabytes)
+```
+
+The [complete feature pass guide](docs/08-feature-passes.md) covers capacity versus
+cumulative consumption, atomic write enforcement, operator controls, upgrade
+precedence, expiry, revocation, and the additive migration for existing apps.
+**Named limits require live measurements at the write boundary**; see
+`with_feature_access!` in the guide before enabling a bounded offer.
+
 ### Override checks
 
 Some times you'll want to override plan limits / feature gating checks. A common use case is if you're responding to a webhook (like Stripe), you'll want to process the webhook correctly (bypassing the check) and maybe later handle the limit manually.

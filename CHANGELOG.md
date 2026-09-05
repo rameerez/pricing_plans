@@ -1,5 +1,19 @@
 ## [0.6.0] - 2026-08-31
 
+## [0.7.0] - Unreleased
+
+- First-class feature passes on existing grants: create-only issuance, explicit
+  revision, named capacities, and cumulative usage allowances.
+- Owner-locked transactional `with_feature_access!` enforcement and pure-data
+  `feature_access` snapshots. Paid feature access wins without consuming a pass.
+- Plan feature capacities via `allows :feature, limits: {...}`.
+- Additive `pricing_plans:passes` migration; fresh install/grants generators include
+  the same columns and database check. Existing boolean grants remain compatible.
+- Serialize direct revocation with consumption and bypass stale query caches.
+- Complete business, integration, concurrency, migration, and admin guidance in
+  `docs/08-feature-passes.md`.
+
+
 **Repricing without app migrations: grandfathering and per-owner feature grants.**
 
 - Add the `grandfather` plan DSL: `grandfather :feature, subscribed_before: <time>` declares that owners whose qualifying pricing relationship predates the cutoff keep a feature the plan no longer `allows`. Pure configuration — no columns, no backfills, no rake tasks; the initializer stays the git-versioned record of every pricing change
