@@ -90,6 +90,8 @@ usage callable, checks the named limits and cumulative allowance, reserves the
 amount, then yields. It bypasses query caches so a preflight read cannot stay
 stale after waiting for a competing writer. It does not reload the caller's
 unsaved attributes. The block's return value is returned.
+Grant consumption is an internal operation;
+use `with_feature_access!`, not a direct counter update, to spend an allowance.
 
 All competing writes must use this API. Capacity values must be measured inside
 the callable, on the owner's database connection. `amount:` and each value in

@@ -47,8 +47,8 @@ module PricingPlans
     # Internal to PlanOwner#with_feature_access!, which calls this on a row it
     # loaded fresh under the owner lock after FeatureAccess#check! passed. The
     # lock is what makes check-then-increment safe; this method neither
-    # re-acquires it nor reloads. The database check constraint still backs the
-    # invariant if a caller ever bypasses the lock.
+    # re-acquires it nor reloads. Keep this private: the database constraint
+    # rejects negative counters, but cannot enforce the allowance or expiry.
     def record_usage!(amount)
       self.class.ensure_pass_columns!
       FeatureAccess.validate_amount!(amount)
@@ -63,6 +63,7 @@ module PricingPlans
 
       increment!(:usage_count, amount, touch: true)
     end
+    private :record_usage!
 
     # Revise a specific lifecycle without resetting consumption or resurrecting it.
     def revise!(**options)

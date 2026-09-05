@@ -159,6 +159,21 @@ class FeaturePassTest < ActiveSupport::TestCase
     assert_operator pass.updated_at, :>=, before
   end
 
+  def test_consumption_is_only_exposed_through_the_owner_locked_write_api
+    pass = issue(usage_limit: 10)
+    stale = PricingPlans::FeatureGrant.find(pass.id)
+
+    [pass, stale].each do |copy|
+      refute_respond_to copy, :record_usage!
+      assert_raises(NoMethodError) { copy.record_usage!(7) }
+    end
+    @owner.with_feature_access!(:distribution, amount: 7) { :ok }
+    assert_raises(PricingPlans::FeatureLimitExceeded) do
+      @owner.with_feature_access!(:distribution, amount: 7) { flunk }
+    end
+    assert_equal 7, pass.reload.usage_count
+  end
+
   def test_invalid_usage_is_never_coerced_to_zero
     issue(usage_limit: 10)
 

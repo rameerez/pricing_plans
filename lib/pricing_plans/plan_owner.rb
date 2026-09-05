@@ -331,7 +331,7 @@ module PricingPlans
       FeatureGrant.with_owner_lock(self) do
         access = feature_access(feature_key)
         access.check!(amount: amount, usage: usage.call)
-        access.grant.record_usage!(amount) if access.grant && amount.positive?
+        access.grant.__send__(:record_usage!, amount) if access.grant && amount.positive?
         yield access
       end
     end
