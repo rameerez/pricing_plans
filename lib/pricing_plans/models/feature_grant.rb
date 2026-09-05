@@ -38,27 +38,30 @@ module PricingPlans
     end
 
     def pass_limits
-      has_attribute?(:limits) ? FeatureAccess.normalize_limits(self[:limits]) : {}
+      has_attribute?(:limits) ? FeatureAccess.normalize_limits(self[:limits] || {}) : {}
     end
 
     def pass_usage_limit = has_attribute?(:usage_limit) ? self[:usage_limit] : nil
     def pass_usage_count = has_attribute?(:usage_count) ? self[:usage_count] : 0
 
-    # Called only while holding the owner lock in with_feature_access!.
+    # Internal to PlanOwner#with_feature_access!, which calls this on a row it
+    # loaded fresh under the owner lock after FeatureAccess#check! passed. The
+    # lock is what makes check-then-increment safe; this method neither
+    # re-acquires it nor reloads. The database check constraint still backs the
+    # invariant if a caller ever bypasses the lock.
     def record_usage!(amount)
       self.class.ensure_pass_columns!
       FeatureAccess.validate_amount!(amount)
-      self.class.with_owner_lock(plan_owner) do
-        reload
-        raise FeatureDenied, "This feature pass is no longer active." unless active?
-        total = pass_usage_count + amount
-        FeatureAccess.validate_amount!(total)
-        if pass_usage_limit && total > pass_usage_limit
-          raise FeatureLimitExceeded.new(feature_key: feature_key, plan_owner: plan_owner,
-                                         limit_key: :usage, allowed: pass_usage_limit, requested: total)
-        end
-        update!(usage_count: total)
+      raise FeatureDenied, "This feature pass is no longer active." unless active?
+
+      total = pass_usage_count + amount
+      FeatureAccess.validate_amount!(total)
+      if pass_usage_limit && total > pass_usage_limit
+        raise FeatureLimitExceeded.new(feature_key: feature_key, plan_owner: plan_owner,
+                                       limit_key: :usage, allowed: pass_usage_limit, requested: total)
       end
+
+      increment!(:usage_count, amount, touch: true)
     end
 
     # Revise a specific lifecycle without resetting consumption or resurrecting it.

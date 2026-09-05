@@ -51,7 +51,7 @@ access.grant             # selected grant row, or nil
 access.expires_at        # grant deadline, or nil
 access.limit(:storage_bytes) # integer or :unlimited
 access.usage_count       # cumulative grant consumption
-access.remaining_uses    # integer or :unlimited
+access.remaining_allowance # integer or :unlimited
 access.available?(amount: upload.bytesize,
                   usage: { storage_bytes: stored_bytes + upload.bytesize,
                            max_artifact_bytes: upload.bytesize })
@@ -124,27 +124,15 @@ that bypass this API are outside the contract.
 
 ## Paid access wins
 
-```ruby
-plan :starter do
-  allows :distribution, limits: {
-    storage_bytes: 10.gigabytes,
-    max_artifact_bytes: 1.gigabyte
-  }
-end
-```
-
 Precedence remains plan, then qualifying grandfather, then active grant. A paid
-plan's access uses its own feature limits and does not spend or inherit a pass's
-allowance. Limits do not stack and are not merged between sources. If the owner
-later downgrades, an unexpired, unrevoked pass resumes with its previous consumed
-usage. Buying a plan does not delete the pass. A plan that merely has a higher
-price does not win unless it actually allows the feature.
-
-Features already allowed without limits remain unrestricted. Grandfathered
-access uses the resolved plan's feature-limit settings, where present; otherwise
-it remains unrestricted. `Plan#feature_limits(feature)` exposes a defensive copy
-of the named settings. These feature capacities are distinct from the existing
-association/per-period `plan.limits` catalog.
+plan's access never spends or inherits a pass's allowance, and a pass never
+restricts an owner whose plan already carries the feature. Named limits belong
+to the pass alone: plan and grandfather access carry none, so `limit(:key)`
+answers `:unlimited` for them and your app keeps owning its plan quotas exactly
+as it did before passes existed. Limits do not stack and are not merged between
+sources. If the owner later downgrades, an unexpired, unrevoked pass resumes
+with its previous consumed usage. Buying a plan does not delete the pass. A plan
+that merely has a higher price does not win unless it actually allows the feature.
 
 ## Revise or revoke explicitly
 

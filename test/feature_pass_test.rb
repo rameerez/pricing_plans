@@ -21,7 +21,7 @@ class FeaturePassTest < ActiveSupport::TestCase
     assert_equal :grant, access.source
     assert_equal pass, access.grant
     assert_equal 1024, access.limit(:storage_bytes)
-    assert_equal 2048, access.remaining_uses
+    assert_equal 2048, access.remaining_allowance
     assert_in_delta deadline.to_f, access.expires_at.to_f, 0.001
   end
 
@@ -60,7 +60,7 @@ class FeaturePassTest < ActiveSupport::TestCase
     @owner.with_feature_access!(:distribution, amount: 3) { :last }
 
     assert_equal 10, pass.reload.usage_count
-    assert_equal 0, @owner.feature_access(:distribution).remaining_uses
+    assert_equal 0, @owner.feature_access(:distribution).remaining_allowance
     assert_raises(PricingPlans::FeatureLimitExceeded) do
       @owner.with_feature_access!(:distribution, amount: 1) { flunk }
     end
@@ -118,22 +118,45 @@ class FeaturePassTest < ActiveSupport::TestCase
     assert_equal 0, pass.reload.usage_count
   end
 
-  def test_plan_feature_limits_are_resolved_and_enforced
-    PricingPlans::Registry.plan(:pro).allows :api_access, limits: { calls: 5 }
+  def test_plan_access_carries_no_named_limits_and_leaves_plan_quotas_to_the_app
     @owner.override_pricing_plan!(:pro, source: "admin")
+    access = @owner.feature_access(:api_access)
 
-    assert_equal 5, @owner.feature_access(:api_access).limit(:calls)
-    assert_raises(PricingPlans::FeatureLimitExceeded) do
-      @owner.with_feature_access!(:api_access, usage: -> { { calls: 6 } }) { flunk }
-    end
+    assert_equal :plan, access.source
+    assert_empty access.limits
+    assert_equal :unlimited, access.limit(:calls)
+    assert_equal :unlimited, access.remaining_allowance
+    assert_equal :ok, @owner.with_feature_access!(:api_access, amount: 99, usage: -> { { calls: 6 } }) { :ok }
+    error = assert_raises(PricingPlans::ConfigurationError) { PricingPlans::Registry.plan(:pro).allows :exports, limits: { calls: 5 } }
+    assert_match(/feature passes/, error.message)
   end
 
-  def test_invalid_limits_are_rejected_in_plans_and_passes
+  def test_invalid_pass_limits_are_rejected
     [nil, [], { storage: -1 }, { storage: "100" }, { storage: 1.5 }, { storage: false }, { "" => 1 }].each do |limits|
       assert_raises(ArgumentError, ActiveRecord::RecordInvalid) { issue(limits: limits) }
-      assert_raises(ArgumentError) { PricingPlans::Registry.plan(:pro).allows :exports, limits: limits }
     end
     refute @owner.feature_granted?(:distribution)
+  end
+
+  def test_metered_write_locks_the_owner_once_and_never_opens_a_nested_savepoint
+    pass = issue(usage_limit: 10)
+    before = pass.reload.updated_at
+    statements = []
+    subscriber = ActiveSupport::Notifications.subscribe("sql.active_record") do |*, payload|
+      statements << payload[:sql] unless payload[:name] == "SCHEMA"
+    end
+    begin
+      @owner.with_feature_access!(:distribution, amount: 4) { :ok }
+    ensure
+      ActiveSupport::Notifications.unsubscribe(subscriber)
+    end
+
+    assert_equal 1, statements.count { |sql| sql.match?(/SELECT .* FROM "organizations"/) },
+                 "the owner row should be read exactly once, under the lock"
+    assert_empty statements.grep(/SAVEPOINT/), "record_usage! must not re-enter the owner lock"
+    assert_equal 1, statements.count { |sql| sql.start_with?("UPDATE") }
+    assert_equal 4, pass.reload.usage_count
+    assert_operator pass.updated_at, :>=, before
   end
 
   def test_invalid_usage_is_never_coerced_to_zero
@@ -186,7 +209,7 @@ class FeaturePassTest < ActiveSupport::TestCase
     pass.revise!(usage_limit: 20, expires_at: 1.day.from_now)
 
     assert_equal 4, pass.reload.usage_count
-    assert_equal 16, @owner.feature_access(:distribution).remaining_uses
+    assert_equal 16, @owner.feature_access(:distribution).remaining_allowance
     assert_raises(ArgumentError) { pass.revise!(usage_count: 0) }
     assert_raises(ArgumentError) { pass.revise!(feature_key: "exports") }
     assert_raises(ArgumentError) { pass.revise!(plan_owner_id: create_organization.id) }
@@ -260,7 +283,7 @@ class FeaturePassTest < ActiveSupport::TestCase
     @owner.with_feature_access!(:distribution, amount: 8) { :ok }
     pass.revise!(usage_limit: 5)
 
-    assert_equal 0, @owner.feature_access(:distribution).remaining_uses
+    assert_equal 0, @owner.feature_access(:distribution).remaining_allowance
     refute @owner.feature_access(:distribution).available?(amount: 1)
     assert_equal :published, @owner.with_feature_access!(:distribution) { :published }
     assert_equal 8, pass.reload.usage_count

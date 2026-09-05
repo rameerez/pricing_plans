@@ -17,7 +17,6 @@ module PricingPlans
       @price_string = nil
       @stripe_price = nil
       @features = Set.new
-      @feature_limits = {}
       @grandfathers = {}
       @limits = {}
       @credits_included = nil
@@ -181,31 +180,29 @@ module PricingPlans
     end
 
     # Feature methods
-    def allows(*feature_keys, limits: {})
-      normalized = FeatureAccess.normalize_limits(limits)
+    def allows(*feature_keys)
       feature_keys.flatten.each do |key|
+        unless key.is_a?(Symbol) || key.is_a?(String)
+          raise ConfigurationError,
+                "`allows` takes feature names only (got #{key.inspect}). Plan quotas live in " \
+                "`limits`; per-owner capacities live on feature passes (`issue_feature_pass!(..., limits: {})`)."
+        end
         @features.add(key.to_sym)
-        @feature_limits[key.to_sym] = normalized.dup unless normalized.empty?
       end
     end
 
-    def allow(*feature_keys, **options)
-      allows(*feature_keys, **options)
+    def allow(*feature_keys)
+      allows(*feature_keys)
     end
 
     def disallows(*feature_keys)
       feature_keys.flatten.each do |key|
         @features.delete(key.to_sym)
-        @feature_limits.delete(key.to_sym)
       end
     end
 
     def disallow(*feature_keys)
       disallows(*feature_keys)
-    end
-
-    def feature_limits(feature_key)
-      (@feature_limits[feature_key.to_sym] || {}).dup
     end
 
     def allows_feature?(feature_key)

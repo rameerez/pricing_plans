@@ -1,18 +1,18 @@
-## [0.6.0] - 2026-08-31
-
 ## [0.7.0] - Unreleased
 
-- First-class feature passes on existing grants: create-only issuance, explicit
-  revision, named capacities, and cumulative usage allowances.
-- Owner-locked transactional `with_feature_access!` enforcement and pure-data
-  `feature_access` snapshots. Paid feature access wins without consuming a pass.
-- Plan feature capacities via `allows :feature, limits: {...}`.
-- Additive `pricing_plans:passes` migration; fresh install/grants generators include
-  the same columns and database check. Existing boolean grants remain compatible.
-- Serialize direct revocation with consumption and bypass stale query caches.
-- Complete business, integration, concurrency, migration, and admin guidance in
-  `docs/08-feature-passes.md`.
+**Feature passes: bounded, create-only samples on top of feature grants.**
 
+Expiring per-owner grants have existed since 0.6.0 (`grant_feature!` with `expires_at:`). 0.7.0 adds what a sales or support offer needs on top of them:
+
+- `issue_feature_pass!` is create-only: it raises `FeatureGrantConflict` instead of overwriting an existing active grant, so an operator's "issue" button can never shorten a permanent promise. `grant_feature!` keeps its upsert semantics and now preserves a pass's limits and consumption when they are omitted
+- A pass can carry named capacity `limits:` (a hash the app measures against at its write boundary) and a cumulative `usage_limit:` whose `usage_count` the gem reserves atomically. Both are properties of the pass alone: plan and grandfather access carry no named limits, and the app keeps owning its plan quotas exactly as before
+- `feature_access(:feature)` returns a read-only `FeatureAccess` snapshot for UI and preflight: `source`, `grant`, `expires_at`, `limit(:key)`, `usage_limit`, `usage_count`, `remaining_allowance`, `available?`, `check!`
+- `with_feature_access!(:feature, amount:, usage:)` locks a fresh copy of the owner row, resolves access again, checks the pass limits and cumulative allowance, reserves `amount`, and yields inside a savepoint; an exception escaping the block rolls back the reservation together with the business write. `FeatureLimitExceeded < FeatureDenied` carries `limit_key`, `allowed`, and `requested`
+- `FeatureGrant#revise!` changes `expires_at`, `limits`, `usage_limit`, or `note` on an active row while preserving consumption, and refuses expired or revoked rows; `revoke!` is serialized with consumption
+- Three additive columns on `pricing_plans_feature_grants` (`limits`, `usage_limit`, `usage_count`) plus a nonnegative check constraint. Fresh installs and `pricing_plans:grants` include them; apps already on the 0.6.x table run `rails generate pricing_plans:passes && rails db:migrate`. Old-schema boolean grants keep working, and bounded writes raise a `ConfigurationError` naming the generator when the columns are missing
+- Full guide: `docs/08-feature-passes.md`
+
+## [0.6.0] - 2026-08-31
 
 **Repricing without app migrations: grandfathering and per-owner feature grants.**
 

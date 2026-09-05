@@ -44,19 +44,16 @@ module PricingPlans
       end
     end
 
+    # Named limits belong to a pass. Plan and grandfather access carry none:
+    # the gem answers "is this owner entitled?", and the app owns its plan
+    # quotas the way it always has.
     def initialize(owner, feature_key)
       @owner = owner
       @feature_key = feature_key.to_sym
       @source = owner.feature_entitlement_source(@feature_key)
       @grant = owner.feature_grants.active.for_feature(@feature_key).first if source == :grant
       @source = nil if source == :grant && !grant
-      @limits = if grant
-                  grant.pass_limits
-                elsif source
-                  owner.current_pricing_plan.feature_limits(@feature_key)
-                else
-                  {}
-                end.freeze
+      @limits = (grant ? grant.pass_limits : {}).freeze
     end
 
     def allowed? = !source.nil?
@@ -69,7 +66,7 @@ module PricingPlans
       value == "unlimited" ? :unlimited : value
     end
 
-    def remaining_uses
+    def remaining_allowance
       usage_limit ? [usage_limit - usage_count, 0].max : :unlimited
     end
 

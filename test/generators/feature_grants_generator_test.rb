@@ -30,7 +30,8 @@ class FeatureGrantsGeneratorTest < Rails::Generators::TestCase
       assert_includes migration, "t.string :feature_key, null: false"
       assert_includes migration, "t.string :source, null: false"
       assert_includes migration, "t.datetime :expires_at"
-      assert_includes migration, "t.json :limits, default: {}, null: false"
+      assert_includes migration, "t.send(json_column_type, :limits, default: {}, null: false)"
+      assert_includes migration, "def json_column_type"
       assert_includes migration, "t.bigint :usage_count, default: 0, null: false"
       assert_includes migration, "t.datetime :revoked_at"
       assert_includes migration, "idx_pricing_plans_feature_grants_lookup"
@@ -69,7 +70,9 @@ class FeaturePassesGeneratorTest < Rails::Generators::TestCase
   def test_upgrade_adds_columns_and_constraint_without_touching_existing_grants
     run_generator
     assert_migration "db/migrate/add_feature_pass_limits.rb" do |migration|
-      assert_includes migration, ":limits, :json, default: {}, null: false"
+      assert_includes migration, ":limits, json_column_type, default: {}, null: false"
+      assert_includes migration, "def json_column_type"
+      refute_match(/^\s{5,}t\.|^\s{0,3}t\./, migration, "generated columns must be indented consistently")
       assert_includes migration, ":usage_limit, :bigint"
       assert_includes migration, ":usage_count, :bigint, default: 0, null: false"
       assert_includes migration, "add_check_constraint"
