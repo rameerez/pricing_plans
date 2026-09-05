@@ -182,6 +182,11 @@ module PricingPlans
     # Feature methods
     def allows(*feature_keys)
       feature_keys.flatten.each do |key|
+        unless key.is_a?(Symbol) || key.is_a?(String)
+          raise ConfigurationError,
+                "`allows` takes feature names only (got #{key.inspect}). Plan quotas live in " \
+                "`limits`; per-owner capacities live on feature passes (`issue_feature_pass!(..., limits: {})`)."
+        end
         @features.add(key.to_sym)
       end
     end

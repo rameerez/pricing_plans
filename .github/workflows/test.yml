@@ -49,6 +49,10 @@ jobs:
           ruby -rrubygems/package -e '
             spec = Gem::Package.new(ARGV.fetch(0)).spec
             required = %w[
+              lib/pricing_plans/feature_access.rb
+              lib/generators/pricing_plans/passes/passes_generator.rb
+              lib/generators/pricing_plans/passes/templates/add_feature_pass_limits.rb.erb
+              docs/08-feature-passes.md
               lib/pricing_plans/models/feature_grant.rb
               lib/pricing_plans/plan_owner_identity.rb
               lib/generators/pricing_plans/grants/grants_generator.rb

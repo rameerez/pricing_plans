@@ -10,10 +10,17 @@ class CreatePricingPlansFeatureGrants < ActiveRecord::Migration<%= migration_ver
       t.string :source, null: false
       t.text :note
       t.datetime :expires_at
+      t.send(json_column_type, :limits, default: {}, null: false)
+      t.bigint :usage_limit
+      t.bigint :usage_count, default: 0, null: false
       t.datetime :revoked_at
 
       t.timestamps
     end
+
+    add_check_constraint :pricing_plans_feature_grants,
+                         "usage_count >= 0 AND (usage_limit IS NULL OR usage_limit >= 0)",
+                         name: "pricing_plans_feature_pass_usage_nonnegative"
 
     add_index :pricing_plans_feature_grants,
               [ :plan_owner_type, :plan_owner_id, :feature_key ],
@@ -28,5 +35,10 @@ class CreatePricingPlansFeatureGrants < ActiveRecord::Migration<%= migration_ver
     primary_key_type = setting || :primary_key
     foreign_key_type = setting || :bigint
     [ primary_key_type, foreign_key_type ]
+  end
+
+  def json_column_type
+    return :jsonb if connection.adapter_name.downcase.include?("postgresql")
+    :json
   end
 end

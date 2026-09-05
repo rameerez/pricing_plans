@@ -18,6 +18,7 @@ module PricingPlans
     validates :feature_key, presence: true
     validates :source, presence: true
     validate :expires_at_must_be_parseable
+    validate :pass_options_must_be_valid
 
     scope :for_feature, ->(feature_key) { where(feature_key: feature_key.to_s) }
     scope :active, lambda {
@@ -29,18 +30,67 @@ module PricingPlans
     end
 
     def revoke!(note: nil)
-      return self if revoked_at.present?
+      self.class.with_owner_lock(plan_owner) do
+        reload
+        update!(revoked_at: Time.current, note: [self.note, note].compact.presence&.join(" | ")) unless revoked_at.present?
+      end
+      self
+    end
 
-      update!(revoked_at: Time.current, note: [self.note, note].compact.presence&.join(" | "))
+    def pass_limits
+      has_attribute?(:limits) ? FeatureAccess.normalize_limits(self[:limits] || {}) : {}
+    end
+
+    def pass_usage_limit = has_attribute?(:usage_limit) ? self[:usage_limit] : nil
+    def pass_usage_count = has_attribute?(:usage_count) ? self[:usage_count] : 0
+
+    # Internal to PlanOwner#with_feature_access!, which calls this on a row it
+    # loaded fresh under the owner lock after FeatureAccess#check! passed. The
+    # lock is what makes check-then-increment safe; this method neither
+    # re-acquires it nor reloads. Keep this private: the database constraint
+    # rejects negative counters, but cannot enforce the allowance or expiry.
+    def record_usage!(amount)
+      self.class.ensure_pass_columns!
+      FeatureAccess.validate_amount!(amount)
+      raise FeatureDenied, "This feature pass is no longer active." unless active?
+
+      total = pass_usage_count + amount
+      FeatureAccess.validate_amount!(total)
+      if pass_usage_limit && total > pass_usage_limit
+        raise FeatureLimitExceeded.new(feature_key: feature_key, plan_owner: plan_owner,
+                                       limit_key: :usage, allowed: pass_usage_limit, requested: total)
+      end
+
+      increment!(:usage_count, amount, touch: true)
+    end
+    private :record_usage!
+
+    # Revise a specific lifecycle without resetting consumption or resurrecting it.
+    def revise!(**options)
+      unknown = options.keys - [:expires_at, :note, :limits, :usage_limit]
+      raise ArgumentError, "unknown revision options: #{unknown.join(', ')}" if unknown.any?
+      self.class.ensure_pass_columns! if (options.keys & [:limits, :usage_limit]).any?
+      self.class.with_owner_lock(plan_owner) do
+        reload
+        raise FeatureGrantConflict, "This pass is no longer active; issue a new pass." unless active?
+        options[:limits] = FeatureAccess.normalize_limits(options[:limits]) if options.key?(:limits)
+        FeatureAccess.validate_amount!(options[:usage_limit]) if options.key?(:usage_limit) && !options[:usage_limit].nil?
+        update!(**options)
+      end
       self
     end
 
     class << self
       # Idempotent: updates the active grant for (owner, feature) if one
       # exists, otherwise creates it. Revoked grants stay behind as history.
-      def grant_to!(plan_owner, feature_key, source: "manual", note: nil, expires_at: nil)
+      def grant_to!(plan_owner, feature_key, source: "manual", note: nil, expires_at: nil, replace: true, **options)
         ensure_table!
         ensure_persisted_owner!(plan_owner)
+        unknown = options.keys - [:limits, :usage_limit]
+        raise ArgumentError, "unknown pass options: #{unknown.join(', ')}" if unknown.any?
+        ensure_pass_columns! if options.any?
+        options[:limits] = FeatureAccess.normalize_limits(options[:limits]) if options.key?(:limits)
+        FeatureAccess.validate_amount!(options[:usage_limit]) if options.key?(:usage_limit) && !options[:usage_limit].nil?
 
         # Serialize grant writes through the owner row. A lookup followed by
         # create is otherwise race-prone, and a portable partial unique index
@@ -49,7 +99,8 @@ module PricingPlans
         with_locked_owner(plan_owner) do
           grant = active.find_by(owner_conditions(plan_owner).merge(feature_key: feature_key.to_s))
           if grant
-            grant.update!(source: source.to_s, note: note, expires_at: expires_at)
+            raise FeatureGrantConflict, "An active grant already exists for #{feature_key}; revise it explicitly." unless replace
+            grant.update!(source: source.to_s, note: note, expires_at: expires_at, **options)
             grant
           else
             create!(
@@ -57,7 +108,8 @@ module PricingPlans
               feature_key: feature_key.to_s,
               source: source.to_s,
               note: note,
-              expires_at: expires_at
+              expires_at: expires_at,
+              **options
             )
           end
         end
@@ -91,6 +143,17 @@ module PricingPlans
         false
       end
 
+      def ensure_pass_columns!
+        return if %w[limits usage_limit usage_count].all? { |name| column_names.include?(name) }
+
+        raise ConfigurationError, "Run `rails generate pricing_plans:passes && rails db:migrate` to add feature pass limits."
+      end
+
+      def with_owner_lock(plan_owner, &block)
+        ensure_persisted_owner!(plan_owner)
+        with_locked_owner(plan_owner, &block)
+      end
+
       private
 
       def ensure_table!
@@ -117,16 +180,26 @@ module PricingPlans
       def with_locked_owner(plan_owner)
         owner_class = plan_owner.class.base_class
 
-        owner_class.transaction do
-          # Lock a fresh copy so granting a feature never reloads or rejects a
-          # caller that happens to have unrelated unsaved changes.
-          owner_class.unscoped.lock.find(plan_owner.id)
-          yield
+        owner_class.uncached do
+          owner_class.transaction(requires_new: true) do
+            # Lock a fresh copy without changing the caller's unsaved attributes.
+            # Bypass preflight query caches after waiting for another writer.
+            owner_class.unscoped.lock.find(plan_owner.id)
+            yield
+          end
         end
       end
     end
 
     private
+
+    def pass_options_must_be_valid
+      pass_limits
+      FeatureAccess.validate_amount!(pass_usage_count)
+      FeatureAccess.validate_amount!(pass_usage_limit) unless pass_usage_limit.nil?
+    rescue ArgumentError => error
+      errors.add(:base, error.message)
+    end
 
     def expires_at_must_be_parseable
       raw_value = expires_at_before_type_cast

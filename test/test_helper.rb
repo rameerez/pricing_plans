@@ -85,6 +85,9 @@ ActiveRecord::Schema.define do
     t.string :source, null: false
     t.text :note
     t.datetime :expires_at
+    t.json :limits, default: {}, null: false
+    t.bigint :usage_limit
+    t.bigint :usage_count, default: 0, null: false
     t.datetime :revoked_at
 
     t.timestamps

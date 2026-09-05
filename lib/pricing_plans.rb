@@ -30,6 +30,9 @@ module PricingPlans
   end
   class InvalidOperation < Error; end
 
+  autoload :FeatureAccess, "pricing_plans/feature_access"
+  autoload :FeatureLimitExceeded, "pricing_plans/feature_access"
+  autoload :FeatureGrantConflict, "pricing_plans/feature_access"
   autoload :Configuration, "pricing_plans/configuration"
   autoload :Registry, "pricing_plans/registry"
   autoload :Plan, "pricing_plans/plan"
@@ -75,7 +78,7 @@ module PricingPlans
     # warnings independently and lets Rails include them in its deprecator
     # collection.
     def deprecator
-      @deprecator ||= ActiveSupport::Deprecation.new("0.7.0", "pricing_plans")
+      @deprecator ||= ActiveSupport::Deprecation.new("0.8.0", "pricing_plans")
     end
 
     def configure(&block)

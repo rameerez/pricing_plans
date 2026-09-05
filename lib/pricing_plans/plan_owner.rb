@@ -308,8 +308,32 @@ module PricingPlans
     # Per-owner feature grants: individual, auditable exceptions on top of
     # plan resolution (comps, beta access, sales exceptions, promises that
     # must survive cancellation). See PricingPlans::FeatureGrant.
-    def grant_feature!(feature_key, source: "manual", note: nil, expires_at: nil)
-      FeatureGrant.grant_to!(self, feature_key, source: source, note: note, expires_at: expires_at)
+    def grant_feature!(feature_key, source: "manual", note: nil, expires_at: nil, **options)
+      FeatureGrant.grant_to!(self, feature_key, source: source, note: note, expires_at: expires_at, **options)
+    end
+
+    # Create-only sales/support pass: never replace an existing customer promise.
+    def issue_feature_pass!(feature_key, source:, **options)
+      FeatureGrant.grant_to!(self, feature_key, source: source, **options, replace: false)
+    end
+
+    def feature_access(feature_key)
+      FeatureAccess.new(self, feature_key)
+    end
+
+    # The block and cumulative reservation share a transaction. Read live capacity
+    # in the usage callable, after locking; do not pass a precomputed count.
+    # All competing writers must use this API and the owner's database connection.
+    def with_feature_access!(feature_key, amount: 0, usage: -> { {} })
+      raise ArgumentError, "a block is required" unless block_given?
+      raise ArgumentError, "usage must be callable so it is read under the lock" unless usage.respond_to?(:call)
+      FeatureAccess.validate_amount!(amount)
+      FeatureGrant.with_owner_lock(self) do
+        access = feature_access(feature_key)
+        access.check!(amount: amount, usage: usage.call)
+        access.grant.__send__(:record_usage!, amount) if access.grant && amount.positive?
+        yield access
+      end
     end
 
     # Revokes active grants for the feature (audit rows are kept, stamped
