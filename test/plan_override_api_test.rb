@@ -24,7 +24,7 @@ class PlanOverrideApiTest < ActiveSupport::TestCase
   def test_pricing_plans_exposes_a_gem_specific_deprecator
     assert_instance_of ActiveSupport::Deprecation, PricingPlans.deprecator
     assert_equal "pricing_plans", PricingPlans.deprecator.gem_name
-    assert_equal "0.7.0", PricingPlans.deprecator.deprecation_horizon
+    assert_equal "0.8.0", PricingPlans.deprecator.deprecation_horizon
   end
 
   def test_explicit_override_requires_a_source

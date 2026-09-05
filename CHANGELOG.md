@@ -1,4 +1,4 @@
-## [0.7.0] - Unreleased
+## [0.7.0] - 2026-09-05
 
 **Feature passes: bounded, create-only samples on top of feature grants.**
 
@@ -11,6 +11,7 @@ Expiring per-owner grants have existed since 0.6.0 (`grant_feature!` with `expir
 - `FeatureGrant#revise!` changes `expires_at`, `limits`, `usage_limit`, or `note` on an active row while preserving consumption, and refuses expired or revoked rows; `revoke!` is serialized with consumption
 - Three additive columns on `pricing_plans_feature_grants` (`limits`, `usage_limit`, `usage_count`) plus a nonnegative check constraint. Fresh installs and `pricing_plans:grants` include them; apps already on the 0.6.x table run `rails generate pricing_plans:passes && rails db:migrate`. Old-schema boolean grants keep working, and bounded writes raise a `ConfigurationError` naming the generator when the columns are missing
 - Full guide: `docs/08-feature-passes.md`
+- The plan-assignment APIs deprecated in 0.5.0 (`assign_pricing_plan!`, `remove_pricing_plan!`, `Assignment.assign_plan_to`, `Assignment.remove_assignment_for`) stay for one more minor: the deprecation horizon moves to 0.8.0 so this feature release carries no removals. They go in 0.8.0 together with the first-class plan-change hook (#13) and plan groups (#22)
 
 ## [0.6.0] - 2026-08-31
 

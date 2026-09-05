@@ -78,7 +78,7 @@ module PricingPlans
     # warnings independently and lets Rails include them in its deprecator
     # collection.
     def deprecator
-      @deprecator ||= ActiveSupport::Deprecation.new("0.7.0", "pricing_plans")
+      @deprecator ||= ActiveSupport::Deprecation.new("0.8.0", "pricing_plans")
     end
 
     def configure(&block)
