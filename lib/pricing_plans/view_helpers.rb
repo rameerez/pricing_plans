@@ -28,10 +28,10 @@ module PricingPlans
 
     # CTA data resolution. Returns pure data: { text:, url:, method:, disabled:, reason: }
     # We keep this minimal and policy-free by default; host apps can layer policies.
-    def pricing_plan_cta(plan, plan_owner: nil, context: :marketing, current_plan: nil)
+    def pricing_plan_cta(plan, plan_owner: nil, context: :marketing, current_plan: nil, interval: :month)
       text = plan.cta_text
-      url = plan.cta_url(plan_owner: plan_owner)
-      url ||= pricing_plans_subscribe_path(plan)
+      url = plan.cta_url(plan_owner: plan_owner, interval: interval)
+      url ||= pricing_plans_subscribe_path(plan, interval: interval)
       disabled = false
       reason = nil
 

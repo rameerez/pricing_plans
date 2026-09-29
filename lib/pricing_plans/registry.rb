@@ -36,6 +36,12 @@ module PricingPlans
         plans.key?(key.to_sym)
       end
 
+      def plan_for_price(price_id)
+        return nil if price_id.blank?
+
+        plans.values.find { |plan| plan.billing_interval_for(price_id) }
+      end
+
       def configuration
         @configuration
       end
@@ -83,20 +89,7 @@ module PricingPlans
 
       def validate_registry!
         # Check for duplicate stripe price IDs
-        stripe_prices = plans.values
-          .map(&:stripe_price)
-          .compact
-          .flat_map do |sp|
-            case sp
-            when String
-              [sp]
-            when Hash
-              # Extract all price ID values from the hash
-              [sp[:id], sp[:month], sp[:year]].compact
-            else
-              []
-            end
-          end
+        stripe_prices = plans.values.flat_map(&:price_ids)
 
         duplicates = stripe_prices.group_by(&:itself).select { |_, v| v.size > 1 }.keys
         if duplicates.any?
