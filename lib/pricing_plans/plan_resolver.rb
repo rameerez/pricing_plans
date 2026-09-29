@@ -75,15 +75,9 @@ module PricingPlans
       # Resolve a processor price identifier to the configured plan that owns
       # it. Public so entitlement provenance can verify that an underlying
       # subscription belongs to the same plan as a manual override.
+      # Same lookup as the public PricingPlans.plan_for_price.
       def plan_for_processor_plan(processor_plan)
-        return nil if processor_plan.blank?
-
-        Registry.plans.values.find do |plan|
-          stripe_price = plan.stripe_price
-          next unless stripe_price
-
-          stripe_price.is_a?(Hash) ? stripe_price.value?(processor_plan) : stripe_price == processor_plan
-        end
+        Registry.plan_for_price(processor_plan)
       end
 
       private

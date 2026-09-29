@@ -112,6 +112,21 @@ end
 plan.metadata[:icon] # => "rocket"
 ```
 
+Sell a plan monthly, quarterly and yearly by pricing each interval for real (no "yearly = 12× monthly" guesswork), and look any Stripe price id back up to its plan:
+
+```ruby
+plan :pro do
+  price        month: 24, quarter: 54, year: 108
+  stripe_price month: "price_pro_m", quarter: "price_pro_q", year: "price_pro_y"
+end
+
+pro.price_components(interval: :quarter).label                    # => "$54/qtr"
+pro.price_components(interval: :quarter).monthly_equivalent_label # => "$18/mo"
+
+PricingPlans.plan_for_price("price_pro_q")       # => the :pro plan
+PricingPlans.billing_interval_for("price_pro_q") # => :quarter
+```
+
 You can also grandfather users into old plans (hidden to other users), assign plans manually without requiring a payment (for testing, gifts, or employees), and much more!
 
 ## 🤓 Read the docs!
