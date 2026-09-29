@@ -189,6 +189,48 @@ UsageCredits.subscription_plan :pro do
 end
 ```
 
+#### Declare Stripe prices once
+
+A plan's Stripe price ids belong in one place. From `usage_credits` 1.0.0, a credits subscription plan can take them straight from the matching `pricing_plans` plan with `pricing_plan`:
+
+```ruby
+# config/initializers/pricing_plans.rb
+PricingPlans.configure do |config|
+  config.plan :pro do
+    price        month: 24, quarter: 54, year: 108
+    stripe_price month: "price_pro_m", quarter: "price_pro_q", year: "price_pro_y"
+    includes_credits 300
+  end
+end
+
+# config/initializers/usage_credits.rb
+UsageCredits.configure do |config|
+  config.subscription_plan :pro do
+    pricing_plan                      # same key; or `pricing_plan :other_key`
+    gives 300.credits.every(:month)
+    unused_credits :expire
+  end
+end
+```
+
+`usage_credits` reads `PricingPlans::Registry.plan(key).stripe_price` lazily, when it first needs it, so the order your initializers load in doesn't matter. Every price id counts, whether `stripe_price` is a single String or a Hash under any interval key (quarter included). A subscription on any of those prices gets the plan's credits. A linked plan can't also declare `stripe_price` in `usage_credits`: that raises a `ConfigurationError`, because two lists of ids would drift apart.
+
+On `usage_credits` versions before 1.0.0, declare the same ids in both initializers and keep them in sync by hand:
+
+```ruby
+# config/initializers/pricing_plans.rb
+config.plan :pro do
+  price        month: 24, year: 108
+  stripe_price month: "price_pro_m", year: "price_pro_y"
+end
+
+# config/initializers/usage_credits.rb
+config.subscription_plan :pro do
+  stripe_price month: "price_pro_m", year: "price_pro_y" # must match pricing_plans exactly
+  gives 300.credits.every(:month)
+end
+```
+
 #### Guardrails when `usage_credits` is installed
 
 When the `usage_credits` gem is present, we lint your configuration at boot to prevent ambiguous setups:

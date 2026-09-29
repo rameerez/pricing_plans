@@ -12,6 +12,7 @@
 - Plan comparison (`upgrade_from?`/`downgrade_from?`) uses the declared monthly price, else the cheapest per-month equivalent across the plan's intervals, and now reads Stripe's monthly equivalent rather than the raw amount when a single price id turns out not to be monthly
 - A paid plan with only a `stripe_price` whose price cannot be resolved still compares as $0, but now logs a one-time warning naming the plan and suggesting a local `price` (to `Rails.logger`, or stderr outside Rails). No behavior change otherwise
 - Labels keep cents instead of rounding (`$29.99/mo`, not `$30/mo`, also for Stripe-derived labels) and whole amounts drop the `.0` (`price 29.0` renders `$29/mo`)
+- docs/06-gem-compatibility.md: link a `usage_credits` subscription plan to its pricing plan with `pricing_plan` (from `usage_credits` 1.0.0), so Stripe price ids are declared once. The two-initializer setup stays documented for earlier `usage_credits` versions
 - Heads-up, may need a config change: `stripe_price` Hash keys are now validated at boot. Anything other than `:id`, `:day`, `:week`, `:month`, `:quarter`, `:year` raises a `ConfigurationError` naming the key. Before, such keys were silently ignored by `monthly_price_id`/`yearly_price_id`, though a Pay subscription on them still resolved. When `price` is a Hash and `stripe_price` is declared too, both must cover the same intervals; plain `price 24` with `stripe_price month:, year:` stays valid
 
 ## [0.7.0] - 2026-09-05
