@@ -226,7 +226,7 @@ class BillingIntervalsTest < ActiveSupport::TestCase
 
   def test_price_id_for_rejects_unknown_intervals
     configure_sprint_pricing
-    assert_raises(ArgumentError) { pro.price_id_for(:fortnight) }
+    assert_equal pro.price_id_for(:month), pro.price_id_for(:fortnight), "an unknown interval falls back to monthly"
   end
 
   def test_price_ids_lists_every_declared_stripe_id
@@ -342,10 +342,32 @@ class BillingIntervalsTest < ActiveSupport::TestCase
     assert_equal 5400, pro.price_components(interval: "quarter").amount_cents
   end
 
-  def test_price_components_reject_unknown_intervals
+  # Runtime intervals usually come from params[:interval]: an unknown or blank
+  # one shows the monthly price instead of raising (no 500 on ?interval=foo).
+  def test_price_components_fall_back_to_monthly_for_unknown_intervals
     configure_sprint_pricing
-    error = assert_raises(ArgumentError) { pro.price_components(interval: :fortnight) }
-    assert_match(/fortnight/, error.message)
+    monthly = pro.price_components(interval: :month)
+
+    [ :fortnight, "fortnight", "", "  ", nil ].each do |interval|
+      pc = pro.price_components(interval: interval)
+      assert_equal monthly.amount_cents, pc.amount_cents, "#{interval.inspect} falls back to monthly"
+      assert_equal :month, pc.interval, "#{interval.inspect} reports :month"
+    end
+  end
+
+  def test_padded_interval_strings_are_understood
+    configure_sprint_pricing
+
+    assert_equal 5400, pro.price_components(interval: " quarter ").amount_cents
+  end
+
+  def test_unknown_config_intervals_still_raise_at_boot
+    assert_raises(PricingPlans::ConfigurationError) do
+      PricingPlans.configure do |config|
+        config.default_plan = :pro
+        config.plan(:pro) { price fortnight: 12 }
+      end
+    end
   end
 
   def test_undeclared_interval_derives_from_the_monthly_price
@@ -636,7 +658,7 @@ class BillingIntervalsTest < ActiveSupport::TestCase
     configure_sprint_pricing
 
     with_subscribe_path do
-      assert_raises(ArgumentError) { pro.cta_url(interval: :fortnight) }
+      assert_equal pro.cta_url(interval: :month), pro.cta_url(interval: :fortnight), "an unknown interval falls back to monthly"
     end
   end
 

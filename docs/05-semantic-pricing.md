@@ -51,7 +51,7 @@ Notes:
 
 - If `stripe_price` is configured, we derive cents, currency, and interval from the Stripe Price (and cache it). Stripe's `interval: "month", interval_count: 3` reads as `:quarter`.
 - If `price` is declared alongside `stripe_price`, the local numbers win and no Stripe call is made. Declare every interval you sell (`price month: 24, quarter: 54, year: 108`) to show real discounted amounts; with a single `price 24`, other intervals are derived from the monthly number (12× for yearly).
-- An unknown interval raises `ArgumentError`. When the interval comes from a URL, check it first: `plan.billing_intervals.map(&:to_s).include?(params[:interval])`.
+- An unknown or blank interval falls back to `:month` (logged at debug level), so passing `params[:interval]` straight through is safe: a hand-edited `?interval=foo` shows the monthly price instead of an error. To offer only the intervals a plan sells, list `plan.billing_intervals`. Unknown intervals in the plan *configuration* still raise a `ConfigurationError` at boot.
 - If `price 0` (free), we return components with `present? == true`, amount 0 and the configured default currency symbol.
 - If only `price_string` is set (e.g., "Contact us"), components return `present? == false`, `label == price_string`.
 

@@ -771,12 +771,27 @@ module PricingPlans
       intervals.map(&:inspect).join(", ")
     end
 
+    # Runtime intervals (price_components, price_id_for, cta_url) usually come
+    # from a URL (`params[:interval]`), so an unknown or blank one falls back
+    # to :month instead of raising: a hand-edited `?interval=foo` shows the
+    # monthly price rather than a 500. Typos in the CONFIG still raise at boot
+    # (normalize_interval_prices / the stripe_price key check).
     def normalize_billing_interval(interval)
-      normalized = interval.respond_to?(:to_sym) ? interval.to_sym : interval
+      normalized = interval.respond_to?(:to_sym) && interval.to_s.strip != "" ? interval.to_s.strip.to_sym : nil
       return normalized if BILLING_INTERVALS.include?(normalized)
 
-      raise ArgumentError,
-            "Unknown billing interval #{interval.inspect}; use one of #{format_interval_list(BILLING_INTERVALS)}"
+      log_unknown_interval(interval) unless interval.nil?
+      :month
+    end
+
+    def log_unknown_interval(interval)
+      message = "[PricingPlans] Unknown billing interval #{interval.inspect} for plan #{key.inspect}; " \
+                "using :month (known: #{format_interval_list(BILLING_INTERVALS)})"
+      if defined?(Rails) && Rails.respond_to?(:logger) && Rails.logger
+        Rails.logger.debug(message)
+      end
+    rescue StandardError
+      nil
     end
 
     def normalize_interval_prices(value)
