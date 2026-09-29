@@ -154,6 +154,41 @@ When you’re composing your UI, you can read credits via `plan.credits_included
 > [!IMPORTANT]
 > You need to keep defining operations and subscription fulfillment in your `usage_credits` initializer, declaring it in pricing_plans is purely cosmetic and for ergonomics to render pricing tables.
 
+#### Declare Stripe prices once: link credit plans to pricing plans
+
+A plan's Stripe prices belong here, in `pricing_plans`: they are what the pricing page sells and what a Pay subscription is matched against. `usage_credits` needs the same ids to know which subscription refills which credits, and if the two lists drift, a paying subscriber silently gets no refill.
+
+From `usage_credits` 1.0.0, a subscription plan can read its Stripe prices from the pricing plan instead of declaring them again:
+
+```ruby
+# config/initializers/pricing_plans.rb
+PricingPlans.configure do |config|
+  config.plan :pro do
+    price        month: 24, quarter: 54, year: 108
+    stripe_price month: "price_pro_m", quarter: "price_pro_q", year: "price_pro_y"
+    includes_credits 300 # the pricing-table line
+  end
+end
+
+# config/initializers/usage_credits.rb
+UsageCredits.subscription_plan :pro do
+  pricing_plan                        # same key; or `pricing_plan :other_key`
+  gives 300.credits.every(:month)
+  unused_credits :expire
+end
+```
+
+The link reads `PricingPlans::Registry.plan(key).stripe_price` lazily, every time a subscription is matched, so initializer order does not matter. Every price id counts, whatever its interval. A linked plan may not also declare `stripe_price` in `usage_credits` (that raises a `UsageCredits::ConfigurationError`), so there is exactly one place the ids are written.
+
+On `usage_credits` before 1.0.0, declare the same ids in both initializers and keep them in step:
+
+```ruby
+UsageCredits.subscription_plan :pro do
+  stripe_price month: "price_pro_m", quarter: "price_pro_q", year: "price_pro_y"
+  gives 300.credits.every(:month)
+end
+```
+
 #### Guardrails when `usage_credits` is installed
 
 When the `usage_credits` gem is present, we lint your configuration at boot to prevent ambiguous setups:
@@ -170,4 +205,5 @@ This enforces a clean separation:
 `pricing_plans` does not spend or refill credits — that’s owned by `usage_credits`.
 
 - Keep using `@user.spend_credits_on(:operation, ...)`, subscription fulfillment, and credit packs in `usage_credits`.
+- Link each credit subscription plan to its pricing plan with `pricing_plan` (usage_credits >= 1.0.0) so Stripe price ids are declared only here.
 - Treat `includes_credits` here as pricing UI copy only. The single source of truth for operations, costs, fulfillment cadence, rollover/expire, and balances lives in `usage_credits`.
