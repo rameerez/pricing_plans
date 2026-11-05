@@ -110,16 +110,34 @@ module PricingPlans
     def plans
       array = Registry.plans.values
         .reject(&:hidden?)  # Filter out hidden plans from public API
-      array.sort_by do |p|
-        # Free first, then numeric price ascending, then price_string/stripe-price at the end
-        if p.price && p.price.to_f.zero?
+      # sort_by is not stable: the declaration index breaks ties so plans of
+      # equal rank keep the order they were written in, on every call.
+      array.each_with_index.sort_by do |p, index|
+        # Free first, then local monthly price ascending, then price_string/stripe-price at the end
+        rank = if p.price && p.price.to_f.zero?
           0
-        elsif p.price
-          1 + p.price.to_f
+        elsif (monthly_cents = p.monthly_equivalent_cents)
+          1 + (monthly_cents / 100.0)
         else
           10_000 # price_string or stripe_price (enterprise/contact) last
         end
-      end
+        [rank, index]
+      end.map(&:first)
+    end
+
+    # The plan that owns a Stripe price id, or nil. Hidden plans included, so
+    # webhooks, receipts and sale notifications resolve grandfathered prices:
+    #
+    #   PricingPlans.plan_for_price(subscription.processor_plan) # => #<PricingPlans::Plan :pro>
+    def plan_for_price(price_id)
+      Registry.plan_for_price(price_id)
+    end
+
+    # The billing interval a Stripe price id was declared under, or nil:
+    #
+    #   PricingPlans.billing_interval_for("price_pro_quarter") # => :quarter
+    def billing_interval_for(price_id)
+      plan_for_price(price_id)&.billing_interval_for(price_id)
     end
 
     # Single, UI-neutral helper for pricing pages.
@@ -184,6 +202,7 @@ module PricingPlans
       return "Free" if plan.price && plan.price.to_i.zero?
       return plan.price_string if plan.price_string
       return "$#{plan.price}/mo" if plan.price
+      return plan.price_label_for(plan.prices.keys.first) if plan.prices.any?
       return "Contact" if plan.stripe_price || plan.price.nil?
       nil
     end

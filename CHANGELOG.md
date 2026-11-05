@@ -1,3 +1,20 @@
+## [Unreleased]
+
+**Billing intervals beyond month/year, a public price → plan lookup, and a stable plan order.**
+
+- `price` takes a Hash of billing interval to amount: `price month: 24, quarter: 54, year: 108`. Any of `:day`, `:week`, `:month`, `:quarter`, `:year`; `price 24` stays shorthand for `price month: 24`, so existing configs are unchanged. `plan.price` keeps returning the monthly amount and the new `plan.prices` returns every declared interval in display order
+- `price_components(interval:)` returns the declared amount for any interval instead of deriving it (the 0.4.1 "yearly = 12× monthly" edge is gone for plans that declare their yearly price), plus a new `monthly_equivalent_label` ("$18/mo" for $54/qtr) next to `monthly_equivalent_cents`. An undeclared interval is still derived from the monthly price when there is one; with no monthly price it is reported as not present. Intervals may be passed as strings (`params[:interval]`); an unknown or blank runtime interval falls back to `:month` (so `?interval=foo` never 500s), while an unknown interval in the plan configuration raises `ConfigurationError` at boot
+- `stripe_price` accepts the same interval keys (plus `:id`). Stripe's `interval: "month", interval_count: 3` is read as `:quarter`, and week/day prices compute correct monthly equivalents
+- New `plan.billing_intervals` (intervals the plan is sold in, from `price` and `stripe_price`), `plan.price_id_for(interval)`, `plan.price_ids`, `plan.billing_interval_for(price_id)` and `plan.monthly_equivalent_cents`; `to_view_model` adds `billing_intervals` and `interval_prices` (per-interval cents, monthly equivalent, labels and Stripe id) for JS toggles
+- `plan.cta_url(interval:)` and `pricing_plan_cta(plan, interval:)` pass the interval to the conventional `subscribe_path(plan:, interval:)`
+- Add `PricingPlans.plan_for_price(price_id)` (the plan owning a Stripe price id, hidden plans included, or nil) and `PricingPlans.billing_interval_for(price_id)` (the interval it was declared under, or nil). `PlanResolver.plan_for_processor_plan` now delegates to the same lookup, so there is one implementation
+- `PricingPlans.plans` is stable: `sort_by` is not, so Stripe-only plans (all ranked last) and equally priced plans could come back in any order. Ties now keep declaration order on every call. Plans priced by a Hash rank by their monthly price, else their cheapest per-month equivalent
+- Plan comparison (`upgrade_from?`/`downgrade_from?`) uses the declared monthly price, else the cheapest per-month equivalent across the plan's intervals, and now reads Stripe's monthly equivalent rather than the raw amount when a single price id turns out not to be monthly
+- A paid plan with only a `stripe_price` whose price cannot be resolved still compares as $0, but now logs a one-time warning naming the plan and suggesting a local `price` (to `Rails.logger`, or stderr outside Rails). No behavior change otherwise
+- Labels keep cents instead of rounding (`$29.99/mo`, not `$30/mo`, also for Stripe-derived labels) and whole amounts drop the `.0` (`price 29.0` renders `$29/mo`)
+- docs/06-gem-compatibility.md: link a `usage_credits` subscription plan to its pricing plan with `pricing_plan` (from `usage_credits` 1.0.0), so Stripe price ids are declared once. The two-initializer setup stays documented for earlier `usage_credits` versions
+- Heads-up, may need a config change: `stripe_price` Hash keys are now validated at boot. Anything other than `:id`, `:day`, `:week`, `:month`, `:quarter`, `:year` raises a `ConfigurationError` naming the key. Before, such keys were silently ignored by `monthly_price_id`/`yearly_price_id`, though a Pay subscription on them still resolved. When `price` is a Hash and `stripe_price` is declared too, both must cover the same intervals; plain `price 24` with `stripe_price month:, year:` stays valid
+
 ## [0.7.0] - 2026-09-05
 
 **Feature passes: bounded, create-only samples on top of feature grants.**

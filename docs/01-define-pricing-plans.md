@@ -496,7 +496,42 @@ PricingPlans.configure do |config|
 end
 ```
 
-`stripe_price` accepts String or Hash (e.g., `{ month:, year:, id: }`) and the `pricing_plans` PlanResolver maps against Pay's `subscription.processor_plan`.
+`stripe_price` accepts a String or a Hash keyed by billing interval — any of `:day`, `:week`, `:month`, `:quarter`, `:year` (plus `:id`, which, like a single String, counts as monthly). The `pricing_plans` PlanResolver maps every one of those ids against Pay's `subscription.processor_plan`. Unknown keys (a typo like `monthly:`) raise a `ConfigurationError` at boot.
+
+### Prices per billing interval
+
+Sell the same plan on several billing intervals by declaring what each one really costs:
+
+```ruby
+plan :pro do
+  price        month: 24, quarter: 54, year: 108
+  stripe_price month: "price_pro_m", quarter: "price_pro_q", year: "price_pro_y"
+end
+```
+
+`price 24` is shorthand for `price month: 24`, so existing configs keep working unchanged. With the Hash:
+
+- `plan.prices` is `{ month: 24, quarter: 54, year: 108 }` (always in `day → week → month → quarter → year` order), and `plan.price` stays the monthly amount (`24`)
+- `plan.billing_intervals` is `[:month, :quarter, :year]`: the intervals declared in `price` or `stripe_price`, in display order. Drive your interval toggle from it
+- `plan.price_components(interval: :quarter)` returns the declared $54, not a derivation, with `monthly_equivalent_cents` (`1800`) and `monthly_equivalent_label` (`"$18/mo"`) so the page can print "just $18/mo"
+- `plan.price_id_for(:quarter)` is the Stripe id to check out (`monthly_price_id` / `yearly_price_id` keep working)
+- `plan.cta_url(interval: :quarter)` and `pricing_plan_cta(plan, interval: :quarter)` pass the interval to your `subscribe_path(plan:, interval:)`
+
+An interval you don't declare is derived from the monthly price when there is one (`price 30` shows `$90/qtr`); a plan with no monthly price reports it as not present. Amounts must be non-negative numbers, and unknown intervals raise a `ConfigurationError`.
+
+When `price` is a Hash and `stripe_price` is declared too, both must cover the same intervals. Otherwise the page would either display an amount Stripe doesn't charge, or offer an interval checkout can't sell, so this raises at boot.
+
+### Looking a Stripe price id back up
+
+Webhooks, receipts and sale notifications only carry a price id. Ask the registry instead of walking your config:
+
+```ruby
+PricingPlans.plan_for_price("price_pro_q")       # => #<PricingPlans::Plan :pro> (nil when unknown)
+PricingPlans.billing_interval_for("price_pro_q") # => :quarter (nil when unknown)
+plan.billing_interval_for("price_pro_q")         # => :quarter, only for this plan's own ids
+```
+
+Hidden plans are included, so grandfathered prices resolve too. This is the same lookup `PlanResolver` uses to map a Pay subscription to its plan.
 
 ### Declaring both a `price` and a `stripe_price`
 
@@ -514,7 +549,9 @@ They answer different questions, so they're not alternatives:
 - `stripe_price` is the **billing identity**: what checkout charges, and what a Pay subscription is matched against.
 - `price` is the **local source of truth for display and plan comparison**.
 
-When both are set, the number wins for `price_label`, `price_components`, `currency_symbol` and upgrade/downgrade comparisons, so pricing pages and upgrade CTAs render without a single Stripe API call. Without a numeric price, all of that depends on a live `Stripe::Price.retrieve`; if that fails (Stripe unreachable, missing API key, cold cache), every paid plan compares as $0 and upgrade prompts silently vanish.
+When both are set, the number wins for `price_label`, `price_components`, `currency_symbol` and upgrade/downgrade comparisons, so pricing pages and upgrade CTAs render without a single Stripe API call. Without a numeric price, all of that depends on a live `Stripe::Price.retrieve`; if that fails (Stripe unreachable, missing API key, cold cache), every paid plan compares as $0 and upgrade prompts would vanish. When that happens, `pricing_plans` logs a one-time warning naming the plan (to `Rails.logger`, or stderr outside Rails).
+
+Plans compare by their monthly price: the declared monthly amount, else the cheapest per-month equivalent of the intervals they're sold in.
 
 `price_string` remains exclusive with both: it's a label ("Contact us"), not a number, so it can't be compared.
 

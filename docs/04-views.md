@@ -6,7 +6,7 @@ Since `pricing_plans` is your single source of truth for pricing plans, you can 
 
 ## Display all plans
 
-`PricingPlans.plans` returns an array of `PricingPlans::Plan` objects containing all your plans defined in `pricing_plans.rb`
+`PricingPlans.plans` returns an array of `PricingPlans::Plan` objects containing all your visible plans defined in `pricing_plans.rb`: free first, then by monthly price, then Stripe-only and "Contact" plans. Plans that rank the same keep the order you declared them in, on every call.
 
 Each `PricingPlans::Plan` responds to:
   - `plan.free?`

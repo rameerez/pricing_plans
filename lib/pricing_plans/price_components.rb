@@ -8,9 +8,10 @@ module PricingPlans
     :currency,                 # String: currency symbol, e.g. "$", "€"
     :amount,                   # String: human whole amount (no decimals) e.g. "29"
     :amount_cents,             # Integer: total cents e.g. 2900
-    :interval,                 # Symbol: :month or :year
-    :label,                    # String: friendly label e.g. "$29/mo" or "Contact"
-    :monthly_equivalent_cents, # Integer: same-month or yearly/12 rounded
+    :interval,                 # Symbol: :day, :week, :month, :quarter or :year
+    :label,                    # String: friendly label e.g. "$29/mo", "$54/qtr" or "Contact"
+    :monthly_equivalent_cents, # Integer: amount per month, e.g. 1800 for $54/qtr
+    :monthly_equivalent_label, # String: per-month label e.g. "$18/mo"
     keyword_init: true
   )
 end

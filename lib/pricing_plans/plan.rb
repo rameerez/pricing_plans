@@ -6,6 +6,20 @@ module PricingPlans
   class Plan
     using IntegerRefinements
 
+    # Every billing interval a plan can be priced in, in display order.
+    BILLING_INTERVALS = %i[day week month quarter year].freeze
+
+    # How many months one interval spans, to express any price per month.
+    MONTHS_PER_INTERVAL = {
+      day: Rational(12, 365),
+      week: Rational(12, 52),
+      month: 1,
+      quarter: 3,
+      year: 12
+    }.freeze
+
+    INTERVAL_SUFFIXES = { day: "/day", week: "/wk", month: "/mo", quarter: "/qtr", year: "/yr" }.freeze
+
     attr_reader :key, :features
 
     def initialize(key)
@@ -13,7 +27,8 @@ module PricingPlans
       @name = nil
       @description = nil
       @bullets = []
-      @price = nil
+      @prices = {}.freeze
+      @price_declared_per_interval = false
       @price_string = nil
       @stripe_price = nil
       @features = Set.new
@@ -65,34 +80,41 @@ module PricingPlans
       end
     end
 
+    # `price 24` is shorthand for `price month: 24`. Declare each interval you
+    # sell to price it for real instead of deriving it from the monthly number:
+    #
+    #   price month: 24, quarter: 54, year: 108
     def set_price(value)
-      @price = value
+      @price_declared_per_interval = value.is_a?(Hash)
+      @prices =
+        if value.is_a?(Hash) then normalize_interval_prices(value)
+        elsif value.nil? then {}.freeze
+        else { month: value }.freeze
+        end
     end
 
+    # The monthly amount (nil when the plan declares no monthly price).
+    # Every declared interval lives in #prices.
     def price(value = nil)
       if value.nil?
-        @price
+        @prices[:month]
       else
         set_price(value)
       end
     end
 
+    # Locally declared amounts by interval, in display order: { month: 24, quarter: 54 }
+    attr_reader :prices
+
     # Rails-y ergonomics for UI: expose integer cents as optional helper
     def price_cents
-      return nil unless @price
-      (
-        if @price.respond_to?(:to_f)
-          (@price.to_f * 100).round
-        else
-          nil
-        end
-      )
+      cents_for(price)
     end
 
     # Ergonomic predicate for UI/logic (free means explicit 0 price or explicit "Free" label)
     def free?
       return false if @stripe_price
-      return true if @price.respond_to?(:to_i) && @price.to_i.zero?
+      return true if local_price? && @prices.values.all? { |amount| amount.respond_to?(:to_i) && amount.to_i.zero? }
       return true if @price_string && @price_string.to_s.strip.casecmp("Free").zero?
       false
     end
@@ -114,7 +136,7 @@ module PricingPlans
       when String
         @stripe_price = { id: value }
       when Hash
-        @stripe_price = value
+        @stripe_price = normalize_stripe_price_keys(value)
       else
         raise ConfigurationError, "stripe_price must be a string or hash"
       end
@@ -162,19 +184,20 @@ module PricingPlans
 
     # Unified ergonomic API:
     # - Setter/getter: cta_url, cta_url("/checkout")
-    # - Resolver: cta_url(plan_owner: org)
-    def cta_url(value = :__no_arg__, plan_owner: nil)
+    # - Resolver: cta_url(plan_owner: org), cta_url(interval: :quarter)
+    def cta_url(value = :__no_arg__, plan_owner: nil, interval: :month)
       unless value == :__no_arg__
         set_cta_url(value)
         return @cta_url
       end
 
+      interval = normalize_billing_interval(interval)
       return @cta_url if @cta_url
       default = PricingPlans.configuration.default_cta_url
       return default if default
       # New default: if host app defines subscribe_path, prefer that
       if defined?(Rails) && Rails.respond_to?(:application) && Rails.application && Rails.application.routes.url_helpers.respond_to?(:subscribe_path)
-        return Rails.application.routes.url_helpers.subscribe_path(plan: key, interval: :month)
+        return Rails.application.routes.url_helpers.subscribe_path(plan: key, interval: interval)
       end
       nil
     end
@@ -353,7 +376,7 @@ module PricingPlans
     # (keep single definition above)
 
     def purchasable?
-      !!@stripe_price || (!free? && !!@price)
+      !!@stripe_price || (!free? && local_price?)
     end
 
     # Human label to display price in UIs. Prefers explicit string, then numeric, else contact.
@@ -362,10 +385,10 @@ module PricingPlans
       # A locally declared numeric price wins: it is the source of truth for
       # display, and honoring it keeps rendering off the network entirely.
       cfg = PricingPlans.configuration
-      if cfg&.auto_price_labels_from_processor && stripe_price && price.nil?
+      if cfg&.auto_price_labels_from_processor && stripe_price && !local_price?
         begin
           if defined?(::Stripe)
-            price_id = stripe_price.is_a?(Hash) ? (stripe_price[:id] || stripe_price[:month] || stripe_price[:year]) : stripe_price
+            price_id = price_ids.first
             if price_id
               pr = ::Stripe::Price.retrieve(price_id)
               amount = pr.unit_amount.to_f / 100.0
@@ -389,15 +412,19 @@ module PricingPlans
       return "Free" if price && price.to_i.zero?
       return price_string if price_string
       return "$#{price}/mo" if price
+      return price_label_for(@prices.keys.first) if local_price?
       return "Contact" if stripe_price || price.nil?
       nil
     end
 
     # --- New semantic pricing API ---
 
-    # Compute semantic price parts for the given interval (:month or :year).
+    # Compute semantic price parts for the given interval (any of
+    # BILLING_INTERVALS; strings like params[:interval] are accepted).
     # Falls back to price_string when no numeric price exists.
     def price_components(interval: :month)
+      interval = normalize_billing_interval(interval)
+
       # 1) Allow app override
       if (resolver = PricingPlans.configuration.price_components_resolver)
         begin
@@ -408,37 +435,21 @@ module PricingPlans
       end
 
       # 2) String-only prices
-      if price_string
-        return PricingPlans::PriceComponents.new(
-          present?: false,
-          currency: nil,
-          amount: nil,
-          amount_cents: nil,
-          interval: interval,
-          label: price_string,
-          monthly_equivalent_cents: nil
-        )
-      end
+      return missing_price_components(interval, label: price_string) if price_string
 
-      # 3) Explicit numeric price (single interval, assume monthly semantics)
-      if price
-        cents = price_cents
+      # 3) Locally declared price. A declared interval is the real amount; an
+      #    undeclared one is derived from the monthly price when there is one.
+      if local_price?
         cur = PricingPlans.configuration.default_currency_symbol
-        label = if interval == :month
-          "#{cur}#{price}/mo"
+        if @prices.key?(interval)
+          cents = cents_for(@prices[interval])
+          return local_price_components(cents, interval, cur, amount: (cents / 100).to_s)
+        elsif price
+          cents = (price_cents * MONTHS_PER_INTERVAL[interval]).round
+          return local_price_components(cents, interval, cur, amount: (cents / 100.0).round.to_s, monthly_equivalent_cents: price_cents)
         else
-          # Treat yearly as 12x when only a single numeric price is declared
-          "#{cur}#{(price.to_f * 12).round}/yr"
+          return missing_price_components(interval, label: nil)
         end
-        return PricingPlans::PriceComponents.new(
-          present?: true,
-          currency: cur,
-          amount: (interval == :month ? price.to_i : (price.to_f * 12).round).to_s,
-          amount_cents: (interval == :month ? cents : (cents.to_i * 12)),
-          interval: interval,
-          label: label,
-          monthly_equivalent_cents: cents
-        )
       end
 
       # 4) Stripe price(s)
@@ -448,15 +459,7 @@ module PricingPlans
       end
 
       # 5) No price info at all → Contact
-      PricingPlans::PriceComponents.new(
-        present?: false,
-        currency: nil,
-        amount: nil,
-        amount_cents: nil,
-        interval: interval,
-        label: "Contact",
-        monthly_equivalent_cents: nil
-      )
+      missing_price_components(interval, label: "Contact")
     end
 
     def monthly_price_components
@@ -469,12 +472,56 @@ module PricingPlans
 
     def has_interval_prices?
       sp = stripe_price
-      return true if sp.is_a?(Hash) && (sp[:month] || sp[:year])
-      return !price.nil? || !price_string.nil?
+      return true if sp.is_a?(Hash) && BILLING_INTERVALS.any? { |interval| sp[interval] }
+      return local_price? || !price_string.nil?
     end
 
     def has_numeric_price?
-      !!price || !!stripe_price
+      local_price? || !!stripe_price
+    end
+
+    # Intervals this plan is sold in, in display order: the ones declared in
+    # `price` plus the ones with a Stripe price id (a single id, or `id:`,
+    # counts as monthly). Drive your interval toggle from this.
+    def billing_intervals
+      BILLING_INTERVALS & (@prices.keys | stripe_billing_intervals)
+    end
+
+    # Stripe price id to check out for the given interval (nil when absent).
+    def price_id_for(interval)
+      stripe_price_id_for(normalize_billing_interval(interval))
+    end
+
+    # Every Stripe price id declared on this plan.
+    def price_ids
+      case stripe_price
+      when Hash then stripe_price.values.compact.uniq
+      when String then [stripe_price]
+      else []
+      end
+    end
+
+    # The interval under which this plan declares `price_id` (nil when the id
+    # is not one of this plan's). A single id, or `id:`, counts as monthly.
+    def billing_interval_for(price_id)
+      return nil if price_id.blank?
+
+      case stripe_price
+      when String then :month if stripe_price == price_id
+      when Hash
+        key = stripe_price.key(price_id)
+        key == :id ? :month : key
+      end
+    end
+
+    # The plan's per-month cost in cents from its locally declared `price`:
+    # the monthly amount when declared, else the cheapest per-month equivalent
+    # among the declared intervals. nil without a local price.
+    def monthly_equivalent_cents
+      return nil unless local_price?
+      return price_cents if price
+
+      @prices.map { |interval, amount| monthly_cents_from(cents_for(amount), interval) }.min
     end
 
     def price_label_for(interval)
@@ -504,10 +551,10 @@ module PricingPlans
     def currency_symbol
       # A locally declared numeric price is rendered in the configured currency
       # (see #price_components), so don't ask Stripe when we have one.
-      if stripe_price && price.nil?
+      if stripe_price && !local_price?
         # Try to derive from Stripe API/cache; fall back to default
         begin
-          pr = fetch_stripe_price_record(preferred_price_id(:month) || preferred_price_id(:year))
+          pr = fetch_stripe_price_record(preferred_price_id(:month) || price_ids.first)
           if pr
             return currency_symbol_from(pr)
           end
@@ -559,6 +606,8 @@ module PricingPlans
         yearly_price_id: yearly_price_id,
         price_label: price_label,
         price_string: price_string,
+        billing_intervals: billing_intervals,
+        interval_prices: interval_prices_view_model,
         limits: limits.transform_values { |v| v.dup }
       }
     end
@@ -663,8 +712,158 @@ module PricingPlans
       # call), while the Stripe id stays the billing identity used by checkout and
       # by subscription -> plan matching. Only `price_string` remains exclusive,
       # since it is a label that cannot be compared numerically.
-      if @price_string && (@price || @stripe_price)
+      if @price_string && (local_price? || @stripe_price)
         raise ConfigurationError, "Plan #{@key} can only have one of: price, price_string, or stripe_price"
+      end
+
+      validate_interval_prices_match_stripe!
+    end
+
+    # Once `price` is declared per interval, it is a claim about every interval
+    # the plan sells. An interval with a Stripe id but no local amount would be
+    # displayed as a derived number Stripe does not charge; a local amount with
+    # no Stripe id would be displayed but could not be checked out.
+    def validate_interval_prices_match_stripe!
+      return unless @price_declared_per_interval && @stripe_price
+
+      priced_only = @prices.keys - stripe_billing_intervals
+      billed_only = stripe_billing_intervals - @prices.keys
+      return if priced_only.empty? && billed_only.empty?
+
+      problems = []
+      problems << "no stripe_price for #{format_interval_list(priced_only)}" if priced_only.any?
+      problems << "no price for #{format_interval_list(billed_only)}" if billed_only.any?
+      raise ConfigurationError,
+            "Plan #{@key.inspect} declares price and stripe_price for different intervals " \
+            "(#{problems.join('; ')}). Declare every interval you sell in both, e.g. " \
+            "`price month: 24, year: 108` with `stripe_price month: \"price_...\", year: \"price_...\"`."
+    end
+
+    def local_price?
+      !@prices.empty?
+    end
+
+    # Intervals with a Stripe price id; a single id, or `id:`, counts as monthly.
+    def stripe_billing_intervals
+      case @stripe_price
+      when Hash then @stripe_price.keys.map { |key| key == :id ? :month : key }.uniq
+      when String then [:month]
+      else []
+      end
+    end
+
+    def cents_for(amount)
+      return nil if amount.nil? || !amount.respond_to?(:to_f)
+
+      (amount.to_f * 100).round
+    end
+
+    def monthly_cents_from(cents, interval)
+      (cents / MONTHS_PER_INTERVAL.fetch(interval)).round
+    end
+
+    def format_price(cents, currency)
+      whole, fraction = cents.to_i.divmod(100)
+      fraction.zero? ? "#{currency}#{whole}" : format("%<currency>s%<whole>d.%<fraction>02d", currency:, whole:, fraction:)
+    end
+
+    def format_interval_list(intervals)
+      intervals.map(&:inspect).join(", ")
+    end
+
+    # Runtime intervals (price_components, price_id_for, cta_url) usually come
+    # from a URL (`params[:interval]`), so an unknown or blank one falls back
+    # to :month instead of raising: a hand-edited `?interval=foo` shows the
+    # monthly price rather than a 500. Typos in the CONFIG still raise at boot
+    # (normalize_interval_prices / the stripe_price key check).
+    def normalize_billing_interval(interval)
+      normalized = interval.respond_to?(:to_sym) && interval.to_s.strip != "" ? interval.to_s.strip.to_sym : nil
+      return normalized if BILLING_INTERVALS.include?(normalized)
+
+      log_unknown_interval(interval) unless interval.nil?
+      :month
+    end
+
+    def log_unknown_interval(interval)
+      message = "[PricingPlans] Unknown billing interval #{interval.inspect} for plan #{key.inspect}; " \
+                "using :month (known: #{format_interval_list(BILLING_INTERVALS)})"
+      if defined?(Rails) && Rails.respond_to?(:logger) && Rails.logger
+        Rails.logger.debug(message)
+      end
+    rescue StandardError
+      nil
+    end
+
+    def normalize_interval_prices(value)
+      raise ConfigurationError, "Plan #{@key.inspect} price hash is empty" if value.empty?
+
+      amounts = value.to_h { |interval, amount| [interval.to_sym, amount] }
+      unknown = amounts.keys - BILLING_INTERVALS
+      if unknown.any?
+        raise ConfigurationError,
+              "Plan #{@key.inspect} price uses unknown billing interval #{format_interval_list(unknown)}; " \
+              "use any of #{format_interval_list(BILLING_INTERVALS)}"
+      end
+
+      amounts.each do |interval, amount|
+        next if amount.is_a?(Numeric) && amount.real? && amount.finite? && !amount.negative?
+
+        raise ConfigurationError,
+              "Plan #{@key.inspect} price for #{interval} must be a non-negative number (got #{amount.inspect})"
+      end
+
+      BILLING_INTERVALS.filter_map { |interval| [interval, amounts[interval]] if amounts.key?(interval) }.to_h.freeze
+    end
+
+    def normalize_stripe_price_keys(value)
+      normalized = value.transform_keys(&:to_sym)
+      allowed = BILLING_INTERVALS + [:id]
+      unknown = normalized.keys - allowed
+      if unknown.any?
+        raise ConfigurationError,
+              "Plan #{@key.inspect} stripe_price uses unknown key #{format_interval_list(unknown)}; " \
+              "use any of #{format_interval_list(allowed)}"
+      end
+      normalized
+    end
+
+    def local_price_components(cents, interval, currency, amount:, monthly_equivalent_cents: nil)
+      monthly = monthly_equivalent_cents || monthly_cents_from(cents, interval)
+      PricingPlans::PriceComponents.new(
+        present?: true,
+        currency: currency,
+        amount: amount,
+        amount_cents: cents,
+        interval: interval,
+        label: "#{format_price(cents, currency)}#{INTERVAL_SUFFIXES[interval]}",
+        monthly_equivalent_cents: monthly,
+        monthly_equivalent_label: "#{format_price(monthly, currency)}/mo"
+      )
+    end
+
+    def missing_price_components(interval, label:)
+      PricingPlans::PriceComponents.new(
+        present?: false,
+        currency: nil,
+        amount: nil,
+        amount_cents: nil,
+        interval: interval,
+        label: label,
+        monthly_equivalent_cents: nil,
+        monthly_equivalent_label: nil
+      )
+    end
+
+    def interval_prices_view_model
+      billing_intervals.to_h do |interval|
+        pc = price_components(interval: interval)
+        [interval, {
+          amount_cents: pc.present? ? pc.amount_cents : nil,
+          monthly_equivalent_cents: pc.monthly_equivalent_cents,
+          label: pc.label,
+          monthly_equivalent_label: pc.monthly_equivalent_label,
+          price_id: price_id_for(interval)
+        }]
       end
     end
 
@@ -672,8 +871,8 @@ module PricingPlans
 
     def default_cta_text_derived
       return "Subscribe" if @stripe_price
-      return "Choose #{@name || @key.to_s.titleize}" if price || price_string
-      return "Choose plan" if @stripe_price.nil? && !price && !price_string
+      return "Choose #{@name || @key.to_s.titleize}" if local_price? || price_string
+      return "Choose plan" if @stripe_price.nil? && !local_price? && !price_string
       "Choose #{@name || @key.to_s.titleize}"
     end
 
@@ -688,11 +887,7 @@ module PricingPlans
       sp = stripe_price
       case sp
       when Hash
-        case interval
-        when :month then sp[:month] || sp[:id]
-        when :year  then sp[:year]
-        else sp[:id]
-        end
+        interval == :month ? (sp[:month] || sp[:id]) : sp[interval]
       when String
         sp
       else
@@ -711,31 +906,82 @@ module PricingPlans
       pr = fetch_stripe_price_record(price_id)
       return nil unless pr
       amount_cents = (pr.unit_amount || pr.unit_amount_decimal || 0).to_i
-      interval_sym = (pr.recurring&.interval == "year" ? :year : :month)
+      interval_sym, months = stripe_billing_period(pr.recurring, fallback: interval)
       cur = currency_symbol_from(pr)
-      label = "#{cur}#{(amount_cents / 100.0).round}/#{interval_sym == :year ? 'yr' : 'mo'}"
-      monthly_equiv = interval_sym == :month ? amount_cents : (amount_cents / 12.0).round
+      monthly_equiv = (amount_cents / months).round
       PricingPlans::PriceComponents.new(
         present?: true,
         currency: cur,
         amount: ((amount_cents / 100.0).round).to_i.to_s,
         amount_cents: amount_cents,
         interval: interval_sym,
-        label: label,
-        monthly_equivalent_cents: monthly_equiv
+        label: "#{format_price(amount_cents, cur)}#{INTERVAL_SUFFIXES[interval_sym]}",
+        monthly_equivalent_cents: monthly_equiv,
+        monthly_equivalent_label: "#{format_price(monthly_equiv, cur)}/mo"
       )
     rescue StandardError
       nil
     end
 
+    # Stripe expresses a quarter as `interval: "month", interval_count: 3`.
+    # Returns [interval_symbol, months_in_one_billing_period].
+    def stripe_billing_period(recurring, fallback:)
+      return [:month, 1] unless recurring
+
+      unit = recurring.interval.to_s.to_sym
+      count = recurring.respond_to?(:interval_count) ? recurring.interval_count.to_i : 1
+      count = 1 unless count.positive?
+      return [:month, 1] unless MONTHS_PER_INTERVAL.key?(unit)
+
+      months = MONTHS_PER_INTERVAL[unit] * count
+      interval = MONTHS_PER_INTERVAL.key(months) if %i[month year].include?(unit)
+      interval ||= count == 1 ? unit : fallback
+      [interval, months]
+    end
+
     # Normalize a plan into a comparable monthly price in cents for upgrades/downgrades
     def comparable_price_cents(plan)
-      return 0 if plan.free?
-      pcm = plan.monthly_price_cents
-      return pcm if pcm
-      pcy = plan.yearly_price_cents
-      return (pcy.to_f / 12.0).round if pcy
+      plan.comparable_monthly_cents
+    end
+
+    protected
+
+    # Monthly cost used to rank plans: the declared (or Stripe) monthly price,
+    # else the cheapest per-month equivalent of the intervals the plan is sold
+    # in. Goes through #price_components so price_components_resolver applies.
+    def comparable_monthly_cents
+      return 0 if free?
+
+      cents = monthly_cents_of(price_components(interval: :month))
+      cents ||= (billing_intervals - [:month]).filter_map { |i| monthly_cents_of(price_components(interval: i)) }.min
+      return cents if cents
+
+      warn_about_zero_comparison
       0
+    end
+
+    private
+
+    def monthly_cents_of(components)
+      return nil unless components.present?
+
+      components.monthly_equivalent_cents || (components.amount_cents if components.interval == :month)
+    end
+
+    # A paid plan priced only by Stripe compares as $0 whenever the live lookup
+    # fails, which makes upgrade CTAs vanish without an error. Say so once.
+    def warn_about_zero_comparison
+      return if @zero_comparison_warned || !stripe_price || local_price?
+
+      @zero_comparison_warned = true
+      message = "[PricingPlans] Plan #{key.inspect} has only a stripe_price, and its Stripe price could not be " \
+                "resolved, so upgrade_from?/downgrade_from? compare it as $0. Declare `price` alongside " \
+                "`stripe_price` (e.g. `price month: 24, year: 108`) to compare plans without calling Stripe."
+      if defined?(Rails) && Rails.respond_to?(:logger) && Rails.logger
+        Rails.logger.warn(message)
+      else
+        Kernel.warn(message)
+      end
     end
 
     def currency_symbol_from(price_record)
